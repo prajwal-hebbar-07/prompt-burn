@@ -1,0 +1,58 @@
+{
+  "aggregations": [
+    {
+      "modelIntent": "cursor-grok-4.6-high",
+      "inputTokens": "9290000",
+      "outputTokens": "1110000",
+      "cacheReadTokens": "94300000",
+      "totalCents": 7048.46,
+      "tier": 2
+    },
+    {
+      "modelIntent": "claude-opus-5-thinking-high",
+      "inputTokens": "164",
+      "outputTokens": "82300",
+      "cacheWriteTokens": "778000",
+      "cacheReadTokens": "7350000",
+      "totalCents": 1059.88,
+      "tier": 1
+    },
+    {
+      "modelIntent": "default",
+      "inputTokens": "3200000",
+      "outputTokens": "219000",
+      "cacheReadTokens": "16700000",
+      "totalCents": 844.77,
+      "tier": 2
+    },
+    {
+      "modelIntent": "cursor-grok-4.6-high-fast",
+      "inputTokens": "254000",
+      "outputTokens": "57800",
+      "cacheReadTokens": "4830000",
+      "totalCents": 616.55,
+      "tier": 2
+    },
+    {
+      "modelIntent": "cursor-grok-4.5-high-fast",
+      "inputTokens": "262000",
+      "outputTokens": "24400",
+      "cacheReadTokens": "1510000",
+      "totalCents": 299.59,
+      "tier": 2
+    },
+    {
+      "modelIntent": "gpt-5.6-sol-medium",
+      "inputTokens": "3",
+      "outputTokens": "4060",
+      "cacheWriteTokens": "74400",
+      "totalCents": 45.31,
+      "tier": 1
+    }
+  ],
+  "totalInputTokens": "13000000",
+  "totalOutputTokens": "1500000",
+  "totalCacheWriteTokens": "852000",
+  "totalCacheReadTokens": "125000000",
+  "totalCostCents": 9914.55
+}
