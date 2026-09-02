@@ -2,7 +2,7 @@
 
 Greenfield. Split into small, reviewable commits. Each commit is one concern, should typecheck, and should be reviewable in about 10 minutes.
 
-This plan is the current spec. Older wireframes that include Projects, quota tiles, or a source dropdown are out of date.
+Product decisions live in [product.md](product.md). This file is the build sequence. Older wireframes that include Projects, quota tiles, or a source dropdown are out of date.
 
 ---
 
