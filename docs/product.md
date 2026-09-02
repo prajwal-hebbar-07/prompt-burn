@@ -78,6 +78,12 @@ Device **local timezone**. No timezone setting.
 | **Pro (no admin key)** | **Do not apply.** Cursor stays **cycle to date**. Period filters apply to **OMP only**. |
 | **Enterprise + `crsr_` key** | Cursor events participate in the same period as OMP. |
 
+> **Spike finding (2026-09-02):** the Pro row above is factually wrong for the API as it exists
+> today — `get-aggregated-usage-events` accepts `startDate` / `endDate` and returns narrowed
+> per-model aggregates, including windows before the current cycle. Still aggregates, never
+> events. See [data-shapes.md](data-shapes.md#finding-cursor-pro-does-accept-date-windows).
+> Behaviour is unchanged until this is decided.
+
 When scopes differ, the hero **must** say so, e.g.:
 
 `Estimated total · OMP: Today · Cursor: cycle to date`

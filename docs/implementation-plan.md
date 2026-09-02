@@ -25,6 +25,11 @@ Product decisions live in [product.md](product.md). This file is the build seque
 | VS Code | Opens as an **editor tab** (full width), not a sidebar. |
 | Trust | Local only. Never persist Cursor auth tokens in our DB. |
 
+> **Spike finding (2026-09-02):** the Cursor Pro row is wrong — the dashboard API accepts
+> `startDate` / `endDate` and serves pre-cycle windows too (still aggregates, not events).
+> See [data-shapes.md](data-shapes.md#finding-cursor-pro-does-accept-date-windows). Not acted on;
+> cycle-aggregate mode remains the correct subset either way.
+
 ### Combined total when periods differ
 
 Cursor Pro is always cycle-to-date. When the user picks Today / This month / Date range:
