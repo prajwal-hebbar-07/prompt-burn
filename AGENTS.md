@@ -5,7 +5,7 @@ Design work in this repo reads from one Paper file and page. Before any Paper
 MCP read, call `open_file` with these, then confirm with `get_basic_info`.
 
 - File: `prompt-burn` — fileId `01M16P0E4DX1BSSM4FYRWJWXKZ`
-- Page: `v0-wireframes` — pageId `1-0`
+- Page: `v0-designs` — pageId `3-0`
 - Confirmed: `2026-09-02` via `get_basic_info`
 
 Pass `fileId` on every Paper tool call. If `get_basic_info` reports a different
