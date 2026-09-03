@@ -4,5 +4,12 @@
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=24"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "typecheck": "tsc -p . && pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test"
   }
 }
