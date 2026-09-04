@@ -145,7 +145,9 @@ Two routes. **No Projects view. No onboarding.** Open → Dashboard.
 3. **Mixed-scope footnote** when Cursor is Pro (violet-leaning callout): cycle dates + “period filters apply to OMP only”
 4. **Hero:** combined estimated cost, OMP subtotal, Cursor subtotal (with cycle label if Pro), token breakdown
 5. **By-model table:** Model, Source (OMP / Cursor), tokens, estimated cost
-6. **Cursor cycle card** (Pro): cycle window, tokens + cost for the cycle, note that per-day filtering needs an Enterprise key
+
+The cycle window, its tokens and its cost all live in items 3–5 already, so there is no
+separate Cursor cycle card at the bottom of the screen.
 
 ### Settings
 

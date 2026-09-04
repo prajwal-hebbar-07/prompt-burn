@@ -1,11 +1,11 @@
 /**
- * The wireframe edge states: the Cursor cycle surfaces and the two empty
+ * The wireframe edge states: the Cursor cycle footnote and the two empty
  * bodies.
  *
- * Cursor Pro is cycle-to-date, so the footnote and the card have to name the
- * window and say period filters apply to OMP only — and neither may invent a
- * window the collector has not fetched yet. Never-fetched and fetched-but-empty
- * are separate states, and a fetch in flight never blanks what is on screen.
+ * Cursor Pro is cycle-to-date, so the footnote has to name the window and say
+ * period filters apply to OMP only — and it may never invent a window the
+ * collector has not fetched yet. Never-fetched and fetched-but-empty are
+ * separate states, and a fetch in flight never blanks what is on screen.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -80,20 +80,13 @@ describe("formatCycleWindow", () => {
   });
 });
 
-describe("the cycle surfaces", () => {
+describe("the cycle footnote", () => {
   it("names the window and says filters apply to OMP only when scopes differ", () => {
     render(<Dashboard snapshot={snapshot({ period: { kind: "today" } })} />);
 
     expect(screen.getByTestId("cycle-footnote").textContent).toBe(
       "Cursor shows cycle to date (Aug 26 – Sep 26, 2026) · period filters apply to OMP only",
     );
-    expect(screen.getByTestId("cycle-card").textContent).toContain("Cursor · Cycle to date");
-    expect(screen.getByTestId("cycle-window").textContent).toBe("Aug 26 – Sep 26, 2026");
-    expect(screen.getByTestId("cycle-card").textContent).toContain(
-      "Per-day filtering unavailable without Enterprise API key",
-    );
-    // The cycle rollup, never shrunk to today.
-    expect(screen.getByTestId("cycle-card").textContent).toContain("420K in");
   });
 
   it("keeps the window on all time, where the periods do not clash", () => {
@@ -102,7 +95,6 @@ describe("the cycle surfaces", () => {
     expect(screen.getByTestId("cycle-footnote").textContent).toBe(
       "Cursor shows cycle to date (Aug 26 – Sep 26, 2026)",
     );
-    expect(screen.getByTestId("cycle-window")).toBeTruthy();
   });
 
   it("omits the range when the collector has no window yet", () => {
@@ -111,14 +103,12 @@ describe("the cycle surfaces", () => {
     expect(screen.getByTestId("cycle-footnote").textContent).toBe(
       "Cursor shows cycle to date · period filters apply to OMP only",
     );
-    expect(screen.queryByTestId("cycle-window")).toBeNull();
   });
 
   it("shows nothing for an Enterprise events snapshot", () => {
     render(<Dashboard snapshot={snapshot({ cursor: { mode: "events", events: [] } })} />);
 
     expect(screen.queryByTestId("cycle-footnote")).toBeNull();
-    expect(screen.queryByTestId("cycle-card")).toBeNull();
   });
 });
 

@@ -18,7 +18,7 @@
  */
 
 import { CURSOR_CYCLE_LABEL, type DashboardSnapshot, type Source } from "@prompt-burn/core";
-import { CycleCard, CycleFootnote } from "./CursorCycle.js";
+import { CycleFootnote } from "./CursorCycle.js";
 import { UNKNOWN_COST, formatCents, tokenLine } from "./format.js";
 import { ModelTable } from "./ModelTable.js";
 import { periodLabel } from "./PeriodBar.js";
@@ -248,7 +248,6 @@ export function Dashboard({ snapshot }: DashboardProps) {
           {empty}
         </p>
       )}
-      <CycleCard snapshot={snapshot} />
     </div>
   );
 }
