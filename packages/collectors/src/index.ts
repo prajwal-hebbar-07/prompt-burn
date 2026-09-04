@@ -1,1 +1,8 @@
-export { collectOmpEvents, defaultSessionsDirectory, parseOmpSessionFile } from "./omp.js";
+export {
+  collectOmpEvents,
+  defaultSessionsDirectory,
+  parseOmpSessionFile,
+  scanOmpSessionFile,
+  type OmpFileScan,
+} from "./omp.js";
+export { syncOmpSessions, type OmpSyncResult } from "./sync.js";
