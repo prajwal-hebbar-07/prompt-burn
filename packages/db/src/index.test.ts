@@ -71,6 +71,18 @@ describe("openDatabase", () => {
     // Ollama publishes no cached-input rate for qwen3.5: unknown, not zero.
     const qwen = db.prepare("SELECT * FROM price_entries WHERE model = ?").get("qwen3.5:397b");
     expect(qwen?.["cache_read_per_mtok"]).toBeNull();
+    // Gemini arrives through Antigravity inside OMP; the provider slot is OMP's.
+    const gemini = db.prepare("SELECT * FROM price_entries WHERE model = ?").get("gemini-3.8-flash");
+    expect(gemini).toMatchObject({
+      provider: "google-antigravity",
+      input_per_mtok: 0.75,
+      output_per_mtok: 3.75,
+      cache_read_per_mtok: 0.075,
+      cache_write_per_mtok: 0,
+    });
+    // The Ollama-served open model is not the Google API model.
+    const gemma = db.prepare("SELECT * FROM price_entries WHERE model = ?").get("gemma4");
+    expect(gemma?.["provider"]).toBe("ollama-cloud");
 
     db.close();
   });

@@ -20,7 +20,7 @@ Product decisions live in [product.md](product.md). This file is the build seque
 | By-model table | Rows keyed by `(source, model)`. Same model on both sources = two rows. |
 | Fetch | On open + manual button. No background timers. Spinner while fetching; **keep previous data**. Relative “Fetched N min ago”. On error: keep old data + banner. |
 | Persistence | SQLite at `~/.prompt-burn/db.sqlite`. Outside install dirs so updates/reinstalls keep data. |
-| Prices | Usage stores tokens only. Cost is derived from `price_entries` with `effective_from` / `effective_until`. Adding a price retroactively prices old events. Ship bundled Claude + Ollama Cloud rates. Unknown models surface in Settings. |
+| Prices | Usage stores tokens only. Cost is derived from `price_entries` with `effective_from` / `effective_until`. Adding a price retroactively prices old events. Ship bundled Claude + Ollama Cloud + Google Gemini rates. Unknown models surface in Settings. |
 | OMP cache | Incremental sync keyed on session-file mtime / offset. |
 | VS Code | Opens as an **editor tab** (full width), not a sidebar. |
 | Trust | Local only. Never persist Cursor auth tokens in our DB. |

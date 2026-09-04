@@ -8,6 +8,10 @@
  *   output, read 2026-09-04. Standard rates, not the deepseek peak window.
  *   Ollama Cloud is priced like any other vendor here; OMP reporting
  *   `cost.total: 0` on those lines does not make the tokens free.
+ * - Google Gemini — https://ai.google.dev/gemini-api/docs/pricing, standard
+ *   (not batch / flex / priority) paid-tier rates, read 2026-09-04. Reached
+ *   through Antigravity inside OMP, so `provider` carries OMP's own
+ *   `google-antigravity` slot rather than a bare vendor name.
  *
  * Models keyed by canonical id (`canonicalModelId` in `@prompt-burn/core`), the
  * same string OMP writes. Anything not listed prices as unknown — `—` in the
@@ -55,7 +59,17 @@ export const BUNDLED_PRICES: readonly BundledPrice[] = [
   price("qwen3.5:397b", "ollama-cloud", 0.6, 3.6, null, 0),
   price("gpt-oss:120b", "ollama-cloud", 0.15, 0.6, 0.014, 0),
   price("gpt-oss:20b", "ollama-cloud", 0.07, 0.3, 0.035, 0),
+  // `gemma4` is Google's open model served by Ollama Cloud — not Google Gemini.
   price("gemma4", "ollama-cloud", 0.14, 0.4, 0.05, 0),
+  // Google Gemini via Antigravity: input / output (thinking included) / context
+  // caching. These are the intro rates published through 2026-12-31; every rate
+  // listed doubles on 2027-01-01, which is a close-and-insert (a second row
+  // with a real `effective_from`), never an edit of this one.
+  // Cache write is 0 because Google has no per-token cache-write category: an
+  // implicit cache costs input, and an explicit one is billed as storage per
+  // hour, which is not a token count and is not modelled. OMP reports
+  // `cacheWrite: 0` on every Gemini line, so nothing is silently dropped.
+  price("gemini-3.8-flash", "google-antigravity", 0.75, 3.75, 0.075, 0),
 ];
 
 function price(
