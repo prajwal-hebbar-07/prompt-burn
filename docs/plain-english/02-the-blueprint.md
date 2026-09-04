@@ -2,18 +2,40 @@
 
 **Twin of:** [Product plan and locked decisions](../architecture/02-product-plan.md)
 
-Prompt Burn is going to be a small program that answers one question: "if all the token work my
-coding assistants did this week had been billed at the public pay-per-use rates, what would it
-have cost?" The house is not built yet. What exists today is the blueprint — four documents that
-describe what the tool will do, in what order it gets built, and a list of decisions that are
-locked, meaning nobody is allowed to quietly change them while writing code.
+Prompt Burn is a small program that answers one question: "if all the token work my coding
+assistants did this week had been billed at the public pay-per-use rates, what would it have
+cost?" For a while this was only a blueprint — a list of documents describing what the tool will
+do, in what order it gets built, and a set of decisions that are locked, meaning nobody is
+allowed to quietly change them while writing code. Now the first half of the build has actually
+happened: the engine room is built, and the part of the house you can see and click is still
+being framed.
 
 The four documents, in blueprint terms: `docs/product.md` says what the thing is and why.
 `docs/implementation-plan.md` says how it gets built, step by step, in thirty small steps grouped
 into seven deliveries. `docs/spec.md` is the one-page crib sheet a builder keeps open while
-working — it repeats the locked decisions but none of the reasoning. And `docs/data-shapes.md` is
-the site survey: someone actually went and looked at the real logs and the real website data to
-confirm the measurements the drawings rely on.
+working — it repeats the locked decisions but none of the reasoning. And `docs/data-shapes.md`
+is the site survey: someone actually went and looked at the real logs and the real website data
+to confirm the measurements the drawings rely on.
+
+## Where the build stands
+
+The plan's first twelve steps are done. The maths (counting tokens, filtering by calendar
+periods, working out what each model would cost), the little database in your home folder with
+its price list already filled in, the reading of the assistant's own log files (including
+remembering where it stopped reading each one, so nothing gets counted twice), and the desktop
+app's empty window with the database connected behind it — all of that is built and tested.
+
+What is _not_ built yet is everything the plan lists after step 12: the button that actually
+triggers a fetch, the first real number on screen, and then the full interface, the Cursor side,
+and the VS Code version. Opening the app today shows a placeholder page that admits as much in
+writing. That is the plan working as intended — halfway through the first delivery you can
+actually use.
+
+One deliberate change from the drawings: the plan said the database would use a popular helper
+library to talk to SQLite. The builders instead used the reader built into Node itself — the
+language the rest of the project is written in — which means the whole project still carries no
+dependencies of its own. The drawings were never edited, so the paper and the house disagree on
+this one line, and the code is what counts.
 
 ## The locked decisions
 
@@ -57,7 +79,9 @@ One consequence is spelled out as a promise, because it's easy to get wrong: whe
 "Today", the OMP numbers get filtered to today but the Cursor numbers stay cycle-to-date. The
 big total at the top is then the sum of two different time windows, and the screen must say so
 out loud — for example, "OMP: Today · Cursor: cycle to date". It must never pretend Cursor
-numbers fit into today by inventing a day-by-day breakdown that doesn't exist.
+numbers fit into today by inventing a day-by-day breakdown that doesn't exist. This promise now
+lives in the built code as well as on paper: the data shape that the screen will eventually
+render already carries a flag saying "these two halves cover different time windows".
 
 ## The honest part
 
@@ -80,8 +104,12 @@ deferred. Nobody should add any of them until asked.
 
 ## What is not proven
 
-The survey was done on one machine on one day. Some things it states are honest unknowns: the
-mapping between Cursor's model names and public prices is only partly verified, Cursor's
-`default` (Auto) model has real usage but no public price, so "unknown price — shown as a dash,
-never as $0" is a normal state, not a rare glitch. And there is no test suite yet — every
-promise on this page is enforced by humans reading documents, not by machines.
+Some things the survey states are honest unknowns: the mapping between Cursor's model names and
+public prices is only partly verified, Cursor's `default` (Auto) model has real usage but no
+public price, so "unknown price — shown as a dash, never as $0" is a normal state, not a rare
+glitch.
+
+The old honest line "there is no test suite yet" is no longer true — every step that has landed
+came with its own tests, and they all pass. What is still enforced only by humans reading
+documents is the paper itself: nothing checks that the three copies of the locked-decisions
+table agree with each other, or that links between documents still point anywhere.

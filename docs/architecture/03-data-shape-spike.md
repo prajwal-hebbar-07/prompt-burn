@@ -19,14 +19,14 @@ documents.
 
 ## 2. Inventory
 
-| File | Kind | Role |
-|------|------|------|
-| `scripts/spike/dump-shapes.mjs` | Script | Samples both sources; prints shapes, dumps raw JSON |
-| `docs/data-shapes.md` | Document | Findings: field mappings, dedupe key, the date-window finding |
-| `docs/fixtures/omp-session-line.json` | Fixture | One OMP assistant line, redacted |
-| `docs/fixtures/cursor-cycle-aggregates.json` | Fixture | Per-model aggregate response, one cycle |
-| `docs/fixtures/cursor-usage-summary.json` | Fixture | Cycle dates + membership type + quotas |
-| `out/` | Runtime output | Gitignored; UNREDACTED dumps when the script gets a directory |
+| File                                         | Kind           | Role                                                          |
+| -------------------------------------------- | -------------- | ------------------------------------------------------------- |
+| `scripts/spike/dump-shapes.mjs`              | Script         | Samples both sources; prints shapes, dumps raw JSON           |
+| `docs/data-shapes.md`                        | Document       | Findings: field mappings, dedupe key, the date-window finding |
+| `docs/fixtures/omp-session-line.json`        | Fixture        | One OMP assistant line, redacted                              |
+| `docs/fixtures/cursor-cycle-aggregates.json` | Fixture        | Per-model aggregate response, one cycle                       |
+| `docs/fixtures/cursor-usage-summary.json`    | Fixture        | Cycle dates + membership type + quotas                        |
+| `out/`                                       | Runtime output | Gitignored; UNREDACTED dumps when the script gets a directory |
 
 ## 3. Public surface
 
