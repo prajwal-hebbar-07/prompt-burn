@@ -5,6 +5,7 @@ export {
   type CursorAuthUnavailable,
   type CursorToken,
 } from "./cursor-auth.js";
+export { fetchCursorCycle } from "./cursor.js";
 export {
   collectOmpEvents,
   defaultSessionsDirectory,
