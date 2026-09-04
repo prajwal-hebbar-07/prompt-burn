@@ -13,15 +13,19 @@ what to build, not what exists. What exists is documented by the numbered pairs 
 Every numbered area is documented twice — one technical reading, one plain-English reading.
 Same number, same subject.
 
-| # | Area | Architecture | Plain English |
-|---|------|--------------|---------------|
-| 01 | Repo scaffold and workspace tooling | [01-repo-scaffold.md](architecture/01-repo-scaffold.md) | [01-the-workshop.md](plain-english/01-the-workshop.md) |
-| 02 | Product plan and locked decisions | [02-product-plan.md](architecture/02-product-plan.md) | [02-the-blueprint.md](plain-english/02-the-blueprint.md) |
-| 03 | Data-shape spike (OMP and Cursor) | [03-data-shape-spike.md](architecture/03-data-shape-spike.md) | [03-the-probe.md](plain-english/03-the-probe.md) |
+| #   | Area                                            | Architecture                                                  | Plain English                                                  |
+| --- | ----------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------- |
+| 01  | Repo scaffold and workspace tooling             | [01-repo-scaffold.md](architecture/01-repo-scaffold.md)       | [01-the-workshop.md](plain-english/01-the-workshop.md)         |
+| 02  | Product plan and locked decisions               | [02-product-plan.md](architecture/02-product-plan.md)         | [02-the-blueprint.md](plain-english/02-the-blueprint.md)       |
+| 03  | Data-shape spike (OMP and Cursor)               | [03-data-shape-spike.md](architecture/03-data-shape-spike.md) | [03-the-probe.md](plain-english/03-the-probe.md)               |
+| 04  | Core domain (types, period filter, aggregation) | [04-core-domain.md](architecture/04-core-domain.md)           | [04-the-ledger.md](plain-english/04-the-ledger.md)             |
+| 05  | The database (packages/db)                      | [05-database.md](architecture/05-database.md)                 | [05-the-file-cabinet.md](plain-english/05-the-file-cabinet.md) |
+| 06  | OMP collector (packages/collectors)             | [06-omp-collector.md](architecture/06-omp-collector.md)       | [06-the-harvester.md](plain-english/06-the-harvester.md)       |
+| 07  | Desktop shell (Tauri v2 + Node sidecar)         | [07-desktop-shell.md](architecture/07-desktop-shell.md)       | [07-the-front-door.md](plain-english/07-the-front-door.md)     |
 
-Numbers are append-only. Future areas (`packages/core`, `packages/db`, `packages/collectors`,
-`packages/ui`, `apps/desktop`, `apps/vscode`) take 04+ when their first real commit lands — the
-implementation plan forbids scaffolding empty packages, so no pair exists before its code does.
+Numbers are append-only. Future areas (`packages/ui`, `apps/vscode`) take 08+ when their first
+real commit lands — the implementation plan forbids scaffolding empty packages, so no pair
+exists before its code does.
 
 ## Architecture docs
 
@@ -40,8 +44,9 @@ areas, and contradicted decisions appear here too.
 The pairs are read against a stored baseline; anything committed after it may not be documented
 yet. Advance it only after a docs sweep re-read every pair the diff touched.
 
-- Baseline: `836d6c3` — 2026-09-02 (`feat: add data-shape spike for OMP and Cursor usage`),
-  bootstrapped 2026-09-03.
+- Baseline: `325b156` — 2026-09-04 (`feat(desktop): add Tauri shell with Node sidecar`),
+  swept 2026-09-04 (pairs 01–02 refreshed; 04–07 opened).
 
+<!-- docs-baseline: 325b156ac4fb35fea509305ade7cbc8d26e1c2be -->
 <!-- parent-owned: area table, blurbs, baseline. Pair docs live in architecture/ and
 plain-english/. -->
