@@ -2,6 +2,7 @@
 
 Spiked on this machine (macOS, 2026-09-02) before freezing `packages/core` types in commit 4.
 Fixtures: [`fixtures/omp-session-line.json`](fixtures/omp-session-line.json),
+[`fixtures/omp-gemini-session-line.json`](fixtures/omp-gemini-session-line.json),
 [`fixtures/cursor-cycle-aggregates.json`](fixtures/cursor-cycle-aggregates.json),
 [`fixtures/cursor-usage-summary.json`](fixtures/cursor-usage-summary.json).
 A second OMP scan on 2026-09-04 added Gemini through Antigravity — see
@@ -110,9 +111,12 @@ Field differences from the 2026-09-02 Anthropic fixture, across those 374 lines:
   the estimate is recomputed from `price_entries` for Gemini lines exactly as for every other
   line.
 
-No Gemini fixture is committed. Capturing one means redacting `cwd`, `responseId` and message
-content out of a live transcript, and nothing downstream needs a fixture until a Google rate
-exists to price it against.
+Fixture: [`fixtures/omp-gemini-session-line.json`](fixtures/omp-gemini-session-line.json) — one
+real assistant turn (4159 input / 155 output / 187535 cacheRead / 0 cacheWrite, 110
+`reasoningTokens`), message content replaced with `REDACTED` and nothing else altered.
+`packages/collectors` prices it from the bundled rate to a locked **1.7765625 cents**; the line's
+own `usage.cost.total` ($0.017765625) agrees to the fraction, which is all that number is good
+for — the estimate still comes from `price_entries`.
 
 ### Per-account split: not needed, and not possible here
 
