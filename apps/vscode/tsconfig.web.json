@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node", "vite/client"]
+  },
+  "include": ["web/**/*.ts", "web/**/*.tsx", "vite.config.mts", "vitest.config.mts"]
+}

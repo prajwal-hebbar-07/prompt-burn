@@ -12,13 +12,20 @@ implementation the desktop sidecar runs, so `discover` / `fetch` /
 `getSnapshot` behave identically in both shells and neither re-parses OMP
 transcripts nor re-reads Cursor's `state.vscdb`.
 
-The tab itself still shows a placeholder line: nothing in `extension.ts` calls
-the reader, webview scripts stay off, and `@prompt-burn/ui` is not hosted yet.
-That is the next commit — `postMessage` between the tab and this reader.
+The tab renders `@prompt-burn/ui` — the same `AppShell`, Dashboard and
+Settings the desktop window mounts, no second dashboard. `web/` is the bundle
+(Vite, React, Tailwind); it never imports the reader, the db or the collectors.
+It asks this host over `postMessage` and gets a `DashboardSnapshot` back:
+`fetch` runs the collector pass then re-reads the snapshot, `getSnapshot`
+re-aggregates what is already stored. Fetch happens once when the tab opens and
+again only on **Fetch data**; a period change is a `getSnapshot`, never a fetch,
+and a failed fetch keeps the previous numbers on screen.
+
+Settings are display only — writes are commit 28.
 
 ```sh
-pnpm --filter prompt-burn-vscode build   # tsc -> out/, what `main` points at
-pnpm --filter prompt-burn-vscode test    # ids match the manifest; reader reads
+pnpm --filter prompt-burn-vscode build   # tsc -> out/ (host) + vite -> dist/ (webview)
+pnpm --filter prompt-burn-vscode test    # host protocol, tab wiring, manifest ids
 ```
 
 Opening the tab itself is checked by hand: build, run the extension in an
