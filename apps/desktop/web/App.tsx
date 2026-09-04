@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { buildDashboardSnapshot, type DashboardSnapshot } from "@prompt-burn/core";
-import { Dashboard } from "@prompt-burn/ui";
+import { AppShell } from "@prompt-burn/ui";
 import { fetchUsage, getSnapshot } from "./sidecar.js";
 
 /** Before the first answer: the never-fetched surface — `—`, Not fetched yet. */
@@ -47,5 +47,5 @@ export function App() {
     ? { ...snapshot, fetch: { ...snapshot.fetch, status: "fetching" } }
     : snapshot;
 
-  return <Dashboard snapshot={shown} onFetch={() => void refresh()} />;
+  return <AppShell snapshot={shown} onFetch={() => void refresh()} />;
 }

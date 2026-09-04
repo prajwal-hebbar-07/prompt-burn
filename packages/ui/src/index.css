@@ -1,2 +1,100 @@
 /* The host imports this file and runs Tailwind over its own source tree. */
 @import "tailwindcss";
+
+/*
+ * Design tokens from Paper (`prompt-burn` / `v0-designs`). Amber is brand and
+ * actions; teal is OMP; violet is Cursor. The semantic success/warning/error/
+ * info colours are never source identity, and a source colour is always paired
+ * with a text label wherever a source is shown.
+ *
+ * Dark values ship as their own token names so later commits can consume them.
+ * There is no theme switcher: nothing selects the `dark-*` set yet.
+ *
+ * Font families are Paper's, with local fallbacks because neither Inter nor
+ * JetBrains Mono is bundled with the app.
+ */
+@theme {
+  --color-background: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f1f1f3;
+  --color-border: #dedee3;
+  --color-foreground: #18181b;
+  --color-foreground-secondary: #52525b;
+  --color-foreground-muted: #71717a;
+  --color-brand: #d97706;
+  --color-brand-subtle: #fff7ed;
+  --color-source-omp: #0f766e;
+  --color-source-omp-subtle: #f0fdfa;
+  --color-source-cursor: #6d28d9;
+  --color-source-cursor-subtle: #f5f3ff;
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-error: #b91c1c;
+  --color-info: #1d4ed8;
+
+  --color-dark-background: #111113;
+  --color-dark-surface: #18181b;
+  --color-dark-surface-subtle: #202024;
+  --color-dark-surface-raised: #252529;
+  --color-dark-border: #34343a;
+  --color-dark-foreground: #f4f4f5;
+  --color-dark-foreground-secondary: #d4d4d8;
+  --color-dark-foreground-muted: #a1a1aa;
+  --color-dark-brand: #f59e0b;
+  --color-dark-brand-subtle: #2b2111;
+  --color-dark-source-omp: #2dd4bf;
+  --color-dark-source-omp-subtle: #102a27;
+  --color-dark-source-cursor: #a78bfa;
+  --color-dark-source-cursor-subtle: #241b3a;
+  --color-dark-success: #4ade80;
+  --color-dark-warning: #fbbf24;
+  --color-dark-error: #f87171;
+  --color-dark-info: #60a5fa;
+
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-table: 11px;
+  --text-small: 12px;
+  --text-body: 14px;
+  --text-section: 16px;
+  --text-title: 24px;
+  --text-display: 36px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.06em;
+
+  --leading-table: 14px;
+  --leading-small: 16px;
+  --leading-body: 20px;
+  --leading-section: 24px;
+  --leading-title: 32px;
+  --leading-display: 40px;
+
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  --container-vscode: 900px;
+  --container-content: 1100px;
+  --container-desktop: 1280px;
+
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-12: 48px;
+
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-popover: 10px;
+  --radius-full: 9999px;
+}
