@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { databasePath, estimateCents, openDatabase, resolvePrice } from "./index.js";
+import {
+  SEED_EFFECTIVE_FROM,
+  databasePath,
+  estimateCents,
+  insertPriceEntry,
+  openDatabase,
+  resolvePrice,
+} from "./index.js";
 
 let home: string;
 let db: DatabaseSync;
@@ -72,7 +79,8 @@ describe("resolvePrice", () => {
   });
 
   it("returns null for models nobody has priced", () => {
-    // Cursor Auto and Cursor-hosted models have no public rate until commit 28.
+    // Cursor Auto and Cursor-hosted models have no public rate to bundle; a
+    // Settings insert is the only way they get one.
     expect(resolvePrice(db, "default", "2026-09-02T08:31:31.505Z")).toBeNull();
     expect(resolvePrice(db, "cursor-grok-4.6-high", "2026-09-02T08:31:31.505Z")).toBeNull();
     expect(resolvePrice(db, "gpt-5.6-sol-medium", "2026-09-02T08:31:31.505Z")).toBeNull();
@@ -106,7 +114,7 @@ describe("retroactive pricing", () => {
     const before = db.prepare("SELECT * FROM usage_events WHERE id = 'omp:s1:1'").get();
     expect(resolvePrice(db, "brand-new-model", timestamp)).toBeNull();
 
-    // Settings inserts a price (commit 28 does this from the UI).
+    // Settings inserts a price; `insertPriceEntry` is that path.
     addPrice("brand-new-model", "1970-01-01T00:00:00Z", null, 5, 25);
 
     expect(resolvePrice(db, "brand-new-model", timestamp)?.inputPerMtok).toBe(5);
@@ -124,6 +132,29 @@ describe("retroactive pricing", () => {
 
     expect(resolvePrice(db, "claude-sonnet-5", timestamp)?.inputPerMtok).toBe(2);
     expect(resolvePrice(db, "claude-sonnet-5", "2026-11-01T00:00:00Z")?.inputPerMtok).toBe(3);
+  });
+
+  it("covers stored history and cycle aggregates when Settings adds a rate", () => {
+    insertEvent("cursor-grok-4.6-high");
+
+    insertPriceEntry(db, {
+      model: "cursor-grok-4.6-high",
+      provider: "custom",
+      inputPerMtok: 3,
+      outputPerMtok: 15,
+      cacheReadPerMtok: 0.3,
+      cacheWritePerMtok: null,
+    });
+
+    const rate = resolvePrice(db, "cursor-grok-4.6-high", timestamp);
+    // Backdated and open-ended: the event already on disk prices, and so does
+    // a cycle aggregate, which the reader resolves at the current instant.
+    expect(rate?.effectiveFrom).toBe(SEED_EFFECTIVE_FROM);
+    expect(rate?.effectiveUntil).toBeNull();
+    expect(estimateCents(rate, { input: 1_000_000, output: 0 })).toBe(300);
+    expect(resolvePrice(db, "cursor-grok-4.6-high", new Date().toISOString())).not.toBeNull();
+    // A blank cache-write rate stays unknown, never free.
+    expect(estimateCents(rate, { input: 10, output: 0, cacheWrite: 5 })).toBeNull();
   });
 });
 

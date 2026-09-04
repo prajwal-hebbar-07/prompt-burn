@@ -20,10 +20,18 @@ import { BUNDLED_PRICES, SEED_EFFECTIVE_FROM } from "./prices.js";
 export { BUNDLED_PRICES, SEED_EFFECTIVE_FROM, type BundledPrice } from "./prices.js";
 export {
   estimateCents,
+  insertPriceEntry,
   resolvePrice,
+  type NewPriceEntry,
   type PriceRate,
   type TokenCounts,
 } from "./pricing.js";
+export {
+  DEFAULT_SETTINGS,
+  readSettings,
+  writeSettings,
+  type AppSettings,
+} from "./settings.js";
 export { loadUsageEvents } from "./events.js";
 
 /** Application data directory, e.g. `/Users/you/.prompt-burn`. */

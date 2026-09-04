@@ -12,8 +12,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { buildDashboardSnapshot, type DashboardSnapshot, type PeriodFilter } from "@prompt-burn/core";
-import { AppShell } from "@prompt-burn/ui";
-import { fetchUsage, getSnapshot } from "./sidecar.js";
+import { AppShell, type NewPriceInput, type SourceSettings } from "@prompt-burn/ui";
+import { addPrice, fetchUsage, getSettings, getSnapshot, saveSettings } from "./sidecar.js";
 
 /** Paper's default wireframe is "This month"; product calls it a calendar month. */
 const DEFAULT_PERIOD: PeriodFilter = { kind: "this_month" };
@@ -29,6 +29,7 @@ export function App() {
   const [snapshot, setSnapshot] = useState(NEVER_FETCHED);
   const [period, setPeriod] = useState(DEFAULT_PERIOD);
   const [fetching, setFetching] = useState(false);
+  const [settings, setSettings] = useState<SourceSettings>();
 
   const refresh = useCallback(async (target: PeriodFilter) => {
     setFetching(true);
@@ -60,23 +61,56 @@ export function App() {
     }
   }, []);
 
-  /** A period change re-aggregates stored events; it syncs nothing. */
-  const changePeriod = useCallback((target: PeriodFilter) => {
-    setPeriod(target);
-    void (async () => {
-      try {
-        const fetched = await getSnapshot(target);
-        // The previous fetch bookkeeping survives: nothing was fetched here.
-        setSnapshot((previous) => ({ ...fetched, fetch: previous.fetch }));
-      } catch (error) {
-        console.error("prompt-burn: snapshot failed", error);
-      }
-    })();
+  /** Re-aggregates the stored rows for one period. Not a fetch: nothing syncs. */
+  const reloadSnapshot = useCallback(async (target: PeriodFilter) => {
+    try {
+      const fetched = await getSnapshot(target);
+      // The previous fetch bookkeeping survives: nothing was fetched here.
+      setSnapshot((previous) => ({ ...fetched, fetch: previous.fetch }));
+    } catch (error) {
+      console.error("prompt-burn: snapshot failed", error);
+    }
   }, []);
+
+  /** A period change re-aggregates stored events; it syncs nothing. */
+  const changePeriod = useCallback(
+    (target: PeriodFilter) => {
+      setPeriod(target);
+      void reloadSnapshot(target);
+    },
+    [reloadSnapshot],
+  );
+
+  const saveSources = useCallback((next: SourceSettings) => {
+    void saveSettings(next).then(setSettings, (error: unknown) =>
+      console.error("prompt-burn: settings write failed", error),
+    );
+  }, []);
+
+  /**
+   * A new rate re-prices tokens that are already stored, so this re-reads the
+   * snapshot instead of fetching: no source is contacted, no row is rewritten.
+   */
+  const applyPrice = useCallback(
+    (price: NewPriceInput) => {
+      void addPrice(price)
+        .then(() => reloadSnapshot(period))
+        .catch((error: unknown) => console.error("prompt-burn: price insert failed", error));
+    },
+    [period, reloadSnapshot],
+  );
 
   useEffect(() => {
     void refresh(DEFAULT_PERIOD);
   }, [refresh]);
+
+  // Read after the open fetch is already in flight: the window must not wait on
+  // settings to show a number.
+  useEffect(() => {
+    void getSettings().then(setSettings, (error: unknown) =>
+      console.error("prompt-burn: settings read failed", error),
+    );
+  }, []);
 
   const shown: DashboardSnapshot = fetching
     ? { ...snapshot, fetch: { ...snapshot.fetch, status: "fetching" } }
@@ -88,6 +122,7 @@ export function App() {
       period={period}
       onPeriodChange={changePeriod}
       onFetch={() => void refresh(period)}
+      settings={{ ...settings, onSave: saveSources, onAddPrice: applyPrice }}
     />
   );
 }
