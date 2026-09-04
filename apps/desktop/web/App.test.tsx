@@ -11,7 +11,11 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { buildDashboardSnapshot, type DashboardSnapshot } from "@prompt-burn/core";
+import {
+  buildDashboardSnapshot,
+  type DashboardSnapshot,
+  type PeriodFilter,
+} from "@prompt-burn/core";
 
 const invoke = vi.fn<(command: string, args: { request: string }) => Promise<string>>();
 vi.mock("@tauri-apps/api/core", () => ({
@@ -38,16 +42,22 @@ interface FakeSidecar {
   fetchOk: boolean;
   snapshot: DashboardSnapshot;
   methods: string[];
+  /** The `period` every `getSnapshot` was asked for, in order. */
+  periods: PeriodFilter[];
 }
 
 let sidecar: FakeSidecar;
 
 beforeEach(() => {
-  sidecar = { fetchOk: true, snapshot: snapshotWith(2421.775), methods: [] };
+  sidecar = { fetchOk: true, snapshot: snapshotWith(2421.775), methods: [], periods: [] };
   vi.spyOn(console, "error").mockImplementation(() => {});
 
   invoke.mockImplementation(async (_command, args) => {
-    const { id, method } = JSON.parse(args.request) as { id: number; method: string };
+    const { id, method, period } = JSON.parse(args.request) as {
+      id: number;
+      method: string;
+      period?: PeriodFilter;
+    };
     sidecar.methods.push(method);
 
     if (method === "fetch") {
@@ -58,6 +68,7 @@ beforeEach(() => {
       return JSON.stringify({ type: "response", id, ok: true, result });
     }
     if (method === "getSnapshot") {
+      if (period) sidecar.periods.push(period);
       return JSON.stringify({ type: "response", id, ok: true, result: sidecar.snapshot });
     }
     return JSON.stringify({ type: "response", id, ok: false, error: `unknown method ${method}` });
@@ -136,4 +147,66 @@ it("keeps the last good snapshot when a fetch fails", async () => {
   expect(total()).toBe("$24.22");
   expect(status()).toBe(fetchedLabel);
   expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "fetch"]);
+});
+
+it("opens on this month and re-reads the snapshot for a new period, without fetching", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await waitFor(() => expect(total()).toBe("$24.22"));
+  expect(sidecar.periods).toEqual([{ kind: "this_month" }]);
+  const fetchedLabel = status();
+
+  sidecar.snapshot = snapshotWith(500);
+  await user.click(screen.getByRole("button", { name: "Today" }));
+
+  await waitFor(() => expect(total()).toBe("$5.00"));
+  // A period change re-aggregates: one more getSnapshot, no second fetch, and
+  // the fetch bookkeeping (and so the status label) is untouched.
+  expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "getSnapshot"]);
+  expect(sidecar.periods).toEqual([{ kind: "this_month" }, { kind: "today" }]);
+  expect(status()).toBe(fetchedLabel);
+  expect(screen.queryByTestId("spinner")).toBeNull();
+});
+
+it("sends an applied date range as inclusive local dates", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await waitFor(() => expect(total()).toBe("$24.22"));
+
+  // The calendar opens on the current month; the 1st is always in it.
+  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const iso = `${firstOfMonth.getFullYear()}-${String(firstOfMonth.getMonth() + 1).padStart(2, "0")}-01`;
+  const dayLabel = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(firstOfMonth);
+
+  await user.click(screen.getByRole("button", { name: "Date range" }));
+  await user.click(screen.getByRole("button", { name: dayLabel }));
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+
+  // One clicked day is a single inclusive day, dated in the device timezone.
+  await waitFor(() => expect(sidecar.periods.at(-1)).toEqual({ kind: "range", start: iso, end: iso }));
+  expect(screen.getByTestId("period-chip").textContent).toContain(dayLabel);
+  expect(sidecar.methods.filter((method) => method === "fetch")).toHaveLength(1);
+});
+
+it("navigates to Settings without calling fetch or writing sidecar state", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await waitFor(() => expect(total()).toBe("$24.22"));
+  const methodsBefore = [...sidecar.methods];
+
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+
+  expect(screen.getByRole("heading", { name: "Settings", level: 2 })).toBeTruthy();
+  expect(screen.getByText("Oh My Pi (OMP)")).toBeTruthy();
+  expect(screen.getByText("Cursor")).toBeTruthy();
+  expect(screen.getByTestId("db-path").textContent).toBe("~/.prompt-burn/db.sqlite");
+  expect(screen.queryByRole("group", { name: "Period" })).toBeNull();
+  expect(screen.queryByTestId("estimated-total")).toBeNull();
+
+  // Navigating to Settings is pure view state: no extra fetch, no write side-effects.
+  expect(sidecar.methods).toEqual(methodsBefore);
 });

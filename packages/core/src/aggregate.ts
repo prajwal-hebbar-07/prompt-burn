@@ -109,7 +109,14 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
     cursor: {
       ...cursorRollup.totals,
       mode: cursor.mode,
-      ...(cursor.mode === "cycle_aggregate" ? { cycleLabel: CURSOR_CYCLE_LABEL } : {}),
+      // The window is carried for labelling only; it never bounds the rollup.
+      ...(cursor.mode === "cycle_aggregate"
+        ? {
+            cycleLabel: CURSOR_CYCLE_LABEL,
+            cycleStart: cursor.cycleStart,
+            cycleEnd: cursor.cycleEnd,
+          }
+        : {}),
     },
     models: [...omp.rows, ...cursorRollup.rows],
     // All-time is the one period a cycle-to-date Cursor total does not clash

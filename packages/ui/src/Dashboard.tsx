@@ -1,98 +1,143 @@
 /**
- * The shared React surface: one screen, props only.
+ * The Dashboard route body: the hero totals card, then the by-model table.
+ *
+ * Combined estimate, then both source subtotals — always both, never deduped,
+ * never re-derived here. Cursor Pro is cycle-to-date whatever the period is, so
+ * when `mixedPeriod` is set the subtitle names both scopes; the cycle's own
+ * dates are the cycle banner's job, not this card's.
  *
  * This package never touches a filesystem, a network, the collectors, the
- * database or the sidecar. Both shells pass a `DashboardSnapshot` in and wire
- * `onFetch` to their own host plumbing (desktop: sidecar protocol; VS Code:
- * extension host). Rendering is all that happens here.
+ * database or the sidecar: hosts pass a `DashboardSnapshot` in and rendering is
+ * all that happens here.
  */
 
-import { useEffect, useState } from "react";
-import type { DashboardSnapshot } from "@prompt-burn/core";
+import { CURSOR_CYCLE_LABEL, type DashboardSnapshot } from "@prompt-burn/core";
+import { CycleCard, CycleFootnote } from "./CursorCycle.js";
+import { formatCost, tokenLine } from "./format.js";
+import { ModelTable } from "./ModelTable.js";
+import { periodLabel } from "./PeriodBar.js";
 
-/** Em dash for every unknown cost — never `$0`. */
-const UNKNOWN_COST = "—";
+/** Product's exact sentence for a successful fetch with nothing in it. */
+const NO_USAGE = "No OMP or Cursor usage for this period";
 
-/** Formats fractional cents as USD with 2 decimals: 1234.5 -> "$12.35". */
-export function formatCents(cents: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
-}
+/** Before the first successful fetch there is nothing to be zero about. */
+const NOT_FETCHED = "No usage data yet";
 
 /** The combined total, or the em dash when any price is unknown. */
 export function formatEstimatedTotal(snapshot: DashboardSnapshot): string {
-  return snapshot.estimatedCents === null ? UNKNOWN_COST : formatCents(snapshot.estimatedCents);
+  return formatCost(snapshot.estimatedCents);
 }
 
-/** `Fetched 3 min ago`, per docs/product.md; "just now" under a minute. */
-export function fetchedAgoLabel(iso: string, now: Date): string {
-  const seconds = Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 1000));
-  if (seconds < 60) return "Fetched just now";
-  const minutes = Math.round(seconds / 60);
-  return `Fetched ${minutes} min ago`;
+/**
+ * The body copy for an empty period, or `null` when there is data to show.
+ *
+ * Never fetched and fetched-but-empty are different states: only a successful
+ * fetch can say the period really had no usage. A fetch in flight keeps
+ * whatever the previous snapshot had — this only decides the empty body.
+ */
+export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
+  const tokens = [snapshot.omp.tokens, snapshot.cursor.tokens];
+  const used =
+    snapshot.models.length > 0 ||
+    tokens.some((t) => t.input + t.output + (t.cacheRead ?? 0) + (t.cacheWrite ?? 0) > 0);
+  if (used) return null;
+  return snapshot.fetch.lastSuccessAt === null ? NOT_FETCHED : NO_USAGE;
 }
 
-/** `Not fetched yet`, `Fetching…` or `Fetched N min ago` — never an empty string. */
-export function fetchStatusLabel(
-  snapshot: DashboardSnapshot,
-  now: Date,
-): string {
-  if (snapshot.fetch.status === "fetching") return "Fetching…";
-  if (snapshot.fetch.status === "error") return "Not fetched yet";
-  const at = snapshot.fetch.lastSuccessAt;
-  return at === null ? "Not fetched yet" : fetchedAgoLabel(at, now);
+/**
+ * `Estimated total · OMP: Today · Cursor: cycle to date` while the scopes
+ * differ, otherwise `Estimated total · This month`. Locked in product.md and
+ * spec.md — every mixed period names both scopes, not just Today.
+ */
+export function heroSubtitle(snapshot: DashboardSnapshot): string {
+  const period = periodLabel(snapshot.period);
+  if (!snapshot.mixedPeriod) return `Estimated total · ${period}`;
+  const cycle = (snapshot.cursor.cycleLabel ?? CURSOR_CYCLE_LABEL).toLowerCase();
+  return `Estimated total · OMP: ${period} · Cursor: ${cycle}`;
 }
 
-/** Re-renders on an interval so `Fetched N min ago` stays roughly current. */
-function useRoughlyMinuteClock(tickMs = 30_000): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    // ponytail: a bare interval on mount is enough for the one timed label;
-    // make it configurable if a second timed surface ever appears.
-    const timer = setInterval(() => setNow(new Date()), tickMs);
-    return () => clearInterval(timer);
-  }, [tickMs]);
-  return now;
+interface SubtotalRowProps {
+  testId: string;
+  label: string;
+  /** Token class for the source dot; the label always travels with it. */
+  dotClass: string;
+  cents: number | null;
+}
+
+/** One source line: colored dot, text label, amount. Never hidden. */
+function SubtotalRow({ testId, label, dotClass, cents }: SubtotalRowProps) {
+  return (
+    <div data-testid={testId} className="flex items-center justify-between py-1">
+      <span className="flex items-center gap-2 text-body">
+        <span aria-hidden="true" className={`size-2 rounded-full ${dotClass}`} />
+        {label}
+      </span>
+      <span className="text-body font-medium tabular-nums">{formatCost(cents)}</span>
+    </div>
+  );
 }
 
 export interface DashboardProps {
   snapshot: DashboardSnapshot;
-  /** Clicking "Fetch data" — the host owns the actual fetch. */
-  onFetch?: () => void;
-  /** Injectable clock for the relative label; defaults to the wall clock. */
-  now?: () => Date;
 }
 
-/** The minimal dashboard: one estimated total, a Fetch data button, a label. */
-export function Dashboard({ snapshot, onFetch, now }: DashboardProps) {
-  // The hook always runs; an injected clock only overrides what it reads.
-  const ticking = useRoughlyMinuteClock();
-  const label = fetchStatusLabel(snapshot, now ? now() : ticking);
+export function Dashboard({ snapshot }: DashboardProps) {
+  const cursorLabel = snapshot.cursor.cycleLabel
+    ? `Cursor (${snapshot.cursor.cycleLabel.toLowerCase()})`
+    : "Cursor";
+  const empty = emptyStateMessage(snapshot);
+
   return (
-    <main aria-label="Prompt Burn dashboard" className="mx-auto max-w-xl p-8">
-      <p className="text-sm text-stone-500">Estimated total</p>
-      <p data-testid="estimated-total" className="text-4xl font-semibold tabular-nums">
-        {formatEstimatedTotal(snapshot)}
-      </p>
-      <div className="mt-6 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onFetch}
-          disabled={snapshot.fetch.status === "fetching"}
-          className="rounded-md bg-stone-800 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+    <div className="flex flex-col gap-6">
+      <CycleFootnote snapshot={snapshot} />
+      <section
+        aria-labelledby="hero-subtitle"
+        className="rounded-card border border-border bg-surface p-6"
+      >
+        <p
+          id="hero-subtitle"
+          data-testid="hero-subtitle"
+          className="text-small leading-small text-foreground-muted"
         >
-          Fetch data
-        </button>
-        {snapshot.fetch.status === "fetching" ? (
-          <span
-            data-testid="spinner"
-            aria-hidden="true"
-            className="size-3 animate-spin rounded-full border-2 border-stone-300 border-t-stone-700"
+          {heroSubtitle(snapshot)}
+        </p>
+        <p
+          data-testid="estimated-total"
+          className="mt-1 text-display leading-display font-semibold tracking-tight tabular-nums"
+        >
+          {formatEstimatedTotal(snapshot)}
+        </p>
+
+        <div className="mt-4 border-t border-border pt-3">
+          <SubtotalRow
+            testId="omp-subtotal"
+            label="OMP"
+            dotClass="bg-source-omp"
+            cents={snapshot.omp.estimatedCents}
           />
-        ) : null}
-        <span data-testid="fetch-status" className="text-sm text-stone-500">
-          {label}
-        </span>
-      </div>
-    </main>
+          <SubtotalRow
+            testId="cursor-subtotal"
+            label={cursorLabel}
+            dotClass="bg-source-cursor"
+            cents={snapshot.cursor.estimatedCents}
+          />
+        </div>
+
+        <p
+          data-testid="token-breakdown"
+          className="mt-3 text-small leading-small text-foreground-muted"
+        >
+          {tokenLine(snapshot.omp.tokens, snapshot.cursor.tokens)}
+        </p>
+      </section>
+      {empty === null ? (
+        <ModelTable rows={snapshot.models} />
+      ) : (
+        <p data-testid="empty-state" className="text-body text-foreground-secondary">
+          {empty}
+        </p>
+      )}
+      <CycleCard snapshot={snapshot} />
+    </div>
   );
 }
