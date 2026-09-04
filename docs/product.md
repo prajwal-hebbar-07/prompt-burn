@@ -39,7 +39,9 @@ Two sources only.
 | **Cursor (Pro, default)** | Dashboard API cycle aggregates (`GetAggregatedUsageEvents`), auth from local `state.vscdb` | **Billing cycle only** — labeled **“Cycle to date”** | Same price DB |
 | **Cursor (Enterprise, optional)** | Admin API usage events with a `crsr_` key | Per-event timestamps → calendar filters work | Same price DB |
 
-OMP usage in this household: two Claude Pro subscriptions and one Ollama Cloud API key. **Do not split by account.** Model-level breakdown is enough.
+OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split by account.** Model-level breakdown is enough.
+
+Gemini is **not a third source.** It reaches OMP through Antigravity, so its turns are ordinary OMP session-log lines (`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage. It has no bundled rate yet, so it shows as an unpriced model row — `—`, never `$0`.
 
 Cursor **subscription remaining / plan % / quota tiles are out of scope.** Only model usage → estimated cost.
 

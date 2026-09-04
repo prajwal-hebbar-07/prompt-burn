@@ -4,6 +4,8 @@ Spiked on this machine (macOS, 2026-09-02) before freezing `packages/core` types
 Fixtures: [`fixtures/omp-session-line.json`](fixtures/omp-session-line.json),
 [`fixtures/cursor-cycle-aggregates.json`](fixtures/cursor-cycle-aggregates.json),
 [`fixtures/cursor-usage-summary.json`](fixtures/cursor-usage-summary.json).
+A second OMP scan on 2026-09-04 added Gemini through Antigravity — see
+[Gemini through Antigravity](#gemini-through-antigravity--second-scan-2026-09-04).
 
 **Headline answer: yes — Cursor Pro returns per-model input / output / cache tokens on this
 account.** The dashboard's core assumption holds. One locked decision is wrong, though: see
@@ -42,7 +44,7 @@ User messages, `custom`, `title_change`, `service_tier_change`, `credential_pin`
 | `id` | `` `omp:${session.id}:${line.id}` `` — `line.id` is 8 hex chars, unique per file only | `omp:01a06111-…:566d37c8` |
 | `source` | constant | `"omp"` |
 | `timestamp` | `line.timestamp` (ISO 8601, UTC, top level) | `"2026-09-02T08:31:31.505Z"` |
-| `rawModel` | `line.message.model` — **no provider prefix** | `"claude-opus-5"`, `"glm-5.3-flash"` |
+| `rawModel` | `line.message.model` — **no provider prefix** | `"claude-opus-5"`, `"glm-5.3-flash"`, `"gemini-3.8-flash"` |
 | `model` | canonical id after the commit-6 alias map | `"claude-opus-5"` |
 | `tokens.input` | `line.message.usage.input` | `2` |
 | `tokens.output` | `line.message.usage.output` | `105` |
@@ -57,8 +59,53 @@ Also on the line, deliberately unused:
 - `message.usage.cost` — OMP's own dollar estimate (`input`/`output`/`cacheRead`/`cacheWrite`/`total`, USD floats). We recompute from `price_entries`; storing it would fight retroactive repricing. Useful as a cross-check in a spike, not in the DB.
 - `message.usage.totalTokens` — derivable sum.
 - `message.usage.cttl.ephemeral5m` — cache TTL bucket, already counted in `cacheWrite`.
-- `message.provider` / `message.api` — `"anthropic"` / `"ollama-cloud"`, `"anthropic-messages"` / `"ollama-chat"`. Useful for the alias map's provider column and for choosing bundled rates.
+- `message.provider` / `message.api` — `"anthropic"` / `"ollama-cloud"` / `"google-antigravity"`, `"anthropic-messages"` / `"ollama-chat"` / `"google-gemini-cli"`. Useful for the alias map's provider column and for choosing bundled rates.
 - `message.contextSnapshot.promptTokens` — context-window gauge, **not** billable input.
+
+### Gemini through Antigravity — second scan, 2026-09-04
+
+A full scan of assistant lines in the same directory, after Gemini work moved into OMP. Every
+distinct `(message.model, message.provider, message.api)` triple:
+
+| `message.model` | `message.provider` | `message.api` |
+|-----------------|--------------------|---------------|
+| `claude-opus-5` | `anthropic` | `anthropic-messages` |
+| `claude-haiku-4-5` | `anthropic` | `anthropic-messages` |
+| `glm-5.3` | `ollama-cloud` | `ollama-chat` |
+| `glm-5.3-flash` | `ollama-cloud` | `ollama-chat` |
+| `kimi-k2.7-code` | `ollama-cloud` | `ollama-chat` |
+| **`gemini-3.8-flash`** | **`google-antigravity`** | **`google-gemini-cli`** |
+
+`gemini-3.8-flash` on 374 assistant lines is the **only** Gemini triple observed. No other
+Gemini id appears; do not add ids nobody has seen.
+
+**Still `source: "omp"`.** Antigravity is a value of `message.provider` — the same slot
+`anthropic` and `ollama-cloud` occupy — not a Prompt Burn origin. The lines sit in OMP
+transcripts, arrive through the OMP parser, and dedupe on the OMP key. Sources stay OMP +
+Cursor; a third origin would double-count the same files.
+
+Nothing prices it yet: `gemini-3.8-flash` is not in the bundled rates, so `canonicalModelId`
+passes it through unchanged and it lands as an unknown-price row — `estimatedCents: null`, `—`
+in the UI, never `$0`. Seeding a Google rate is a later commit.
+
+> Trap: the bundled rates already carry `gemma4` / `ollama-cloud`. That is an Ollama Cloud
+> model, not Google Gemini, and not this.
+
+Field differences from the 2026-09-02 Anthropic fixture, across those 374 lines:
+
+- `message.usage.reasoningTokens` — present on 368, absent on 6; `7`–`6984` where present.
+  **Unused**, exactly like `cost` and `totalTokens`. `TokenCounts` stays input / output /
+  cacheRead / cacheWrite; a fifth billed token kind is a `docs/product.md` decision, not a
+  parse detail, and that document does not ask for one.
+- `cacheRead` is frequently non-zero; `cacheWrite` was `0` on every one of the 374 lines (the
+  key is present, the value is `0`).
+- `usage.cost.total` is usually non-zero, unlike Ollama Cloud's `cost.total: 0`. Still unused:
+  the estimate is recomputed from `price_entries` for Gemini lines exactly as for every other
+  line.
+
+No Gemini fixture is committed. Capturing one means redacting `cwd`, `responseId` and message
+content out of a live transcript, and nothing downstream needs a fixture until a Google rate
+exists to price it against.
 
 ### Per-account split: not needed, and not possible here
 
@@ -177,6 +224,9 @@ already keeps the union open.
 - Cursor auth is a single-key lookup; no full-table scan needed.
 - Billing cycle dates are available (from `usage-summary`, not the aggregate response).
 - Cursor Pro accepts arbitrary date windows (see above).
+- OMP routes Gemini through Antigravity on this machine: `gemini-3.8-flash` /
+  `google-antigravity` / `google-gemini-cli`, 374 assistant lines, same line shape and still
+  `source: "omp"` (2026-09-04).
 
 ## Assumed / unknown
 
@@ -186,6 +236,11 @@ already keeps the union open.
 - Ollama Cloud lines report `cost.total: 0`; whether we treat Ollama Cloud as free or price it is a pricing decision.
 - OMP session-log format is `version: 3`; no compatibility guarantee across OMP updates.
 - `teamId: 0` was accepted but untested for a real team account.
+- Whether `message.usage.reasoningTokens` is already counted inside `output` on Gemini lines is
+  unverified. It does not matter while Gemini prices as unknown; it matters the moment a Google
+  rate is seeded, so verify before seeding rather than after.
+- `gemini-3.8-flash` is the only Gemini id seen. Other Gemini ids (Pro tiers, dated
+  snapshots) may appear under different routing and are simply unobserved, not ruled out.
 
 ## Blockers
 
@@ -203,3 +258,7 @@ node scripts/spike/dump-shapes.mjs out/     # also writes raw, UNREDACTED dumps 
 Zero dependencies: `node:sqlite` + `fetch` on Node 24+. It reads the token straight from
 `state.vscdb`, so no token is ever pasted into a shell, a file, or this repo. Redact `cwd`,
 `responseId`, and message content before any raw dump becomes a fixture.
+
+`dump-shapes.mjs` samples **one** usage line, so it cannot enumerate model ids: the
+2026-09-04 triples came from scanning every assistant line under the sessions directory.
+
