@@ -84,9 +84,14 @@ Gemini id appears; do not add ids nobody has seen.
 transcripts, arrive through the OMP parser, and dedupe on the OMP key. Sources stay OMP +
 Cursor; a third origin would double-count the same files.
 
-Nothing prices it yet: `gemini-3.8-flash` is not in the bundled rates, so `canonicalModelId`
-passes it through unchanged and it lands as an unknown-price row — `estimatedCents: null`, `—`
-in the UI, never `$0`. Seeding a Google rate is a later commit.
+`canonicalModelId` passes `gemini-3.8-flash` through unchanged, and the bundled rates now carry
+it: Google's standard paid-tier Gemini API rates, $0.75 input / $3.75 output (thinking included)
+/ $0.075 context caching per Mtok, provider `google-antigravity`, backdated with
+`SEED_EFFECTIVE_FROM` like every other bundled row. Those are the intro rates published through
+2026-12-31; the 2027-01-01 doubling is a close-and-insert, never an edit. Cache **write** is `0`
+because Google has no per-token cache-write category — an explicit cache is billed as storage
+per hour, which is not a `TokenCounts` field and is not modelled, and OMP reports
+`cacheWrite: 0` on every Gemini line anyway.
 
 > Trap: the bundled rates already carry `gemma4` / `ollama-cloud`. That is an Ollama Cloud
 > model, not Google Gemini, and not this.
@@ -94,9 +99,11 @@ in the UI, never `$0`. Seeding a Google rate is a later commit.
 Field differences from the 2026-09-02 Anthropic fixture, across those 374 lines:
 
 - `message.usage.reasoningTokens` — present on 368, absent on 6; `7`–`6984` where present.
-  **Unused**, exactly like `cost` and `totalTokens`. `TokenCounts` stays input / output /
-  cacheRead / cacheWrite; a fifth billed token kind is a `docs/product.md` decision, not a
-  parse detail, and that document does not ask for one.
+  **Unused**, exactly like `cost` and `totalTokens`, and resolved before the rate was seeded:
+  `totalTokens === input + output + cacheRead + cacheWrite` on all 374 lines, `reasoningTokens`
+  is always strictly less than `output`, and Google's published output price includes thinking
+  tokens. So `output` already pays for reasoning; a fifth billed token kind would double-count.
+  `TokenCounts` stays input / output / cacheRead / cacheWrite.
 - `cacheRead` is frequently non-zero; `cacheWrite` was `0` on every one of the 374 lines (the
   key is present, the value is `0`).
 - `usage.cost.total` is usually non-zero, unlike Ollama Cloud's `cost.total: 0`. Still unused:
@@ -227,6 +234,9 @@ already keeps the union open.
 - OMP routes Gemini through Antigravity on this machine: `gemini-3.8-flash` /
   `google-antigravity` / `google-gemini-cli`, 374 assistant lines, same line shape and still
   `source: "omp"` (2026-09-04).
+- Gemini `reasoningTokens` needs no billing of its own: `totalTokens` equals the four counted
+  kinds on all 374 lines, `reasoningTokens` never exceeds `output`, and Google's output price
+  includes thinking tokens. Checked before seeding the rate (2026-09-04).
 
 ## Assumed / unknown
 
@@ -236,9 +246,6 @@ already keeps the union open.
 - Ollama Cloud lines report `cost.total: 0`; whether we treat Ollama Cloud as free or price it is a pricing decision.
 - OMP session-log format is `version: 3`; no compatibility guarantee across OMP updates.
 - `teamId: 0` was accepted but untested for a real team account.
-- Whether `message.usage.reasoningTokens` is already counted inside `output` on Gemini lines is
-  unverified. It does not matter while Gemini prices as unknown; it matters the moment a Google
-  rate is seeded, so verify before seeding rather than after.
 - `gemini-3.8-flash` is the only Gemini id seen. Other Gemini ids (Pro tiers, dated
   snapshots) may appear under different routing and are simply unobserved, not ruled out.
 

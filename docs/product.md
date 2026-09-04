@@ -41,7 +41,7 @@ Two sources only.
 
 OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split by account.** Model-level breakdown is enough.
 
-Gemini is **not a third source.** It reaches OMP through Antigravity, so its turns are ordinary OMP session-log lines (`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage. It has no bundled rate yet, so it shows as an unpriced model row — `—`, never `$0`.
+Gemini is **not a third source.** It reaches OMP through Antigravity, so its turns are ordinary OMP session-log lines (`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage. Its public Gemini API rates are bundled, so those turns price like any other model.
 
 Cursor **subscription remaining / plan % / quota tiles are out of scope.** Only model usage → estimated cost.
 
