@@ -35,31 +35,40 @@ The script never runs git. Tagging belongs to the workflow.
    ([`ci.yml`](../.github/workflows/ci.yml)) must be green — the release run
    re-runs `pnpm typecheck` and `pnpm test` and refuses to tag a red tree.
 2. GitHub → **Actions** → **Release** → **Run workflow** → pick `patch`,
-   `minor`, or `major`.
-3. Wait. The run does four things in order:
+   `minor`, or `major`. Tick **dry run** to build everything and publish
+   nothing.
+3. Wait. The run is four jobs:
 
 | Job | What it does |
 |-----|--------------|
-| `tag` | Checks, bumps, commits `chore(release): vX.Y.Z`, pushes the commit and an annotated `vX.Y.Z` tag |
-| `release` | Creates the GitHub Release from that tag with generated notes |
-| `vscode` | Builds and packages `prompt-burn-X.Y.Z.vsix`, attaches it |
-| `desktop` | Builds the app on macOS, Windows and Linux runners in parallel, attaches every native bundle |
+| `prepare` | Runs `pnpm typecheck` and `pnpm test`, then computes `vX.Y.Z` from the bump you picked. Writes nothing back |
+| `desktop` | Builds on macOS, Windows and Linux runners in parallel — universal binary on macOS — and uploads each platform's bundles |
+| `vscode` | Packages `Prompt-Burn-X.Y.Z.vsix` and uploads it |
+| `publish` | Applies the version, commits `chore(release): vX.Y.Z`, pushes the commit and the tag, then creates the Release with every artifact attached |
 
-`vscode` and `desktop` run in parallel, and the three `desktop` runners do not
-wait on each other (`fail-fast: false`). Any of them can fail without losing the
-tag, the Release, or the other platforms' bundles.
+**Nothing is written to the repository until every build has passed.** The
+version is stamped into each build job's own checkout so the artifacts carry the
+right number, but those checkouts are thrown away; `publish` is the only job
+that commits, tags or pushes, and it needs all three desktop platforms and the
+extension to have succeeded. A failed build leaves no bump, no tag, and no
+Release claiming a version that was never built.
+
+A dry run stops after `desktop` and `vscode`. The bundles are still on the run's
+**Artifacts** panel for a week — that is the way to test a build without burning
+a version number.
 
 ## The artifacts
 
-- **`prompt-burn-X.Y.Z.vsix`** — install with `code --install-extension
-  prompt-burn-X.Y.Z.vsix`, or the Extensions view's *Install from VSIX…*. It is
+- **`Prompt-Burn-X.Y.Z.vsix`** — install with `code --install-extension
+  Prompt-Burn-X.Y.Z.vsix`, or the Extensions view's *Install from VSIX…*. It is
   packaged with `--no-dependencies`: the host bundle produced by
   `vite.config.host.mts` already contains the `@prompt-burn/*` code, because
   those packages ship TypeScript sources that only resolve inside this checkout.
-- **`Prompt Burn_X.Y.Z_aarch64.dmg`** — macOS, Apple silicon only (the runner is
-  arm64). **Unsigned and unnotarised**: first launch needs right-click → Open, or
-  `xattr -dr com.apple.quarantine "/Applications/Prompt Burn.app"`.
-- **`Prompt Burn_X.Y.Z_x64_en-US.msi`** and **`Prompt Burn_X.Y.Z_x64-setup.exe`** —
+- **`Prompt-Burn_X.Y.Z_universal.dmg`** — macOS, universal: one download for
+  Apple Silicon and Intel. **Unsigned and unnotarised**, so macOS reports it as
+  damaged after download. Clear the quarantine flag once, after copying the app
+  to Applications: `xattr -dr com.apple.quarantine "/Applications/Prompt Burn.app"`.
+- **`Prompt-Burn_X.Y.Z_x64_en-US.msi`** and **`Prompt-Burn_X.Y.Z_x64-setup.exe`** —
   Windows installers (MSI and NSIS). Unsigned, so SmartScreen shows *More info →
   Run anyway* on first install.
 - **`prompt-burn_X.Y.Z_amd64.deb`**, **`prompt-burn-X.Y.Z-1.x86_64.rpm`**,
@@ -67,9 +76,10 @@ tag, the Release, or the other platforms' bundles.
   `chmod +x` and nothing else; the `.deb` and `.rpm` install the same binary.
 
 Bundle names come from Tauri's `"targets": "all"`, which emits each platform's
-native formats. Only x86_64 Linux and Windows are built — no arm64 Linux, no
-Intel macOS. Add a runner to the `desktop` matrix in `release.yml` if that
-changes.
+native formats; the workflow only replaces the space Tauri puts in the file name,
+because a space survives badly in a download URL. Only x86_64 Linux and Windows
+are built — no arm64 Linux. Add a runner to the `desktop` matrix in
+`release.yml` if that changes.
 
 ### App icons
 
@@ -88,18 +98,21 @@ loses data — the database lives outside both install locations.
 
 ## When a run fails
 
-The `tag` job is the only one that writes to the repository, and it is the last
-step in that job. Anything after it can be retried without cleanup.
+`publish` is the only job that writes anything, and it runs last, so almost
+every failure needs no cleanup at all.
 
-- **`tag` failed on checks** — nothing was pushed. Fix `main`, run again.
-- **`tag` pushed, `release` failed** — the tag exists. Create the Release by
-  hand: `gh release create vX.Y.Z --generate-notes --verify-tag`, then upload
-  the artifacts as below.
-- **An artifact job failed** — the tag and Release survive. Fix the build, then
-  either re-run that job from the Actions UI or attach it manually:
+- **`prepare` failed** — the tree is red. Nothing was built or pushed. Fix
+  `main`, run again with the same bump.
+- **A `desktop` platform or `vscode` failed** — no tag, no commit, no Release:
+  `publish` never started. Fix the build and re-run the whole workflow. Do not
+  re-run only the failed job: `publish` requires every platform, by design, so a
+  release never ships a missing installer.
+- **`publish` failed after pushing** — the commit and tag are on `main` but the
+  Release is missing or incomplete. Download the artifacts from the run and
+  attach them by hand:
 
   ```sh
-  gh release upload vX.Y.Z apps/vscode/prompt-burn-X.Y.Z.vsix --clobber
+  gh release create vX.Y.Z --generate-notes --verify-tag dist/*
   ```
 
 - **You need the version back** — the bump commit is an ordinary commit; revert
