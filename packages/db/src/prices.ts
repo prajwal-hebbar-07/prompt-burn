@@ -1,0 +1,70 @@
+/**
+ * Bundled pay-as-you-go rates, seeded once when the database is created.
+ *
+ * USD per million tokens, straight from the vendors' public price pages:
+ * - Claude — https://platform.claude.com/docs/en/about-claude/pricing
+ *   (5-minute cache writes; cache hits are the 0.1x column), read 2026-09-04.
+ * - Ollama Cloud — https://ollama.com/pricing, per-model input / cached-input /
+ *   output, read 2026-09-04. Standard rates, not the deepseek peak window.
+ *   Ollama Cloud is priced like any other vendor here; OMP reporting
+ *   `cost.total: 0` on those lines does not make the tokens free.
+ *
+ * Models keyed by canonical id (`canonicalModelId` in `@prompt-burn/core`), the
+ * same string OMP writes. Anything not listed prices as unknown — `—` in the
+ * UI, and a row in Settings to price by hand.
+ */
+
+/** Seeds are backdated so existing session logs price; see `SEED_EFFECTIVE_FROM`. */
+export interface BundledPrice {
+  model: string;
+  provider: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+  /** `null` where the vendor publishes no rate — priced as unknown, not free. */
+  cacheReadPerMtok: number | null;
+  cacheWritePerMtok: number | null;
+}
+
+/**
+ * The bundled rows carry no start date of their own: they are the currently
+ * published rates and we have no history for them, so they are backdated to
+ * price every event we can already see. A future rate change closes the row
+ * with `effective_until` and inserts a new one with a real date.
+ */
+export const SEED_EFFECTIVE_FROM = "1970-01-01T00:00:00Z";
+
+export const BUNDLED_PRICES: readonly BundledPrice[] = [
+  // Anthropic: input / output / cache hit / 5m cache write.
+  price("claude-opus-5", "anthropic", 5, 25, 0.5, 6.25),
+  price("claude-sonnet-5", "anthropic", 2, 10, 0.2, 2.5),
+  price("claude-sonnet-4-5", "anthropic", 3, 15, 0.3, 3.75),
+  price("claude-haiku-4-5", "anthropic", 1, 5, 0.1, 1.25),
+  // Ollama Cloud: input / output / cached input. Standard rates — deepseek's
+  // peak window (12:00-18:00 UTC, Mon-Fri, double price) is not modelled, so
+  // peak-hour deepseek usage under-estimates by 2x.
+  // Cache writes are 0 because Ollama publishes no such category at all: the
+  // first pass is billed as plain input and reuse is billed as cached input.
+  price("glm-5.3", "ollama-cloud", 1.4, 4.4, 0.26, 0),
+  price("glm-5.3-flash", "ollama-cloud", 0.15, 0.5, 0.03, 0),
+  price("deepseek-v4-pro", "ollama-cloud", 0.66, 1.98, 0.022, 0),
+  price("deepseek-v4-flash", "ollama-cloud", 0.22, 0.66, 0.007, 0),
+  price("kimi-k3", "ollama-cloud", 3, 15, 0.3, 0),
+  price("kimi-k2.7-code", "ollama-cloud", 0.95, 4, 0.19, 0),
+  price("minimax-m3", "ollama-cloud", 0.6, 2.4, 0.12, 0),
+  // Ollama lists no cached-input rate for qwen3.5 — unknown, never guessed.
+  price("qwen3.5:397b", "ollama-cloud", 0.6, 3.6, null, 0),
+  price("gpt-oss:120b", "ollama-cloud", 0.15, 0.6, 0.014, 0),
+  price("gpt-oss:20b", "ollama-cloud", 0.07, 0.3, 0.035, 0),
+  price("gemma4", "ollama-cloud", 0.14, 0.4, 0.05, 0),
+];
+
+function price(
+  model: string,
+  provider: string,
+  inputPerMtok: number,
+  outputPerMtok: number,
+  cacheReadPerMtok: number | null,
+  cacheWritePerMtok: number | null,
+): BundledPrice {
+  return { model, provider, inputPerMtok, outputPerMtok, cacheReadPerMtok, cacheWritePerMtok };
+}
