@@ -17,6 +17,7 @@
     "@prompt-burn/core": "workspace:*"
   },
   "devDependencies": {
+    "@prompt-burn/db": "workspace:*",
     "@types/node": "^24.0.0",
     "vitest": "^4.0.18"
   }

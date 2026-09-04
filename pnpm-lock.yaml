@@ -18,6 +18,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@prompt-burn/db':
+        specifier: workspace:*
+        version: link:../db
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3

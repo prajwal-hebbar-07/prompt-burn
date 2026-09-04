@@ -58,6 +58,16 @@ export function collectOmpEvents(directory: string = defaultSessionsDirectory())
   return events;
 }
 
+/** A resumable read of one transcript. */
+export interface OmpFileScan {
+  events: UsageEvent[];
+  /**
+   * Bytes consumed: the offset just past the last line that ended in a
+   * newline. A torn final line is left unconsumed so the next sync re-reads it.
+   */
+  offset: number;
+}
+
 /**
  * Parses one `.jsonl` transcript. The session header is read before the
  * messages it scopes, because `line.id` is only unique inside a file — the
@@ -67,20 +77,34 @@ export function collectOmpEvents(directory: string = defaultSessionsDirectory())
  * mid-write, and one torn last line must not cost us the whole transcript.
  */
 export function parseOmpSessionFile(filePath: string): UsageEvent[] {
+  return scanOmpSessionFile(filePath).events;
+}
+
+/**
+ * Same parse, resumed from `fromOffset` — the incremental path. Lines before
+ * the offset are still read, because the session uuid lives on line 1 and
+ * `omp_sync_state` has nowhere to cache it; they simply emit no events.
+ */
+export function scanOmpSessionFile(filePath: string, fromOffset = 0): OmpFileScan {
   let contents: string;
   try {
     contents = readFileSync(filePath, "utf8");
   } catch {
-    return [];
+    return { events: [], offset: 0 };
   }
 
   const events: UsageEvent[] = [];
   let sessionId: string | undefined;
   let offset = 0;
+  let consumed = 0;
 
-  for (const text of contents.split("\n")) {
+  const texts = contents.split("\n");
+  for (const [index, text] of texts.entries()) {
     const lineOffset = offset;
     offset += Buffer.byteLength(text, "utf8") + 1;
+    // Only the final piece can lack its terminating newline; until one arrives
+    // the line may be half-written, so it stays outside the consumed range.
+    if (index < texts.length - 1) consumed = offset;
     if (text.trim() === "") continue;
 
     let line: OmpLine;
@@ -95,11 +119,12 @@ export function parseOmpSessionFile(filePath: string): UsageEvent[] {
       if (typeof line.id === "string") sessionId = line.id;
       continue;
     }
+    if (lineOffset < fromOffset) continue;
     const event = toUsageEvent(line, sessionId, filePath, lineOffset);
     if (event) events.push(event);
   }
 
-  return events;
+  return { events, offset: consumed };
 }
 
 function toUsageEvent(
