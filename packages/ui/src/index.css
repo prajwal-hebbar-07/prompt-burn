@@ -1,0 +1,2 @@
+/* The host imports this file and runs Tailwind over its own source tree. */
+@import "tailwindcss";
