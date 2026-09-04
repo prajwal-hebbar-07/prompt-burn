@@ -18,6 +18,12 @@ import { DatabaseSync } from "node:sqlite";
 import { BUNDLED_PRICES, SEED_EFFECTIVE_FROM } from "./prices.js";
 
 export { BUNDLED_PRICES, SEED_EFFECTIVE_FROM, type BundledPrice } from "./prices.js";
+export {
+  estimateCents,
+  resolvePrice,
+  type PriceRate,
+  type TokenCounts,
+} from "./pricing.js";
 
 /** Application data directory, e.g. `/Users/you/.prompt-burn`. */
 export function appDirectory(home: string = homedir()): string {
