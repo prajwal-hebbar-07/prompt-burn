@@ -111,7 +111,9 @@ beforeEach(() => {
         : {
             at,
             ok: false,
-            error: "sync exploded",
+            // The reader's own wording: only real failures are named, so the
+            // not-installed Cursor below gets no line of its own.
+            error: "OMP failed: sync exploded",
             omp: { ok: false, error: "sync exploded", scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 },
             cursor: { ok: false, reason: "not_installed", error: "no state", models: 0 },
           };
@@ -213,7 +215,17 @@ it("keeps the last good snapshot when a fetch fails", async () => {
   // Old data survives the failure; the snapshot never advanced to $5.00.
   expect(total()).toBe("$24.22");
   expect(status()).toBe(fetchedLabel);
+  // A total failure is a banner too: today it only reached the console.
+  expect(screen.getByTestId("fetch-error-message").textContent).toContain(
+    "OMP failed — sync exploded",
+  );
   expect(sidecar.methods).toEqual(["fetch", "getSettings", "getSnapshot", "fetch"]);
+
+  // Retry is the same fetch, and it does not clear the number on its way out.
+  sidecar.fetchOk = true;
+  await user.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(total()).toBe("$5.00"));
+  expect(screen.queryByTestId("fetch-error")).toBeNull();
 });
 
 it("applies the successful source when only one of the two fails", async () => {
@@ -225,9 +237,11 @@ it("applies the successful source when only one of the two fails", async () => {
   sidecar.snapshot = snapshotWith(500);
   await user.click(screen.getByRole("button", { name: "Fetch data" }));
 
-  // OMP's new rows land even though Cursor failed; the failure only sets the
-  // fetch status (the banner that reads it is commit 29).
+  // OMP's new rows land even though Cursor failed, and the banner names both.
   await waitFor(() => expect(total()).toBe("$5.00"));
+  expect(screen.getByTestId("fetch-error-message").textContent).toContain(
+    "Cursor failed · OMP OK — cursor.com said 503",
+  );
   expect(sidecar.methods).toEqual([
     "fetch",
     "getSettings",
