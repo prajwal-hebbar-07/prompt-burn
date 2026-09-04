@@ -82,6 +82,13 @@ export function Dashboard({ snapshot, onFetch, now }: DashboardProps) {
         >
           Fetch data
         </button>
+        {snapshot.fetch.status === "fetching" ? (
+          <span
+            data-testid="spinner"
+            aria-hidden="true"
+            className="size-3 animate-spin rounded-full border-2 border-stone-300 border-t-stone-700"
+          />
+        ) : null}
         <span data-testid="fetch-status" className="text-sm text-stone-500">
           {label}
         </span>

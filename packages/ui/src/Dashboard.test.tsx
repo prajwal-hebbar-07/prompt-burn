@@ -121,6 +121,11 @@ describe("Dashboard", () => {
     ).toBe(true);
 
     expect(screen.getByTestId("fetch-status").textContent).toBe("Fetching…");
+    expect(screen.getByTestId("spinner")).toBeTruthy();
+
+    cleanup();
+    render(<Dashboard snapshot={snapshot([], null)} onFetch={vi.fn()} />);
+    expect(screen.queryByTestId("spinner")).toBeNull();
   });
 
   it("shows $0.00 for a fetched snapshot with no usage, not the em dash", () => {
