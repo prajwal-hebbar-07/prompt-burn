@@ -1,142 +1,111 @@
 name: Release
 
-# Click Run workflow, choose a bump. The run tags the repo, publishes the
-# Release, then attaches the two artifacts to it. Versions come from
-# scripts/bump-version.mjs — never edit a version field by hand.
-
+# Releases are cut from the Actions tab. There is deliberately no tag trigger:
+# scripts/bump-version.mjs owns the version number, so tagging by hand would be
+# a second source of truth for it.
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump
+        description: Which part of the version to bump
         type: choice
-        options: [patch, minor, major]
         default: patch
+        options:
+          - patch
+          - minor
+          - major
+      dry_run:
+        description: Build without committing, tagging or publishing
+        type: boolean
+        default: false
 
+# Needed to push the version bump and to create the release.
+permissions:
+  contents: write
+
+# Two releases at once would race on the version number and on the push.
 concurrency:
   group: release
   cancel-in-progress: false
 
-permissions:
-  contents: write
-
 jobs:
-  tag:
+  prepare:
+    name: Check the tree and work out the next version
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.bump.outputs.version }}
-      tag: ${{ steps.bump.outputs.tag }}
+      current: ${{ steps.version.outputs.current }}
+      next: ${{ steps.version.outputs.next }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      # Reads the pnpm version from the repository's packageManager field.
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      # A red tree never gets a tag. This is the gate, not a formality.
+      # A red tree never gets a tag. Both commands are the ones a human runs.
       - run: pnpm typecheck
       - run: pnpm test
 
-      - id: bump
+      # The bump runs here only to compute the number; this checkout is thrown
+      # away. Every later job re-applies the same explicit version.
+      - name: Work out the next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
         run: |
-          node scripts/bump-version.mjs "${{ inputs.bump }}"
-          node scripts/bump-version.mjs --check
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Commit and push the tag
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore(release): $TAG"
-          git tag -a "$TAG" -m "$TAG"
-          git push origin "HEAD:${{ github.ref_name }}" --follow-tags
-
-  release:
-    needs: tag
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-          fetch-depth: 0
-
-      - name: Create the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-        run: gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
-
-  vscode:
-    needs: [tag, release]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm --filter prompt-burn-vscode build
-
-      # --no-dependencies: the host bundle already contains the workspace code,
-      # and vsce cannot walk pnpm's `workspace:*` links. --skip-license: no
-      # LICENSE file in this repo yet.
-      - name: Package the extension
-        working-directory: apps/vscode
-        env:
-          VERSION: ${{ needs.tag.outputs.version }}
-        run: pnpm dlx @vscode/vsce package --no-dependencies --skip-license --out "prompt-burn-$VERSION.vsix"
-
-      - name: Attach the .vsix
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-          VERSION: ${{ needs.tag.outputs.version }}
-        run: gh release upload "$TAG" "apps/vscode/prompt-burn-$VERSION.vsix" --clobber
+          current="$(node -p "require('./package.json').version")"
+          node scripts/bump-version.mjs "$BUMP"
+          next="$(node -p "require('./package.json').version")"
+          echo "current=${current}" >> "$GITHUB_OUTPUT"
+          echo "next=${next}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${next}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${current} as ${next}." >> "$GITHUB_STEP_SUMMARY"
 
   desktop:
-    needs: [tag, release]
+    name: Build the desktop app
+    needs: prepare
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
-      # One platform failing must not withhold the other two.
+      # One platform failing must not withhold the others from the artifact set;
+      # the publish job decides whether an incomplete set may be released.
       fail-fast: false
       matrix:
         include:
           - os: macos-latest
-            bundles: bundle/dmg/*.dmg
+            args: --target universal-apple-darwin
+            bundles: apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           - os: ubuntu-latest
-            bundles: bundle/deb/*.deb bundle/rpm/*.rpm bundle/appimage/*.AppImage
+            args: ""
+            bundles: apps/desktop/src-tauri/target/release/bundle/deb/*.deb apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
           - os: windows-latest
-            bundles: bundle/msi/*.msi bundle/nsis/*.exe
+            args: ""
+            bundles: apps/desktop/src-tauri/target/release/bundle/msi/*.msi apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
+
+      # The runners ship the host target already. Only the second architecture
+      # of the macOS universal binary has to be added.
+      - name: Add the Intel build target
+        if: runner.os == 'macOS'
+        run: rustup target add x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -144,7 +113,7 @@ jobs:
           key: ${{ matrix.os }}
 
       # Tauri's Linux bundler links against the system webkit stack; the macOS
-      # and Windows runners already ship what it needs.
+      # and Windows runners already ship what they need.
       - name: Install Linux bundle dependencies
         if: runner.os == 'Linux'
         run: |
@@ -156,25 +125,162 @@ jobs:
             libxdo-dev \
             patchelf
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      # Nothing here is code-signed: macOS needs right-click > Open on first
-      # launch, Windows shows a SmartScreen warning. Certificates would have to
-      # come from an Apple Developer account and a Windows signing provider.
-      - run: pnpm --filter @prompt-burn/desktop run tauri build
-
-      - name: Attach the ${{ runner.os }} bundles
+      # The version has to land before the build, because it names the artifact
+      # the user downloads. Nothing is committed until every build has passed.
+      - name: Apply the version
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.tag.outputs.tag }}
-          BUNDLES: ${{ matrix.bundles }}
         run: |
-          cd apps/desktop/src-tauri/target/release
+          node scripts/bump-version.mjs "${{ needs.prepare.outputs.next }}"
+          node scripts/bump-version.mjs --check
+
+      # This must go through the Tauri CLI: its beforeBuildCommand builds the
+      # webview into apps/desktop/dist, which the bundle embeds. A bare cargo
+      # build would ship an empty window.
+      - name: Build the bundle
+        run: pnpm --filter @prompt-burn/desktop exec tauri build ${{ matrix.args }}
+
+      # Tauri names bundles with a space, which survives badly in a download
+      # URL, so the space is replaced before upload.
+      - name: Collect the bundles
+        shell: bash
+        run: |
           shopt -s nullglob
-          files=($BUNDLES)
+          files=(${{ matrix.bundles }})
           if [ ${#files[@]} -eq 0 ]; then
-            echo "no bundles matched: $BUNDLES" >&2
+            echo "::error::No bundles matched for ${{ matrix.os }}."
             exit 1
           fi
-          gh release upload "$TAG" "${files[@]}" --clobber
+          mkdir -p dist
+          for file in "${files[@]}"; do
+            base="$(basename "$file")"
+            mv "$file" "dist/${base// /-}"
+          done
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  vscode:
+    name: Package the VS Code extension
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply the version
+        run: |
+          node scripts/bump-version.mjs "${{ needs.prepare.outputs.next }}"
+          node scripts/bump-version.mjs --check
+
+      - run: pnpm --filter prompt-burn-vscode build
+
+      # --no-dependencies: the host bundle already contains the workspace code,
+      # and vsce cannot walk pnpm's `workspace:*` links. --skip-license: no
+      # LICENSE file in this repo yet.
+      - name: Package the extension
+        env:
+          NEXT: ${{ needs.prepare.outputs.next }}
+        run: |
+          mkdir -p dist
+          pnpm dlx @vscode/vsce package --no-dependencies --skip-license \
+            --out "dist/Prompt-Burn-${NEXT}.vsix"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vscode
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Tag and publish the release
+    needs: [prepare, desktop, vscode]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Everything above passed, so this is the first write of the run: a failed
+      # build leaves the repository exactly as it was — no bump, no tag, no
+      # release claiming a version that was never built.
+      - name: Commit and tag the version
+        env:
+          NEXT: ${{ needs.prepare.outputs.next }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          node scripts/bump-version.mjs "$NEXT"
+          node scripts/bump-version.mjs --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            package.json \
+            apps/vscode/package.json \
+            apps/desktop/package.json \
+            apps/desktop/src-tauri/tauri.conf.json \
+            apps/desktop/src-tauri/Cargo.toml
+          git commit -m "chore(release): ${TAG}"
+          git tag "$TAG"
+          git push origin "HEAD:${BRANCH}"
+          git push origin "$TAG"
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.tag }}
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            Prompt Burn estimates what your OMP and Cursor token usage would have cost at public pay-as-you-go rates. Everything stays on your machine, in `~/.prompt-burn/db.sqlite`, shared by both shells.
+
+            ### macOS
+
+            Download the `.dmg`, open it, drag **Prompt Burn** to Applications. It is a universal build, so it runs on both Apple Silicon and Intel Macs.
+
+            It is not signed with an Apple Developer certificate, so macOS quarantines it after download and reports it as damaged. Clear the flag once, after copying the app to Applications:
+
+            ```bash
+            xattr -dr com.apple.quarantine "/Applications/Prompt Burn.app"
+            ```
+
+            ### Windows
+
+            Run the `.msi`, or the `-setup.exe` if you prefer the NSIS installer. It is unsigned, so SmartScreen asks first: **More info → Run anyway**.
+
+            ### Linux
+
+            `.deb` and `.rpm` install the app system-wide. The `.AppImage` needs no install — `chmod +x` it and run it.
+
+            ### VS Code
+
+            The `.vsix` is the same dashboard as an editor tab. Install it, then run **Prompt Burn: Open Dashboard** from the Command Palette:
+
+            ```bash
+            code --install-extension Prompt-Burn-${{ needs.prepare.outputs.next }}.vsix
+            ```
