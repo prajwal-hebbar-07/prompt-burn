@@ -31,17 +31,31 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p .",
-    "typecheck": "tsc -p . --noEmit",
+    "build": "tsc -p . && vite build",
+    "typecheck": "tsc -p . --noEmit && tsc -p tsconfig.web.json",
     "test": "vitest run"
   },
   "dependencies": {
+    "@prompt-burn/core": "workspace:*",
     "@prompt-burn/db": "workspace:*",
-    "@prompt-burn/reader": "workspace:*"
+    "@prompt-burn/reader": "workspace:*",
+    "@prompt-burn/ui": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/dom": "^10.0.0",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.0.0",
     "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@types/vscode": "^1.90.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^27.0.0",
+    "tailwindcss": "^4.0.0",
+    "vite": "^8.0.0",
     "vitest": "^4.0.18"
   }
 }
