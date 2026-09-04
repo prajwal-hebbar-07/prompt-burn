@@ -464,7 +464,8 @@ export function Settings({
             </table>
           ) : (
             <p className="mt-2 text-small text-foreground-muted">
-              Bundled rates for Claude and Ollama Cloud are seeded on initial database creation.
+              Bundled rates for Anthropic, Ollama Cloud, Google, xAI, OpenAI and Cursor ship with
+              the app and top up on every launch.
             </p>
           )}
         </div>
