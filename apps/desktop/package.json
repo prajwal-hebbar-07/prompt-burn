@@ -11,9 +11,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@prompt-burn/collectors": "workspace:*",
     "@prompt-burn/core": "workspace:*",
     "@prompt-burn/db": "workspace:*",
+    "@prompt-burn/reader": "workspace:*",
     "@prompt-burn/ui": "workspace:*",
     "@tauri-apps/api": "^2.9.0",
     "react": "^19.0.0",

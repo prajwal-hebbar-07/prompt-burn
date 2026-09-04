@@ -1,13 +1,15 @@
 /**
  * `UsageReader` — the interface both shells implement, frozen in
- * `docs/implementation-plan.md`. The desktop sidecar is this file; the VS Code
- * extension host later implements the same three methods over the same
- * `@prompt-burn/db` + `@prompt-burn/collectors` calls.
+ * `docs/implementation-plan.md`. The desktop sidecar and the VS Code extension
+ * host both call this one implementation, so there is a single set of
+ * `@prompt-burn/db` + `@prompt-burn/collectors` calls behind both dashboards.
  *
  * Both sources land here: `fetch()` runs the parallel collector pass, and
  * `getSnapshot()` aggregates stored OMP rows together with the last Cursor
  * cycle. Partial success is normal — a failed source keeps its previous data
  * while the other's new data is applied.
+ *
+ * Host-side only. The UI package never imports this, or anything under it.
  */
 
 import { existsSync } from "node:fs";
