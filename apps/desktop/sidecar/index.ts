@@ -11,7 +11,7 @@
  */
 
 import { databasePath, openDatabase } from "@prompt-burn/db";
-import { createUsageReader, type UsageReader } from "./reader.js";
+import { createUsageReader, type UsageReader } from "@prompt-burn/reader";
 
 const path = databasePath();
 const db = openDatabase(path);

@@ -1,7 +1,8 @@
 # @prompt-burn/desktop
 
 The Tauri v2 window plus the Node sidecar that owns the database. Rust does the
-window; everything data lives in TypeScript so the VS Code host can share it.
+window; the data side is `@prompt-burn/reader`, the same `UsageReader` the VS
+Code extension host runs over the same database file.
 
 ```sh
 pnpm --filter @prompt-burn/desktop tauri dev   # needs a Rust toolchain
@@ -21,4 +22,5 @@ stays on screen with a spinner, and a failed fetch leaves it alone.
 Rust relays one protocol line at a time between the webview and the sidecar
 (`sidecar_request`); the request and response shapes live in TypeScript on both
 ends. `pnpm --filter @prompt-burn/desktop test` covers the sidecar protocol and
-the window's fetch wiring without a Rust toolchain.
+the window's fetch wiring without a Rust toolchain; the reader's own behaviour
+is tested in `@prompt-burn/reader`.

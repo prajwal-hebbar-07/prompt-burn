@@ -35,6 +35,10 @@
     "typecheck": "tsc -p . --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@prompt-burn/db": "workspace:*",
+    "@prompt-burn/reader": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.90.0",
