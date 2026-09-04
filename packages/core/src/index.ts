@@ -1,10 +1,12 @@
 /**
- * Prompt Burn domain types. Types only — no behaviour lives in this file.
+ * Prompt Burn domain types, plus the package's public re-exports.
  *
  * `DashboardSnapshot` is the contract the UI renders against; period filtering
  * (commit 5), model normalization (commit 6) and aggregation (commit 7) all
  * exist to produce one.
  */
+
+export { filterEventsByPeriod, periodBounds } from "./period.js";
 
 /** Usage origin. OMP and Cursor only; rows are never deduped across sources. */
 export type Source = "omp" | "cursor";
