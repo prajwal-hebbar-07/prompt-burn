@@ -1,8 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2024"],
-    "types": ["node"]
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM"],
+    "types": ["node", "vite/client"]
   },
-  "include": ["sidecar/**/*.ts"]
+  "include": ["sidecar/**/*.ts", "web/**/*.ts", "web/**/*.tsx", "vite.config.ts"]
 }

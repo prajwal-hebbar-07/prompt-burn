@@ -13,7 +13,12 @@ The sidecar announces itself on stdout as the window comes up:
 [sidecar] {"type":"ready","database":"/Users/you/.prompt-burn/db.sqlite","tables":5}
 ```
 
-That is the whole shell: one window, one sidecar, one open database (created
-with `schema.sql` on first run). Fetching, aggregation and the estimated total
-land in the commits after it. `pnpm --filter @prompt-burn/desktop test` proves
-the database open without a Rust toolchain.
+On open the webview asks the sidecar to sync OMP and then for an all-time
+snapshot, and renders the estimated total through `@prompt-burn/ui`. **Fetch
+data** asks again; nothing else does. While a fetch runs the previous number
+stays on screen with a spinner, and a failed fetch leaves it alone.
+
+Rust relays one protocol line at a time between the webview and the sidecar
+(`sidecar_request`); the request and response shapes live in TypeScript on both
+ends. `pnpm --filter @prompt-burn/desktop test` covers the sidecar protocol and
+the window's fetch wiring without a Rust toolchain.

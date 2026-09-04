@@ -84,7 +84,11 @@ class Sidecar {
   async request(method: string, extra: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     const id = this.nextId++;
     this.stdin.write(`${JSON.stringify({ id, method, ...extra })}\n`);
-    const response = JSON.parse(await this.takeLine()) as Record<string, unknown>;
+    const line = await this.takeLine();
+    // The Rust relay picks responses out of the stream by this exact prefix,
+    // so the key order of the envelope is a contract, not a detail.
+    expect(line.startsWith('{"type":"response"')).toBe(true);
+    const response = JSON.parse(line) as Record<string, unknown>;
     // Responses arrive in request order; the id check would catch a mix-up.
     expect(response["id"]).toBe(id);
     return response;

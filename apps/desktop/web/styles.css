@@ -1,0 +1,6 @@
+/*
+ * Tailwind for the shell. The ui package ships class names only, so its source
+ * has to be scanned from here — it lives outside this app's tree.
+ */
+@import "@prompt-burn/ui/index.css";
+@source "../../../packages/ui/src";

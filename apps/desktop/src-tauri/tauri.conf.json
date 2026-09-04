@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "identifier": "dev.promptburn.desktop",
   "build": {
-    "frontendDist": "../web"
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [
@@ -16,7 +19,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420"
     }
   },
   "bundle": {
