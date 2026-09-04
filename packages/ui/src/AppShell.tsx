@@ -11,8 +11,9 @@
  */
 
 import { useEffect, useState } from "react";
-import type { DashboardSnapshot } from "@prompt-burn/core";
+import type { DashboardSnapshot, PeriodFilter } from "@prompt-burn/core";
 import { Dashboard } from "./Dashboard.js";
+import { PeriodBar } from "./PeriodBar.js";
 
 /** Always visible, on every route — docs/product.md Trust. */
 const TRUST_LINE = "Local only · nothing leaves this device";
@@ -65,13 +66,20 @@ function Settings() {
 
 export interface AppShellProps {
   snapshot: DashboardSnapshot;
+  /**
+   * The period the host has selected. It leads `snapshot.period`, which still
+   * describes the data on screen while a new snapshot loads.
+   */
+  period?: PeriodFilter;
+  /** A new period was chosen. Loading its snapshot is not a fetch. */
+  onPeriodChange?: (period: PeriodFilter) => void;
   /** Clicking "Fetch data" — the host owns the actual fetch. */
   onFetch?: () => void;
   /** Injectable clock for the relative label; defaults to the wall clock. */
   now?: () => Date;
 }
 
-export function AppShell({ snapshot, onFetch, now }: AppShellProps) {
+export function AppShell({ snapshot, period, onPeriodChange, onFetch, now }: AppShellProps) {
   const [route, setRoute] = useState<Route>("Dashboard");
   // The hook always runs; an injected clock only overrides what it reads.
   const ticking = useRoughlyMinuteClock();
@@ -126,7 +134,21 @@ export function AppShell({ snapshot, onFetch, now }: AppShellProps) {
         </nav>
       </header>
       <main aria-label={`Prompt Burn ${route.toLowerCase()}`} className="mx-auto max-w-content px-6 py-8">
-        {route === "Dashboard" ? <Dashboard snapshot={snapshot} /> : <Settings />}
+        {route === "Dashboard" ? (
+          <>
+            {/* The period bar is a Dashboard control, not chrome: Settings has none. */}
+            <div className="mb-6">
+              <PeriodBar
+                period={period ?? snapshot.period}
+                onPeriodChange={onPeriodChange}
+                now={now}
+              />
+            </div>
+            <Dashboard snapshot={snapshot} />
+          </>
+        ) : (
+          <Settings />
+        )}
       </main>
     </div>
   );

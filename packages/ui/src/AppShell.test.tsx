@@ -127,3 +127,37 @@ describe("nav", () => {
     expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
   });
 });
+
+describe("the period bar", () => {
+  it("is a Dashboard control: present there, absent on Settings", async () => {
+    const user = userEvent.setup();
+    render(<AppShell snapshot={snapshot(FETCHED)} period={{ kind: "this_month" }} />);
+
+    expect(screen.getByRole("group", { name: "Period" })).toBeTruthy();
+    expect(button("This month").getAttribute("aria-pressed")).toBe("true");
+
+    await user.click(button("Settings"));
+    expect(screen.queryByRole("group", { name: "Period" })).toBeNull();
+  });
+
+  it("hands the chosen period to the host without touching fetch", async () => {
+    const onPeriodChange = vi.fn();
+    const onFetch = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AppShell
+        snapshot={snapshot(FETCHED)}
+        period={{ kind: "this_month" }}
+        onPeriodChange={onPeriodChange}
+        onFetch={onFetch}
+      />,
+    );
+
+    await user.click(button("Today"));
+
+    expect(onPeriodChange).toHaveBeenCalledWith({ kind: "today" });
+    expect(onFetch).not.toHaveBeenCalled();
+    // The snapshot on screen is still the old one; the host swaps it in.
+    expect(screen.getByTestId("estimated-total").textContent).toBe("$24.22");
+  });
+});
