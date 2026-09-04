@@ -5,3 +5,7 @@ dist/
 .env
 .env.*
 out/
+
+# Tauri / Cargo build output
+target/
+src-tauri/gen/
