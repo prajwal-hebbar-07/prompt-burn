@@ -12,9 +12,17 @@ import type { DashboardSnapshot, PeriodFilter } from "@prompt-burn/core";
 /** What `fetch()` answers with — see `sidecar/reader.ts`. */
 export interface FetchResult {
   at: string;
+  /** Every source that could run did. Partial success is `false`. */
   ok: boolean;
   error?: string;
-  omp: { scannedFiles: number; skippedFiles: number; insertedEvents: number };
+  omp: {
+    ok: boolean;
+    error?: string;
+    scannedFiles: number;
+    skippedFiles: number;
+    insertedEvents: number;
+  };
+  cursor: { ok: boolean; reason?: string; error?: string; models: number };
 }
 
 let lastId = 0;
@@ -42,7 +50,7 @@ async function request<T>(method: string, extra: Record<string, unknown> = {}): 
   return response.result as T;
 }
 
-/** Runs the incremental OMP sync. A missing source is zeros, not a failure. */
+/** Runs both collectors in parallel. A missing source is degraded, not fatal. */
 export function fetchUsage(): Promise<FetchResult> {
   return request<FetchResult>("fetch");
 }

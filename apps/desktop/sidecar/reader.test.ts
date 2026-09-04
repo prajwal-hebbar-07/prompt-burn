@@ -139,15 +139,20 @@ async function withSidecar(test: (sidecar: Sidecar, home: string) => Promise<voi
   }
 }
 
-it("reports OMP health and the absent Cursor collector via discover", async () => {
+it("reports OMP health and the missing local Cursor session via discover", async () => {
   await withSidecar(async (sidecar, home) => {
     const sessions = fakeOmpSessions(home);
 
     const response = await sidecar.request("discover");
     expect(response["ok"]).toBe(true);
+    // The temp home has no Cursor user data, so the auth read says so itself.
     expect(response["result"]).toEqual([
       { source: "omp", available: true, detail: sessions },
-      { source: "cursor", available: false, detail: "No Cursor collector yet — lands with the Cursor phase." },
+      {
+        source: "cursor",
+        available: false,
+        detail: expect.stringContaining("No Cursor state at"),
+      },
     ]);
   });
 });
@@ -161,7 +166,8 @@ it("fetch syncs OMP transcripts incrementally", async () => {
     expect(first["result"]).toEqual({
       at: expect.any(String),
       ok: true,
-      omp: { scannedFiles: 1, skippedFiles: 0, insertedEvents: 2 },
+      omp: { ok: true, scannedFiles: 1, skippedFiles: 0, insertedEvents: 2 },
+      cursor: { ok: false, reason: "not_installed", error: expect.any(String), models: 0 },
     });
 
     // Nothing changed on disk: the second sync opens no file (one transcript).
