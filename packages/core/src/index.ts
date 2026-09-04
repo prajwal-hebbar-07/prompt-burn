@@ -7,6 +7,7 @@
  */
 
 export { filterEventsByPeriod, periodBounds } from "./period.js";
+export { canonicalModelId } from "./model.js";
 
 /** Usage origin. OMP and Cursor only; rows are never deduped across sources. */
 export type Source = "omp" | "cursor";
