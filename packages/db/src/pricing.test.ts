@@ -155,3 +155,34 @@ describe("estimateCents", () => {
     expect(estimateCents(rate, { input: 1_000_000, output: 0 })).toBeCloseTo(60, 9);
   });
 });
+
+describe("gemini through antigravity", () => {
+  // A real OMP Gemini line: cacheRead is often non-zero, cacheWrite always 0.
+  const at = "2026-09-04T09:12:44.113Z";
+
+  it("prices an OMP Gemini turn from the bundled seed", () => {
+    const rate = resolvePrice(db, "gemini-3.8-flash", at);
+    expect(rate).toMatchObject({
+      provider: "google-antigravity",
+      effectiveUntil: null,
+      inputPerMtok: 0.75,
+      outputPerMtok: 3.75,
+      cacheReadPerMtok: 0.075,
+    });
+    // 1M input at $0.75 = 75c; 1M output at $3.75 = 375c; 1M cached at $0.075.
+    expect(
+      estimateCents(rate, {
+        input: 1_000_000,
+        output: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 0,
+      }),
+    ).toBeCloseTo(75 + 375 + 7.5, 9);
+  });
+
+  it("does not confuse gemma4 on Ollama Cloud with Google Gemini", () => {
+    expect(resolvePrice(db, "gemma4", at)?.provider).toBe("ollama-cloud");
+    // No other Gemini id is seeded: only the one OMP was observed writing.
+    expect(resolvePrice(db, "gemini-3.8-pro", at)).toBeNull();
+  });
+});
