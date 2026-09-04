@@ -1,0 +1,12 @@
+# The .vsix ships two build outputs and nothing else: out/ (host bundle) and
+# dist/ (webview bundle). Sources are inlined into those two, so they would only
+# make the package bigger.
+.vscodeignore
+src/**
+web/**
+node_modules/**
+tsconfig.json
+tsconfig.web.json
+vite.config.mts
+vite.config.host.mts
+vitest.config.mts

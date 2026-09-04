@@ -261,6 +261,20 @@ Build against **typed** `DashboardSnapshot` mocks (instances of commit 4), not a
 | 29 | `feat(ui): show fetch error banner without clearing data` | “Cursor failed · OMP OK” + Retry. | Partial success |
 | 30 | `test: add golden snapshots for OMP and Cursor aggregation` | Fixtures from the spike → expected `DashboardSnapshot`. | Regression lock |
 
+### Phase 10 — Release Automation
+
+One version, one button. Everything here is repo plumbing: no product behaviour changes.
+
+| # | Commit | What lands | Review focus |
+|---|--------|------------|--------------|
+| 31 | `chore(release): declare one version source and a bump script` | Root `package.json` `version` is the source of truth. `scripts/bump-version.mjs` rewrites the two app manifests, `tauri.conf.json`, and `src-tauri/Cargo.toml`; `--check` fails on drift. | One number, five files. No tagging, no publishing. |
+| 32 | `ci: verify typecheck and tests on push and pull request` | `.github/workflows/ci.yml` — pnpm install, `pnpm typecheck`, `pnpm test` on Ubuntu. | Same commands a human runs locally |
+| 33 | `ci: add click-to-release with major/minor/patch input` | `.github/workflows/release.yml`, `workflow_dispatch` with a bump choice. Runs the checks, bumps, commits, pushes `vX.Y.Z`. | Refuses to tag a red tree |
+| 34 | `ci: publish a GitHub Release from the pushed tag` | `release` job creates the Release with generated notes from the tag the bump pushed. | Tag and Release are one run, not two |
+| 35 | `ci(vscode): attach the packaged .vsix to the release` | Builds the extension, packages with `vsce --no-dependencies`, uploads. `.vscodeignore` keeps sources out. | Bundle is self-contained (no `workspace:*` deps) |
+| 36 | `ci(desktop): attach macOS, Windows, and Linux bundles to the release` | `bundle.active: true`, `"targets": "all"`, and the icon set Tauri requires to bundle at all. Three-OS matrix uploads `.dmg`, `.msi`/`.exe`, `.deb`/`.rpm`/`.AppImage`. | Placeholder icons; every bundle unsigned |
+| 37 | `docs: record the release process` | `docs/release.md` — how to cut a release, what lands where, how to recover a failed run. | Matches the workflows as written |
+
 ---
 
 ## PR grouping
@@ -274,6 +288,7 @@ Build against **typed** `DashboardSnapshot` mocks (instances of commit 4), not a
 | 5 Cursor | 22–24 | Both sources |
 | 6 VS Code | 25–27 | Extension tab |
 | 7 Polish | 28–30 | Settings writes, errors, goldens |
+| 8 Release | 31–37 | One version source, CI checks, published desktop + VS Code artifacts |
 
 ---
 

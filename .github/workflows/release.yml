@@ -1,0 +1,180 @@
+name: Release
+
+# Click Run workflow, choose a bump. The run tags the repo, publishes the
+# Release, then attaches the two artifacts to it. Versions come from
+# scripts/bump-version.mjs — never edit a version field by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A red tree never gets a tag. This is the gate, not a formality.
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - id: bump
+        run: |
+          node scripts/bump-version.mjs "${{ inputs.bump }}"
+          node scripts/bump-version.mjs --check
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push the tag
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): $TAG"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "HEAD:${{ github.ref_name }}" --follow-tags
+
+  release:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+
+  vscode:
+    needs: [tag, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter prompt-burn-vscode build
+
+      # --no-dependencies: the host bundle already contains the workspace code,
+      # and vsce cannot walk pnpm's `workspace:*` links. --skip-license: no
+      # LICENSE file in this repo yet.
+      - name: Package the extension
+        working-directory: apps/vscode
+        env:
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: pnpm dlx @vscode/vsce package --no-dependencies --skip-license --out "prompt-burn-$VERSION.vsix"
+
+      - name: Attach the .vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: gh release upload "$TAG" "apps/vscode/prompt-burn-$VERSION.vsix" --clobber
+
+  desktop:
+    needs: [tag, release]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing must not withhold the other two.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            bundles: bundle/dmg/*.dmg
+          - os: ubuntu-latest
+            bundles: bundle/deb/*.deb bundle/rpm/*.rpm bundle/appimage/*.AppImage
+          - os: windows-latest
+            bundles: bundle/msi/*.msi bundle/nsis/*.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: ${{ matrix.os }}
+
+      # Tauri's Linux bundler links against the system webkit stack; the macOS
+      # and Windows runners already ship what it needs.
+      - name: Install Linux bundle dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf
+
+      - run: pnpm install --frozen-lockfile
+
+      # Nothing here is code-signed: macOS needs right-click > Open on first
+      # launch, Windows shows a SmartScreen warning. Certificates would have to
+      # come from an Apple Developer account and a Windows signing provider.
+      - run: pnpm --filter @prompt-burn/desktop run tauri build
+
+      - name: Attach the ${{ runner.os }} bundles
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+          BUNDLES: ${{ matrix.bundles }}
+        run: |
+          cd apps/desktop/src-tauri/target/release
+          shopt -s nullglob
+          files=($BUNDLES)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no bundles matched: $BUNDLES" >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber

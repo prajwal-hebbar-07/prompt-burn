@@ -1,5 +1,6 @@
 {
   "name": "prompt-burn",
+  "version": "0.0.0",
   "private": true,
   "packageManager": "pnpm@11.24.0",
   "engines": {
@@ -10,6 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p . && pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test"
+    "test": "node --test scripts/ && pnpm -r --if-present test",
+    "bump": "node scripts/bump-version.mjs",
+    "version:check": "node scripts/bump-version.mjs --check"
   }
 }
