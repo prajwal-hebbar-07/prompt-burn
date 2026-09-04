@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import type { PeriodFilter } from "@prompt-burn/core";
+import { formatDateSpan } from "./format.js";
 
 /** Local wall-clock date as `YYYY-MM-DD` — `toISOString` would be UTC. */
 function isoDate(at: Date): string {
@@ -26,7 +27,6 @@ function fromIsoDate(date: string): Date {
   return new Date(Number(year), Number(month) - 1, Number(day));
 }
 
-const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 const DAY_YEAR = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -37,13 +37,7 @@ const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 /** `Aug 1 – Aug 15, 2026`, or a single `Aug 1, 2026` when start equals end. */
 export function formatRangeLabel(start: string, end: string): string {
-  const from = fromIsoDate(start);
-  const to = fromIsoDate(end);
-  if (start === end) return DAY_YEAR.format(from);
-  if (from.getFullYear() === to.getFullYear()) {
-    return `${DAY.format(from)} – ${DAY_YEAR.format(to)}`;
-  }
-  return `${DAY_YEAR.format(from)} – ${DAY_YEAR.format(to)}`;
+  return formatDateSpan(fromIsoDate(start), fromIsoDate(end));
 }
 
 /** Every day of `month`, as local ISO dates. Length resolves leap years. */

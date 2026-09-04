@@ -11,24 +11,37 @@
  * all that happens here.
  */
 
-import { CURSOR_CYCLE_LABEL, type DashboardSnapshot, type TokenCounts } from "@prompt-burn/core";
-import { formatCost, formatTokens } from "./format.js";
+import { CURSOR_CYCLE_LABEL, type DashboardSnapshot } from "@prompt-burn/core";
+import { CycleCard, CycleFootnote } from "./CursorCycle.js";
+import { formatCost, tokenLine } from "./format.js";
 import { ModelTable } from "./ModelTable.js";
 import { periodLabel } from "./PeriodBar.js";
+
+/** Product's exact sentence for a successful fetch with nothing in it. */
+const NO_USAGE = "No OMP or Cursor usage for this period";
+
+/** Before the first successful fetch there is nothing to be zero about. */
+const NOT_FETCHED = "No usage data yet";
 
 /** The combined total, or the em dash when any price is unknown. */
 export function formatEstimatedTotal(snapshot: DashboardSnapshot): string {
   return formatCost(snapshot.estimatedCents);
 }
 
-/** `Tokens: 1.2M in · 340K out · 89K cache` — cache is read plus write. */
-function tokenLine(...parts: TokenCounts[]): string {
-  const sum = (pick: (tokens: TokenCounts) => number) =>
-    parts.reduce((total, tokens) => total + pick(tokens), 0);
-  const input = sum((t) => t.input);
-  const output = sum((t) => t.output);
-  const cache = sum((t) => (t.cacheRead ?? 0) + (t.cacheWrite ?? 0));
-  return `Tokens: ${formatTokens(input)} in · ${formatTokens(output)} out · ${formatTokens(cache)} cache`;
+/**
+ * The body copy for an empty period, or `null` when there is data to show.
+ *
+ * Never fetched and fetched-but-empty are different states: only a successful
+ * fetch can say the period really had no usage. A fetch in flight keeps
+ * whatever the previous snapshot had — this only decides the empty body.
+ */
+export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
+  const tokens = [snapshot.omp.tokens, snapshot.cursor.tokens];
+  const used =
+    snapshot.models.length > 0 ||
+    tokens.some((t) => t.input + t.output + (t.cacheRead ?? 0) + (t.cacheWrite ?? 0) > 0);
+  if (used) return null;
+  return snapshot.fetch.lastSuccessAt === null ? NOT_FETCHED : NO_USAGE;
 }
 
 /**
@@ -72,9 +85,11 @@ export function Dashboard({ snapshot }: DashboardProps) {
   const cursorLabel = snapshot.cursor.cycleLabel
     ? `Cursor (${snapshot.cursor.cycleLabel.toLowerCase()})`
     : "Cursor";
+  const empty = emptyStateMessage(snapshot);
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
+      <CycleFootnote snapshot={snapshot} />
       <section
         aria-labelledby="hero-subtitle"
         className="rounded-card border border-border bg-surface p-6"
@@ -115,9 +130,14 @@ export function Dashboard({ snapshot }: DashboardProps) {
           {tokenLine(snapshot.omp.tokens, snapshot.cursor.tokens)}
         </p>
       </section>
-      <div className="mt-6">
+      {empty === null ? (
         <ModelTable rows={snapshot.models} />
-      </div>
-    </>
+      ) : (
+        <p data-testid="empty-state" className="text-body text-foreground-secondary">
+          {empty}
+        </p>
+      )}
+      <CycleCard snapshot={snapshot} />
+    </div>
   );
 }

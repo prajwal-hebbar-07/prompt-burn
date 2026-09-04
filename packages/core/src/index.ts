@@ -100,6 +100,13 @@ export interface DashboardSnapshot {
     mode: CursorSnapshot["mode"];
     /** e.g. "Cycle to date". */
     cycleLabel?: string;
+    /**
+     * The Pro cycle window, passed straight through from `CursorSnapshot` so
+     * the UI can name it. It never bounds the rollup: the cycle does not
+     * shrink to the period. Absent in `events` mode.
+     */
+    cycleStart?: string;
+    cycleEnd?: string;
   };
   /** By-model rows keyed by `(source, model)`; same model twice is expected. */
   models: Array<ModelAggregate & { source: Source; estimatedCents: number | null }>;
