@@ -6,13 +6,21 @@
  * no polling. While a fetch runs the previous snapshot stays on screen with its
  * status overwritten — the number never blanks and never drops to $0.
  *
+ * A failed pass never clears the screen: the last snapshot stays and only
+ * `fetch.status` / `fetch.error` change, which is what raises the banner.
+ *
  * Changing the period is not a fetch: it re-reads the snapshot for the new
  * filter and leaves the sources, the spinner and `lastSuccessAt` alone.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { buildDashboardSnapshot, type DashboardSnapshot, type PeriodFilter } from "@prompt-burn/core";
-import { AppShell, type NewPriceInput, type SourceSettings } from "@prompt-burn/ui";
+import {
+  AppShell,
+  fetchErrorMessage,
+  type NewPriceInput,
+  type SourceSettings,
+} from "@prompt-burn/ui";
 import { addPrice, fetchUsage, getSettings, getSnapshot, saveSettings } from "./sidecar.js";
 
 /** Paper's default wireframe is "This month"; product calls it a calendar month. */
@@ -31,35 +39,47 @@ export function App() {
   const [fetching, setFetching] = useState(false);
   const [settings, setSettings] = useState<SourceSettings>();
 
-  const refresh = useCallback(async (target: PeriodFilter) => {
-    setFetching(true);
-    try {
-      const result = await fetchUsage();
-      // Every source failed: nothing new is stored, so keep what is on screen
-      // rather than re-reading the same rows.
-      if (!result.omp.ok && !result.cursor.ok) {
-        throw new Error(result.error ?? "the fetch failed");
-      }
-      const fetched = await getSnapshot(target);
-      // Partial success still lands: the source that worked has new data and
-      // the one that failed kept its previous rows, so only the status carries
-      // the failure. The banner that reads it is commit 29.
-      setSnapshot({
-        ...fetched,
-        fetch: {
-          lastSuccessAt: result.at,
-          status: result.ok ? "idle" : "error",
-          ...(result.error === undefined ? {} : { error: result.error }),
-        },
-      });
-      if (!result.ok) console.error("prompt-burn: partial fetch", result.error);
-    } catch (error) {
-      // The whole call failed: keep the last good snapshot on screen.
-      console.error("prompt-burn: fetch failed", error);
-    } finally {
-      setFetching(false);
-    }
+  /** Keeps the data on screen and raises the banner over it. */
+  const failed = useCallback((error: string) => {
+    setSnapshot((previous) => ({ ...previous, fetch: { ...previous.fetch, status: "error", error } }));
   }, []);
+
+  const refresh = useCallback(
+    async (target: PeriodFilter) => {
+      setFetching(true);
+      try {
+        const result = await fetchUsage();
+        // Every source failed: nothing new is stored, so keep what is on screen
+        // rather than re-reading the same rows, and banner why.
+        if (!result.omp.ok && !result.cursor.ok) {
+          failed(fetchErrorMessage(result));
+          console.error("prompt-burn: fetch failed", result.error);
+          return;
+        }
+        const fetched = await getSnapshot(target);
+        // Partial success still lands: the source that worked has new data and
+        // the one that failed kept its previous rows, so the banner names both
+        // while the numbers stay.
+        setSnapshot({
+          ...fetched,
+          fetch: {
+            lastSuccessAt: result.at,
+            status: result.ok ? "idle" : "error",
+            ...(result.ok ? {} : { error: fetchErrorMessage(result) }),
+          },
+        });
+        if (!result.ok) console.error("prompt-burn: partial fetch", result.error);
+      } catch (error) {
+        // The call itself failed — no source ever reported. Same rule: keep the
+        // last good snapshot, say so in the banner.
+        failed(fetchErrorMessage({ error: error instanceof Error ? error.message : String(error) }));
+        console.error("prompt-burn: fetch failed", error);
+      } finally {
+        setFetching(false);
+      }
+    },
+    [failed],
+  );
 
   /** Re-aggregates the stored rows for one period. Not a fetch: nothing syncs. */
   const reloadSnapshot = useCallback(async (target: PeriodFilter) => {

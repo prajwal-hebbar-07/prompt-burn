@@ -3,7 +3,8 @@
  * nav. The Dashboard body and the Settings destination hang off it.
  *
  * Props only, like the rest of this package: the shell reads `snapshot.fetch`
- * for its status label and calls `onFetch` — the host owns the actual fetch.
+ * for its status label and its failed-fetch banner, and calls `onFetch` — the
+ * host owns the actual fetch, and Retry on the banner is that same call.
  * Which route is showing is view state, so it lives here.
  *
  * Laid out for a wide column (desktop window, VS Code editor tab), capped at
@@ -13,6 +14,7 @@
 import { useEffect, useState } from "react";
 import type { DashboardSnapshot, PeriodFilter } from "@prompt-burn/core";
 import { Dashboard } from "./Dashboard.js";
+import { FetchErrorBanner } from "./FetchBanner.js";
 import { PeriodBar } from "./PeriodBar.js";
 import { Settings, type SettingsProps } from "./Settings.js";
 
@@ -31,10 +33,14 @@ export function fetchedAgoLabel(iso: string, now: Date): string {
   return `Fetched ${minutes} min ago`;
 }
 
-/** `Not fetched yet`, `Fetching…` or `Fetched N min ago` — never an empty string. */
+/**
+ * `Not fetched yet`, `Fetching…` or `Fetched N min ago` — never an empty
+ * string. A failed pass keeps the label of the last *successful* one: the
+ * failure is the banner's job, and numbers fetched five minutes ago are not
+ * "not fetched yet".
+ */
 export function fetchStatusLabel(snapshot: DashboardSnapshot, now: Date): string {
   if (snapshot.fetch.status === "fetching") return "Fetching…";
-  if (snapshot.fetch.status === "error") return "Not fetched yet";
   const at = snapshot.fetch.lastSuccessAt;
   return at === null ? "Not fetched yet" : fetchedAgoLabel(at, now);
 }
@@ -124,6 +130,8 @@ export function AppShell({ snapshot, period, onPeriodChange, onFetch, now, setti
         </nav>
       </header>
       <main aria-label={`Prompt Burn ${route.toLowerCase()}`} className="mx-auto max-w-content px-6 py-8">
+        {/* Chrome, not Dashboard body: a failed pass is visible on both routes. */}
+        <FetchErrorBanner snapshot={snapshot} onRetry={onFetch} />
         {route === "Dashboard" ? (
           <>
             {/* The period bar is a Dashboard control, not chrome: Settings has none. */}

@@ -64,7 +64,14 @@ const postMessage = vi.fn((message: unknown) => {
       const at = "2026-09-04T12:00:00.000Z";
       const result = host.fetchOk
         ? { at, ok: true, omp: { ok: true }, cursor: { ok: true } }
-        : { at, ok: false, error: "sync exploded", omp: { ok: false }, cursor: { ok: false } };
+        : {
+            at,
+            ok: false,
+            // The reader's wording: both sources really failed here.
+            error: "OMP failed: sync exploded · Cursor failed: cursor.com said 503",
+            omp: { ok: false },
+            cursor: { ok: false },
+          };
       answer({ id, ok: true, result });
       return;
     }
@@ -165,6 +172,10 @@ it("keeps the last good snapshot when a fetch fails", async () => {
 
   await waitFor(() => expect(screen.queryByTestId("spinner")).toBeNull());
   expect(total()).toBe("$24.22");
+  // The same banner the desktop window shows, from the same UI package.
+  expect(screen.getByTestId("fetch-error-message").textContent).toContain(
+    "OMP failed · Cursor failed — sync exploded · cursor.com said 503",
+  );
   // The failed pass read nothing back: no snapshot request followed it.
   expect(host.methods).toEqual(["fetch", "getSettings", "getSnapshot", "fetch"]);
 });
