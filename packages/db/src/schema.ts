@@ -1,8 +1,20 @@
--- Prompt Burn schema. Applied once, when ~/.prompt-burn/db.sqlite is created.
--- There is no migration runner (docs/implementation-plan.md): the reset path is
--- deleting the file. Any change here needs one until a second user has the old
--- schema on disk.
-
+/**
+ * The schema, as a string rather than a `.sql` file next to this module.
+ *
+ * It used to be `schema.sql`, read at runtime through
+ * `new URL("./schema.sql", import.meta.url)`. That only works while this
+ * package runs from its own source tree: both shells bundle it — the desktop
+ * sidecar into one `.mjs`, the VS Code extension into `out/extension.js` — and
+ * a bundle's `import.meta.url` points at the bundle, where no `.sql` file
+ * exists. Inlining the text is what makes a packaged app able to create its
+ * database at all.
+ *
+ * Applied once, when `~/.prompt-burn/db.sqlite` is created. There is no
+ * migration runner (docs/implementation-plan.md): the reset path is deleting
+ * the file. Any change here needs one until a second user has the old schema on
+ * disk.
+ */
+export const SCHEMA_SQL = `
 -- Usage rows store tokens only; cost is always derived from price_entries, so a
 -- new or corrected rate re-prices history without rewriting a single row.
 CREATE TABLE usage_events (
@@ -57,3 +69,4 @@ CREATE TABLE settings (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+`;

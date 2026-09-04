@@ -9,3 +9,6 @@ out/
 # Tauri / Cargo build output
 target/
 src-tauri/gen/
+
+# Built sidecar, produced by `vite build --config vite.config.sidecar.mts`
+sidecar-dist/

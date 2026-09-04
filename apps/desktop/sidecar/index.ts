@@ -24,7 +24,7 @@ const reader: UsageReader = createUsageReader(db);
 
 // Proof the connection is live, not just a file handle: the schema is queried
 // through it. On a first run `openDatabase` created the file and applied
-// schema.sql; on later runs it opened what was already there.
+// the schema; on later runs it opened what was already there.
 const { tables } = db
   .prepare("SELECT count(*) AS tables FROM sqlite_schema WHERE type = 'table'")
   .get() as { tables: number };

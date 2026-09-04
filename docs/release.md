@@ -64,6 +64,12 @@ a version number.
   packaged with `--no-dependencies`: the host bundle produced by
   `vite.config.host.mts` already contains the `@prompt-burn/*` code, because
   those packages ship TypeScript sources that only resolve inside this checkout.
+**Every desktop build needs Node 24 or newer on the machine.** The app's data layer is a Node
+sidecar bundled into the app (`sidecar.mjs`) and run by the user's own Node — it uses
+`node:sqlite`, which arrived in Node 22.5. Without Node the window still opens and says so
+instead of dying. The app finds Node on `PATH`, and failing that asks the login shell, so a
+version manager (nvm, fnm, asdf, Volta) works even though a Finder launch inherits none of it.
+
 - **`Prompt-Burn_X.Y.Z_universal.dmg`** — macOS, universal: one download for
   Apple Silicon and Intel. **Unsigned and unnotarised**, so macOS reports it as
   damaged after download. Clear the quarantine flag once, after copying the app

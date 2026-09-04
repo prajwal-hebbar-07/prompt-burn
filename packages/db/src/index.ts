@@ -11,13 +11,15 @@
  * the spike did. Reading Cursor's `state.vscdb` is a separate decision.
  */
 
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { BUNDLED_PRICES, SEED_EFFECTIVE_FROM } from "./prices.js";
+import { SCHEMA_SQL } from "./schema.js";
 
 export { BUNDLED_PRICES, SEED_EFFECTIVE_FROM, type BundledPrice } from "./prices.js";
+export { SCHEMA_SQL } from "./schema.js";
 export {
   estimateCents,
   insertPriceEntry,
@@ -44,8 +46,6 @@ export function databasePath(home: string = homedir()): string {
   return join(appDirectory(home), "db.sqlite");
 }
 
-const SCHEMA_SQL = new URL("./schema.sql", import.meta.url);
-
 /**
  * Opens the database, creating the directory, the file and the schema on first
  * run, and topping up the bundled prices on every run.
@@ -58,7 +58,7 @@ export function openDatabase(path: string = databasePath()): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const isNew = !existsSync(path);
   const db = new DatabaseSync(path);
-  if (isNew) db.exec(readFileSync(SCHEMA_SQL, "utf8"));
+  if (isNew) db.exec(SCHEMA_SQL);
   seedBundledPrices(db);
   return db;
 }

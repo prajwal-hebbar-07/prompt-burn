@@ -200,5 +200,5 @@ against a temp database file.
   `period = 'cycle'` and an empty timestamp (the schema's `CHECK` encodes exactly this).
 - **Wiring sync up (commit 13):** the sidecar is the intended caller; the request protocol
   (`UsageReader`) lands there. Nothing in this package needs to change for that.
-- **Schema coupling:** the two SQL strings in `src/sync.ts` mirror `packages/db/src/schema.sql`.
+- **Schema coupling:** the two SQL strings in `src/sync.ts` mirror `packages/db/src/schema.ts`.
   If that schema changes, change both together and let `sync.test.ts` catch the mismatch.

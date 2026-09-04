@@ -39,7 +39,7 @@ it("opens the shared database and exits when the window closes its stdin", async
     expect(ready.type).toBe("ready");
     expect(ready.database).toBe(join(home, ".prompt-burn", "db.sqlite"));
     expect(existsSync(ready.database)).toBe(true);
-    // schema.sql applied on create, so the connection sees real tables.
+    // The schema is applied on create, so the connection sees real tables.
     expect(ready.tables).toBeGreaterThan(0);
 
     const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));

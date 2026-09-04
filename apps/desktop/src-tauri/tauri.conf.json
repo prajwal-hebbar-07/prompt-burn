@@ -32,6 +32,9 @@
       "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "sidecar-dist/sidecar.mjs": "sidecar.mjs"
+    }
   }
 }

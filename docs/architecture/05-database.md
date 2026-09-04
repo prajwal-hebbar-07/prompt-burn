@@ -24,7 +24,7 @@ Two decisions define it:
 | File                              | Kind     | Role                                                    |
 | --------------------------------- | -------- | ------------------------------------------------------- |
 | `packages/db/src/index.ts`        | Module   | open/create logic; re-exports the pricing surface       |
-| `packages/db/src/schema.sql`      | SQL      | The schema, applied once on file creation               |
+| `packages/db/src/schema.ts`       | Module   | `SCHEMA_SQL`, applied once on file creation             |
 | `packages/db/src/prices.ts`       | Module   | `BUNDLED_PRICES`, `SEED_EFFECTIVE_FROM`, `BundledPrice` |
 | `packages/db/src/pricing.ts`      | Module   | `resolvePrice`, `estimateCents`, pricing types          |
 | `packages/db/src/index.test.ts`   | Tests    | Paths, create/reopen, schema shape, seed rows           |
@@ -55,7 +55,7 @@ flowchart TD
     A[openDatabase path] --> B[mkdir -p dirname path]
     B --> C{file exists?}
     C -- no --> D[new DatabaseSync path]
-    D --> E[db.exec schema.sql]
+    D --> E[db.exec SCHEMA_SQL]
     E --> F[seedBundledPrices: 15 rows, effective_until NULL, effective_from 1970]
     C -- yes --> D2[new DatabaseSync path]
     D2 --> G[return as-is: no schema re-apply, no re-seed, no migration]
@@ -70,13 +70,13 @@ flowchart TD
 ```
 
 `openDatabase` does the mkdir, checks existence _before_ opening, and only on a brand-new file
-applies `schema.sql` and seeds prices. An existing file is opened as-is. There is **no
+applies `SCHEMA_SQL` and seeds prices. An existing file is opened as-is. There is **no
 migration runner**: deleting the file is the reset path, and it is also how a schema change is
 picked up until migrations exist.
 
 ## 5. Contracts and invariants
 
-**The schema** (`schema.sql`) has exactly four tables, applied once at creation:
+**The schema** (`SCHEMA_SQL` in `schema.ts`) has exactly four tables, applied once at creation:
 
 - `usage_events` — one row per usage item. `id` TEXT PK; `source` CHECK `'omp' | 'cursor'`;
   `period` CHECK `'event' | 'cycle'`; `timestamp` ISO 8601 UTC for `'event'`, **empty string**
@@ -128,9 +128,10 @@ unknown, never guessed.
 ## 6. Configuration
 
 No config. The one path is home-relative and derived, not set: `~/.prompt-burn/db.sqlite`
-(overridable only by passing `path`/`home` arguments, which tests use). The schema file is
-located relative to the module URL (`new URL("./schema.sql", import.meta.url)`), so no env
-vars, no flags, no settings rows participate in opening the database.
+(overridable only by passing `path`/`home` arguments, which tests use). The schema is a
+string in `schema.ts`, not a file read at runtime — both shells bundle this package, and a
+bundle's `import.meta.url` points at the bundle, where no `.sql` file exists. No env vars, no
+flags, no settings rows participate in opening the database.
 
 ## 7. Boundaries and dependencies
 
@@ -168,7 +169,7 @@ Vitest (`pnpm --filter @prompt-burn/db test`), two files, all against throwaway 
 
 - **No migration runner is deliberate.** Deleting the file is the reset path and the schema
   upgrade path. Fine for a single user; the moment anyone else has an old schema on disk, a
-  migration story is needed — `schema.sql`'s own header says so.
+  migration story is needed — `schema.ts`'s own header says so.
 - **Schema shape carries product invariants.** The `period`/`timestamp` CHECK encodes
   "cycle aggregates have no moment in time"; the `raw_model` column preserves pre-canonical
   names; `session_id` is nullable because Cursor cycle rows have no session. Dropping any of
@@ -199,9 +200,9 @@ Vitest (`pnpm --filter @prompt-burn/db test`), two files, all against throwaway 
 - **Changing a rate:** never UPDATE the rate columns of an old row in production data; close
   it with `effective_until` and insert a new row with a new `effective_from`. That is the
   invariant retroactive pricing is built on.
-- **Changing the schema:** edit `schema.sql` knowing it only applies to new files. Until a
+- **Changing the schema:** edit `SCHEMA_SQL` in `schema.ts` knowing it only applies to new files. Until a
   migration runner exists, existing users pick it up only by deleting the file — and the
-  header comment in `schema.sql` asks for a runner the moment there is a second user with the
+  header comment in `schema.ts` asks for a runner the moment there is a second user with the
   old schema on disk.
 - **Keeping the divergence:** `node:sqlite` over `better-sqlite3` is deliberate; do not add
   the dependency "for features". If a `node:sqlite` limitation ever forces the change, it
