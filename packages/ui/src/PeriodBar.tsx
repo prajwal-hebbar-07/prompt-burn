@@ -57,11 +57,24 @@ function monthDays(month: Date): string[] {
   return days;
 }
 
-const FIXED_SEGMENTS = [
-  { label: "Today", period: { kind: "today" } },
-  { label: "This month", period: { kind: "this_month" } },
-  { label: "All time", period: { kind: "all_time" } },
-] as const satisfies ReadonlyArray<{ label: string; period: PeriodFilter }>;
+/** The control names, reused by the hero subtitle so the two never drift. */
+const PERIOD_LABELS: Record<PeriodFilter["kind"], string> = {
+  today: "Today",
+  this_month: "This month",
+  all_time: "All time",
+  range: "Date range",
+};
+
+/** `Today`, `This month`, `All time` or `Date range`. */
+export function periodLabel(period: PeriodFilter): string {
+  return PERIOD_LABELS[period.kind];
+}
+
+const FIXED_SEGMENTS: ReadonlyArray<{ label: string; period: PeriodFilter }> = [
+  { label: PERIOD_LABELS.today, period: { kind: "today" } },
+  { label: PERIOD_LABELS.this_month, period: { kind: "this_month" } },
+  { label: PERIOD_LABELS.all_time, period: { kind: "all_time" } },
+];
 
 function segmentClass(active: boolean): string {
   return `rounded-control px-3 py-1.5 text-small font-medium ${
@@ -144,7 +157,7 @@ export function PeriodBar({ period, onPeriodChange, now }: PeriodBarProps) {
           onClick={() => setOpen(!open)}
           className={segmentClass(period.kind === "range")}
         >
-          Date range
+          {PERIOD_LABELS.range}
         </button>
         {period.kind === "range" ? (
           <span
