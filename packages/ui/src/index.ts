@@ -1,6 +1,6 @@
 export { AppShell, type AppShellProps, type Route } from "./AppShell.js";
 export { fetchStatusLabel, fetchedAgoLabel } from "./AppShell.js";
-export { CycleCard, CycleFootnote } from "./CursorCycle.js";
+export { CycleFootnote } from "./CursorCycle.js";
 export { Dashboard, type DashboardProps } from "./Dashboard.js";
 export {
   emptyStateMessage,
