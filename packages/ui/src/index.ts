@@ -15,7 +15,9 @@ export { ModelTable, type ModelTableProps } from "./ModelTable.js";
 export { PeriodBar, type PeriodBarProps, formatRangeLabel, periodLabel } from "./PeriodBar.js";
 export {
   Settings,
-  type SettingsProps,
+  type NewPriceInput,
   type PriceRate,
+  type SettingsProps,
   type SourceHealth,
+  type SourceSettings,
 } from "./Settings.js";

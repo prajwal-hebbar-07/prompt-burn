@@ -2,16 +2,16 @@
  * Settings screen tests: sources (OMP + Cursor), pricing (unknown models +
  * bundled rates), and about (db path).
  *
- * Display only in this commit: inputs and toggles accept in-memory changes,
- * but nothing writes or persists.
+ * The toggles and the path are view state until Save fires; Save and Add price
+ * hand values to the host, which is the only thing that touches a database.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CursorSnapshot, DashboardSnapshot, UsageEvent } from "@prompt-burn/core";
 import { buildDashboardSnapshot } from "@prompt-burn/core";
-import { Settings, type PriceRate } from "./index.js";
+import { Settings, type NewPriceInput, type PriceRate } from "./index.js";
 
 afterEach(cleanup);
 
@@ -181,5 +181,76 @@ describe("Settings", () => {
     const keyInput = screen.getByPlaceholderText("crsr_...");
     await user.type(keyInput, "crsr_secret_key");
     expect((keyInput as HTMLInputElement).value).toBe("crsr_secret_key");
+  });
+
+  it("hands the edited toggles and path to onSave, not before", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(<Settings ompPath="/stored/omp" onSave={onSave} />);
+
+    await user.click(screen.getByRole("checkbox", { name: "Enable Cursor" }));
+    const pathInput = screen.getByRole("textbox", { name: "OMP sessions path" });
+    await user.clear(pathInput);
+    await user.type(pathInput, "/custom/omp/path");
+    expect(onSave).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId("save-sources"));
+
+    expect(onSave).toHaveBeenCalledWith({
+      ompEnabled: true,
+      ompPath: "/custom/omp/path",
+      cursorEnabled: false,
+    });
+    expect(screen.getByTestId("save-state").textContent).toContain("Saved");
+  });
+
+  it("adds a rate for one unknown model, with blank cache fields left unknown", async () => {
+    const user = userEvent.setup();
+    const onAddPrice = vi.fn<(price: NewPriceInput) => void>();
+    render(
+      <Settings
+        unknownModels={["default", "gpt-5.6-sol-medium"]}
+        onAddPrice={onAddPrice}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add price for default" }));
+    await user.type(screen.getByRole("textbox", { name: "Input / 1M" }), "1.25");
+    // Output is required: a model priced without it would read as free.
+    expect((screen.getByRole("button", { name: "Save price" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    await user.type(screen.getByRole("textbox", { name: "Output / 1M" }), "5");
+    await user.type(screen.getByRole("textbox", { name: "Cache read / 1M" }), "0.125");
+    await user.click(screen.getByRole("button", { name: "Save price" }));
+
+    expect(onAddPrice).toHaveBeenCalledWith({
+      model: "default",
+      provider: "custom",
+      inputPerMtok: 1.25,
+      outputPerMtok: 5,
+      cacheReadPerMtok: 0.125,
+      // Left blank: unknown, so those tokens keep the estimate at `—`.
+      cacheWritePerMtok: null,
+    });
+    // The form closes; the other unknown model is untouched.
+    expect(screen.queryByTestId("add-price-form")).toBeNull();
+    expect(screen.getByRole("button", { name: "Add price for gpt-5.6-sol-medium" })).toBeTruthy();
+  });
+
+  it("refuses a rate that is not a number", async () => {
+    const user = userEvent.setup();
+    const onAddPrice = vi.fn();
+    render(<Settings unknownModels={["default"]} onAddPrice={onAddPrice} />);
+
+    await user.click(screen.getByRole("button", { name: "Add price for default" }));
+    await user.type(screen.getByRole("textbox", { name: "Input / 1M" }), "free");
+    await user.type(screen.getByRole("textbox", { name: "Output / 1M" }), "5");
+
+    expect((screen.getByRole("button", { name: "Save price" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(onAddPrice).not.toHaveBeenCalled();
   });
 });

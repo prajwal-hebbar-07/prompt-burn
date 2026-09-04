@@ -8,16 +8,20 @@
  * When those scopes differ the snapshot says so via `mixedPeriod`, and the hero
  * copy names both.
  *
- * Costs are not computed here. There is no price DB until commit 9, so every
- * `estimatedCents` is `null` — the UI renders that as `—`, never `$0`. Cursor's
- * own `totalCents` is informational and never feeds our estimate.
+ * Costs are derived, never stored: the host injects `priceCents`, which resolves
+ * one part's rate out of `price_entries` and returns cents, or `null` when the
+ * model is unpriced. That is what makes a price added in Settings apply to old
+ * events — nothing here caches a cost. Without a pricer every `estimatedCents`
+ * is `null`, and one unknown part makes every total containing it `null` too:
+ * the UI renders that as `—`, never `$0`. Cursor's own `totalCents` is
+ * informational and never feeds our estimate.
  */
 
 import type {
   CursorSnapshot,
   DashboardSnapshot,
-  ModelAggregate,
   PeriodFilter,
+  PriceCents,
   Source,
   TokenCounts,
   UsageEvent,
@@ -36,6 +40,11 @@ export interface SnapshotInput {
   now?: Date;
   /** Owned by the shell that fetched; aggregation never invents an error. */
   fetch?: DashboardSnapshot["fetch"];
+  /**
+   * Host-supplied cost lookup. Omitted — a mock snapshot, a shell with no
+   * database open — leaves every `estimatedCents` null.
+   */
+  priceCents?: PriceCents;
 }
 
 /** Adds `part` into `total`. Cursor omits cache keys when zero. */
@@ -46,34 +55,57 @@ function addTokens(total: Required<TokenCounts>, part: TokenCounts): void {
   total.cacheWrite += part.cacheWrite ?? 0;
 }
 
+/** One rollup input: tokens plus the instant its rate is resolved at. */
+interface PricedPart {
+  model: string;
+  tokens: TokenCounts;
+  /** Empty for Cursor cycle aggregates — the pricer decides what to do with that. */
+  timestamp: string;
+}
+
+/** `null` poisons: one unknown rate makes every total containing it unknown. */
+function addCents(total: number | null, part: number | null): number | null {
+  return total === null || part === null ? null : total + part;
+}
+
 /**
  * Sums per-model rollups for one source. Rows keep first-seen order and are
  * never merged across sources: `(source, model)` is the key, so the same model
  * on OMP and Cursor is deliberately two rows.
+ *
+ * Costs are summed per part, not per rollup: an event keeps the rate that was
+ * valid at its own timestamp, so two events on the same model can price at two
+ * different rates.
  */
-function rollup(source: Source, parts: readonly ModelAggregate[]) {
+function rollup(source: Source, parts: readonly PricedPart[], priceCents?: PriceCents) {
   const total: Required<TokenCounts> = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const byModel = new Map<string, Required<TokenCounts>>();
+  const byModel = new Map<string, { tokens: Required<TokenCounts>; cents: number | null }>();
+  // No pricer is no cost knowledge, not free usage: nothing can be counted.
+  const start = priceCents ? 0 : null;
+  let totalCents = start;
 
   for (const part of parts) {
     let row = byModel.get(part.model);
     if (!row) {
-      row = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      row = { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cents: start };
       byModel.set(part.model, row);
     }
-    addTokens(row, part.tokens);
+    addTokens(row.tokens, part.tokens);
     addTokens(total, part.tokens);
+    const cents = priceCents ? priceCents(part.model, part.tokens, part.timestamp) : null;
+    row.cents = addCents(row.cents, cents);
+    totalCents = addCents(totalCents, cents);
   }
 
   return {
-    totals: { estimatedCents: null, tokens: total },
+    totals: { estimatedCents: totalCents, tokens: total },
     // Unknown ids and Cursor's `default` (Auto) stay as rows: an unpriceable
     // model must stay visible, not disappear from the table.
-    rows: [...byModel].map(([model, tokens]) => ({
+    rows: [...byModel].map(([model, row]) => ({
       source,
       model,
-      tokens,
-      estimatedCents: null,
+      tokens: row.tokens,
+      estimatedCents: row.cents,
     })),
   };
 }
@@ -84,27 +116,33 @@ function rollup(source: Source, parts: readonly ModelAggregate[]) {
  * subtotals — sources are never deduped.
  */
 export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot {
-  const { period, ompEvents, cursor, now } = input;
+  const { period, ompEvents, cursor, now, priceCents } = input;
 
   const omp = rollup(
     "omp",
-    filterEventsByPeriod(ompEvents, period, now).map(({ model, tokens }) => ({ model, tokens })),
+    filterEventsByPeriod(ompEvents, period, now).map(({ model, tokens, timestamp }) => ({
+      model,
+      tokens,
+      timestamp,
+    })),
+    priceCents,
   );
 
   // Enterprise events are timestamped, so they take the same period as OMP.
   // Pro cycle aggregates have no timestamps and are used exactly as fetched.
-  const cursorParts =
+  const cursorParts: PricedPart[] =
     cursor.mode === "events"
-      ? filterEventsByPeriod(cursor.events, period, now).map(({ model, tokens }) => ({
+      ? filterEventsByPeriod(cursor.events, period, now).map(({ model, tokens, timestamp }) => ({
           model,
           tokens,
+          timestamp,
         }))
-      : cursor.models;
-  const cursorRollup = rollup("cursor", cursorParts);
+      : cursor.models.map(({ model, tokens }) => ({ model, tokens, timestamp: "" }));
+  const cursorRollup = rollup("cursor", cursorParts, priceCents);
 
   return {
     period,
-    estimatedCents: null,
+    estimatedCents: addCents(omp.totals.estimatedCents, cursorRollup.totals.estimatedCents),
     omp: omp.totals,
     cursor: {
       ...cursorRollup.totals,

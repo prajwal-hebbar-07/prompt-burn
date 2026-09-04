@@ -132,12 +132,67 @@ describe("buildDashboardSnapshot with Cursor Pro cycle aggregates", () => {
     ]);
   });
 
-  it("leaves every cost null and defaults fetch state to idle", () => {
+  it("leaves every cost null without a pricer, and defaults fetch state to idle", () => {
     expect(today.estimatedCents).toBeNull();
     expect(today.omp.estimatedCents).toBeNull();
     expect(today.cursor.estimatedCents).toBeNull();
     expect(today.fetch).toEqual({ lastSuccessAt: null, status: "idle" });
     expect(today.period).toEqual({ kind: "today" });
+  });
+});
+
+describe("buildDashboardSnapshot with an injected pricer", () => {
+  /** A cent per input token for `claude-opus-5`; every other model unpriced. */
+  const priceCents = (model: string, tokens: { input: number }, timestamp: string) =>
+    model === "claude-opus-5" && timestamp !== "" ? tokens.input : null;
+
+  const today = buildDashboardSnapshot({
+    period: { kind: "today" },
+    ompEvents: OMP_EVENTS,
+    cursor: { ...CURSOR_CYCLE, models: [] },
+    now: NOW,
+    priceCents,
+  });
+
+  it("sums the priced rows and prices each event at its own timestamp", () => {
+    // Today's two opus events, 5 + 7 input tokens; yesterday's 1000 is filtered.
+    const opus = today.models.find((row) => row.model === "claude-opus-5");
+    expect(opus?.estimatedCents).toBe(12);
+  });
+
+  it("keeps a total null when any row it contains is unpriced", () => {
+    // `glm-5.3-flash` is in the same period and has no rate.
+    expect(today.models.find((row) => row.model === "glm-5.3-flash")?.estimatedCents).toBeNull();
+    expect(today.omp.estimatedCents).toBeNull();
+    expect(today.estimatedCents).toBeNull();
+  });
+
+  it("prices a source whose every row is known, even beside an unpriced one", () => {
+    const opusOnly = buildDashboardSnapshot({
+      period: { kind: "today" },
+      ompEvents: OMP_EVENTS.filter((event) => event.model === "claude-opus-5"),
+      cursor: CURSOR_CYCLE,
+      now: NOW,
+      priceCents,
+    });
+
+    expect(opusOnly.omp.estimatedCents).toBe(12);
+    // The Cursor cycle models have no rate here, so the combined total cannot
+    // be known — the OMP subtotal still is.
+    expect(opusOnly.cursor.estimatedCents).toBeNull();
+    expect(opusOnly.estimatedCents).toBeNull();
+  });
+
+  it("reports zero, not unknown, for a period with no usage at all", () => {
+    const empty = buildDashboardSnapshot({
+      period: { kind: "today" },
+      ompEvents: [],
+      cursor: { ...CURSOR_CYCLE, models: [] },
+      now: NOW,
+      priceCents,
+    });
+
+    expect(empty.estimatedCents).toBe(0);
   });
 });
 
