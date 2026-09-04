@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, openDatabase } from "@prompt-burn/db";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { createUsageReader } from "./reader.js";
+import { createUsageReader } from "./index.js";
 
 const FIXTURE_LINE = readFileSync(
   new URL("../../../docs/fixtures/omp-session-line.json", import.meta.url),
