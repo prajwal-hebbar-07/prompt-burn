@@ -32,8 +32,9 @@ fn spawn_sidecar() -> std::io::Result<Sidecar> {
         .stdout(Stdio::piped())
         .spawn()?;
 
-    // Its stdout is the proof the database opened; the request protocol that
-    // replaces this reader arrives with UsageReader.
+    // Its stdout is the proof the database opened. The stdin request protocol
+    // (discover / fetch / getSnapshot) now exists on the sidecar; the window
+    // starts speaking it in commit 15, until then this logs whatever it says.
     let stdout = child.stdout.take().expect("stdout was piped");
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
