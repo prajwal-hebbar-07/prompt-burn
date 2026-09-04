@@ -8,6 +8,9 @@ Product decisions live in [product.md](product.md); the build sequence is
 [implementation-plan.md](implementation-plan.md). Those two are **input documents**: they describe
 what to build, not what exists. What exists is documented by the numbered pairs below.
 
+[release.md](release.md) is the third input document: how a version is bumped and how the
+desktop `.dmg` and the VS Code `.vsix` reach a GitHub Release.
+
 ## Areas
 
 Every numbered area is documented twice — one technical reading, one plain-English reading.
