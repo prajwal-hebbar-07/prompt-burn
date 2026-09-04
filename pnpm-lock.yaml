@@ -14,6 +14,12 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@prompt-burn/collectors':
+        specifier: workspace:*
+        version: link:../../packages/collectors
+      '@prompt-burn/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@prompt-burn/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -51,6 +57,10 @@ importers:
         version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3))
 
   packages/db:
+    dependencies:
+      '@prompt-burn/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

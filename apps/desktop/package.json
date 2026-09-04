@@ -9,6 +9,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@prompt-burn/collectors": "workspace:*",
+    "@prompt-burn/core": "workspace:*",
     "@prompt-burn/db": "workspace:*"
   },
   "devDependencies": {

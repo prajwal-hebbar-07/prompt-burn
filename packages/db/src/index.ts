@@ -24,6 +24,7 @@ export {
   type PriceRate,
   type TokenCounts,
 } from "./pricing.js";
+export { loadUsageEvents } from "./events.js";
 
 /** Application data directory, e.g. `/Users/you/.prompt-burn`. */
 export function appDirectory(home: string = homedir()): string {
