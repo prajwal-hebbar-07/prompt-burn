@@ -4,10 +4,10 @@
  * extension host later implements the same three methods over the same
  * `@prompt-burn/db` + `@prompt-burn/collectors` calls.
  *
- * This slice is OMP only: `fetch()` runs the existing incremental sync, and
- * `getSnapshot(all_time)` aggregates through core. Cursor contributes an empty
- * cycle — the honest representation of "no Cursor data yet" — and its
- * collector, when it exists, replaces that one value.
+ * Both sources land here: `fetch()` runs the parallel collector pass, and
+ * `getSnapshot()` aggregates stored OMP rows together with the last Cursor
+ * cycle. Partial success is normal — a failed source keeps its previous data
+ * while the other's new data is applied.
  */
 
 import { existsSync } from "node:fs";
@@ -19,7 +19,12 @@ import {
   type PeriodFilter,
 } from "@prompt-burn/core";
 import { loadUsageEvents } from "@prompt-burn/db";
-import { defaultSessionsDirectory, syncOmpSessions } from "@prompt-burn/collectors";
+import {
+  collectAllSources,
+  defaultCursorStatePath,
+  defaultSessionsDirectory,
+  readCursorAuth,
+} from "@prompt-burn/collectors";
 
 export type { DashboardSnapshot, PeriodFilter };
 
@@ -35,19 +40,29 @@ export interface ReaderHealth {
 /** What one `fetch()` pass did. Never throws — errors are data here. */
 export interface FetchResult {
   at: string;
+  /** Every source that could run did. Partial success is `false` with data applied. */
   ok: boolean;
+  /** Combined per-source failure text, e.g. "Cursor failed: …". */
   error?: string;
   /** Per-source sync counters, straight from the collectors. */
-  omp: { scannedFiles: number; skippedFiles: number; insertedEvents: number };
+  omp: { ok: boolean; error?: string; scannedFiles: number; skippedFiles: number; insertedEvents: number };
+  cursor: { ok: boolean; reason?: string; error?: string; models: number };
 }
 
-/** No Cursor collector exists yet: an empty cycle, never a faked timestamp. */
+/** Before the first Cursor fetch: an empty cycle, never a faked timestamp. */
 const EMPTY_CURSOR_CYCLE: CursorSnapshot = {
   mode: "cycle_aggregate",
   cycleStart: "",
   cycleEnd: "",
   models: [],
 };
+
+/**
+ * Local conditions, not failures: there is simply no Cursor session to read, so
+ * the Cursor section degrades to empty and the pass still counts as clean.
+ * `expired` and `unreadable` do count as failures — they are actionable.
+ */
+const CURSOR_DEGRADED: ReadonlySet<string> = new Set(["not_installed", "signed_out"]);
 
 export interface UsageReader {
   discover(): Promise<ReaderHealth[]>;
@@ -62,13 +77,27 @@ export interface UsageReader {
  */
 export function createUsageReader(
   db: DatabaseSync,
-  options: { ompDirectory?: string; now?: () => Date } = {},
+  options: {
+    ompDirectory?: string;
+    cursorStatePath?: string;
+    fetchImpl?: typeof fetch;
+    now?: () => Date;
+  } = {},
 ): UsageReader {
-  const { ompDirectory, now = () => new Date() } = options;
+  const { ompDirectory, cursorStatePath, fetchImpl, now = () => new Date() } = options;
+
+  // The last cycle Cursor returned, kept so a period change or a later failed
+  // fetch still renders it. ponytail: in memory only — a restart shows an empty
+  // Cursor section until the fetch-on-open lands, which is the honest state
+  // anyway. Persist to `usage_events` (period = 'cycle') if that stops being
+  // true.
+  let cursorCycle: CursorSnapshot | undefined;
 
   return {
     async discover() {
       const ompPath = ompDirectory ?? defaultSessionsDirectory();
+      const statePath = cursorStatePath ?? defaultCursorStatePath();
+      const auth = readCursorAuth(statePath);
       return [
         {
           source: "omp",
@@ -77,27 +106,40 @@ export function createUsageReader(
         },
         {
           source: "cursor",
-          available: false,
-          detail: "No Cursor collector yet — lands with the Cursor phase.",
+          available: auth.ok,
+          // Never the token: only where it came from, or why there is none.
+          detail: auth.ok ? statePath : auth.detail,
         },
       ];
     },
 
     async fetch() {
       const at = now().toISOString();
-      try {
-        const omp = syncOmpSessions(db, ompDirectory);
-        return { at, ok: true, omp };
-      } catch (error) {
-        // The sync rolls back on error and the stored data is untouched; the
-        // error is carried back, never thrown, so the window can keep old data.
-        return {
-          at,
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-          omp: { scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 },
-        };
-      }
+      const result = await collectAllSources({ db, ompDirectory, cursorStatePath, fetchImpl });
+      const cycle = result.cursor.cycle;
+      if (cycle) cursorCycle = cycle;
+
+      const cursorFailed = !result.cursor.ok && !CURSOR_DEGRADED.has(result.cursor.reason ?? "");
+      const errors: string[] = [];
+      if (!result.omp.ok) errors.push(`OMP failed: ${result.omp.error ?? "unknown error"}`);
+      if (cursorFailed) errors.push(`Cursor failed: ${result.cursor.error ?? "unknown error"}`);
+
+      return {
+        at,
+        ok: result.omp.ok && !cursorFailed,
+        ...(errors.length > 0 ? { error: errors.join(" · ") } : {}),
+        omp: {
+          ok: result.omp.ok,
+          ...(result.omp.error === undefined ? {} : { error: result.omp.error }),
+          ...result.omp.sync,
+        },
+        cursor: {
+          ok: result.cursor.ok,
+          ...(result.cursor.reason === undefined ? {} : { reason: result.cursor.reason }),
+          ...(result.cursor.error === undefined ? {} : { error: result.cursor.error }),
+          models: cycle?.mode === "cycle_aggregate" ? cycle.models.length : 0,
+        },
+      };
     },
 
     async getSnapshot(period: PeriodFilter) {
@@ -105,7 +147,7 @@ export function createUsageReader(
       return buildDashboardSnapshot({
         period,
         ompEvents,
-        cursor: EMPTY_CURSOR_CYCLE,
+        cursor: cursorCycle ?? EMPTY_CURSOR_CYCLE,
         now: now(),
       });
     },
