@@ -15,7 +15,7 @@ This page is the short version to keep open while coding. It duplicates no reaso
 
 | Decision | What it means |
 |----------|----------------|
-| Sources | OMP + Cursor only |
+| Sources | OMP + Cursor only. Gemini through Antigravity arrives **inside** OMP — `message.provider`, not a third source. |
 | Metric | Estimated PAYG cost from tokens × our price DB. Not subscription invoices. |
 | OMP accounts | Do not split Claude Pro / Ollama Cloud by account. Model-level breakdown is enough. |
 | Cursor Pro | Cycle-to-date per-model aggregates. Calendar filters do **not** apply. Label **"Cycle to date"**. |
@@ -33,6 +33,11 @@ This page is the short version to keep open while coding. It duplicates no reaso
 > The Cursor Pro row is contradicted by the spike: the dashboard API **does** accept date windows.
 > See [data-shapes.md § Cursor Pro *does* accept date windows](data-shapes.md#finding-cursor-pro-does-accept-date-windows).
 > Unchanged until that product decision is made.
+
+> Gemini/Antigravity is an OMP provider value, not an origin: `gemini-3.8-flash` /
+> `google-antigravity` / `google-gemini-cli` on ordinary OMP assistant lines, `source: "omp"`.
+> See [data-shapes.md § Gemini through Antigravity](data-shapes.md#gemini-through-antigravity--second-scan-2026-09-04).
+> It has no bundled rate, so it prices as unknown (`—`) until one is seeded.
 
 ## Mixed periods
 
