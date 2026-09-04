@@ -40,6 +40,8 @@ interface FakeSidecar {
   /** Resolves the next fetch; unset means fetch answers immediately. */
   gate?: PromiseWithResolvers<void>;
   fetchOk: boolean;
+  /** OMP succeeds while Cursor fails — the partial-success case. */
+  cursorFails?: boolean;
   snapshot: DashboardSnapshot;
   methods: string[];
   /** The `period` every `getSnapshot` was asked for, in order. */
@@ -62,9 +64,25 @@ beforeEach(() => {
 
     if (method === "fetch") {
       await sidecar.gate?.promise;
+      const at = "2026-09-04T12:00:00.000Z";
+      const cursor = sidecar.cursorFails
+        ? { ok: false, reason: "fetch_failed", error: "cursor.com said 503", models: 0 }
+        : { ok: true, models: 6 };
       const result = sidecar.fetchOk
-        ? { at: "2026-09-04T12:00:00.000Z", ok: true, omp: { scannedFiles: 1, skippedFiles: 0, insertedEvents: 3 } }
-        : { at: "2026-09-04T12:00:00.000Z", ok: false, error: "sync exploded", omp: { scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 } };
+        ? {
+            at,
+            ok: !sidecar.cursorFails,
+            ...(sidecar.cursorFails ? { error: "Cursor failed: cursor.com said 503" } : {}),
+            omp: { ok: true, scannedFiles: 1, skippedFiles: 0, insertedEvents: 3 },
+            cursor,
+          }
+        : {
+            at,
+            ok: false,
+            error: "sync exploded",
+            omp: { ok: false, error: "sync exploded", scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 },
+            cursor: { ok: false, reason: "not_installed", error: "no state", models: 0 },
+          };
       return JSON.stringify({ type: "response", id, ok: true, result });
     }
     if (method === "getSnapshot") {
@@ -147,6 +165,25 @@ it("keeps the last good snapshot when a fetch fails", async () => {
   expect(total()).toBe("$24.22");
   expect(status()).toBe(fetchedLabel);
   expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "fetch"]);
+});
+
+it("applies the successful source when only one of the two fails", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await waitFor(() => expect(total()).toBe("$24.22"));
+
+  sidecar.cursorFails = true;
+  sidecar.snapshot = snapshotWith(500);
+  await user.click(screen.getByRole("button", { name: "Fetch data" }));
+
+  // OMP's new rows land even though Cursor failed; the failure only sets the
+  // fetch status (the banner that reads it is commit 29).
+  await waitFor(() => expect(total()).toBe("$5.00"));
+  expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "fetch", "getSnapshot"]);
+  expect(console.error).toHaveBeenCalledWith(
+    "prompt-burn: partial fetch",
+    "Cursor failed: cursor.com said 503",
+  );
 });
 
 it("opens on this month and re-reads the snapshot for a new period, without fetching", async () => {
