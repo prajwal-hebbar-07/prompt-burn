@@ -3,8 +3,9 @@
  * prices injected the way the hero tests do.
  *
  * The review focus is row keying: `(source, model)`. The same canonical model
- * used on OMP and on Cursor is two rows, in the aggregator's order, and an
- * unpriceable row — Cursor's `default` (Auto) — stays visible with `—`.
+ * used on OMP and on Cursor is two rows, ranked by spend, and an unpriceable
+ * row — Cursor's `default` (Auto) — stays visible with `—`, below every row
+ * that does price.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -65,15 +66,16 @@ const rowsOf = (table: HTMLElement) =>
   );
 
 describe("ModelTable", () => {
-  it("keeps the same model on both sources as two rows, in aggregator order", () => {
-    render(<ModelTable rows={snapshot().models} />);
+  it("ranks by spend and keeps the same model on both sources as two rows", () => {
+    render(<ModelTable rows={snapshot({ "omp:claude-opus-5": 900 }).models} />);
     const rows = rowsOf(screen.getByTestId("model-table"));
 
-    expect(rows.map(([model, source]) => `${source} ${model}`)).toEqual([
-      "OMP claude-opus-5",
-      "OMP qwen3-coder:480b",
-      "Cursor claude-opus-5",
-      "Cursor default",
+    // The priced row leads; the rest fall in by token volume.
+    expect(rows.map(([rank, model, source]) => `${rank} ${source} ${model}`)).toEqual([
+      "1 OMP claude-opus-5",
+      "2 Cursor claude-opus-5",
+      "3 Cursor default",
+      "4 OMP qwen3-coder:480b",
     ]);
     // Never merged: the shared model appears once per source, not summed.
     expect(screen.getByTestId("model-row-omp-claude-opus-5")).toBeTruthy();
@@ -87,7 +89,7 @@ describe("ModelTable", () => {
     expect(screen.getAllByText("Cursor")).toHaveLength(2);
   });
 
-  it("shows compact token columns and per-row costs", () => {
+  it("shows compact token columns and per-row costs, priced rows first", () => {
     render(
       <ModelTable
         rows={snapshot({ "cursor:claude-opus-5": 1_234.5, "omp:qwen3-coder:480b": 0 }).models}
@@ -95,9 +97,11 @@ describe("ModelTable", () => {
     );
     const rows = rowsOf(screen.getByTestId("model-table"));
 
-    expect(rows[2]).toEqual(["claude-opus-5", "Cursor", "420K", "1.1M", "0", "0", "$12.35"]);
-    expect(rows[1]).toEqual(["qwen3-coder:480b", "OMP", "5K", "2.4K", "0", "0", "$0.00"]);
-    expect(rows[0]).toEqual([
+    expect(rows[0]).toEqual(["1", "claude-opus-5", "Cursor", "420K", "1.1M", "0", "0", "$12.35"]);
+    // $0.00 is a real price, so it still outranks every unknown one.
+    expect(rows[1]).toEqual(["2", "qwen3-coder:480b", "OMP", "5K", "2.4K", "0", "0", "$0.00"]);
+    expect(rows[2]).toEqual([
+      "3",
       "claude-opus-5",
       "OMP",
       "2",
@@ -107,6 +111,7 @@ describe("ModelTable", () => {
       // No price for this model yet: em dash, never $0.
       "—",
     ]);
+    expect(rows[3]).toEqual(["4", "default", "Cursor", "12K", "900", "0", "0", "—"]);
   });
 
   it("keeps the unpriceable default (Auto) row visible with an em dash", () => {
@@ -125,6 +130,6 @@ describe("ModelTable", () => {
     expect(rowsOf(table)).toEqual([]);
     expect(
       Array.from(table.querySelectorAll("thead th")).map((cell) => cell.textContent),
-    ).toEqual(["Model", "Source", "In", "Out", "Cache R", "Cache W", "Est. cost"]);
+    ).toEqual(["#", "Model", "Source", "In", "Out", "Cache R", "Cache W", "Est. cost"]);
   });
 });

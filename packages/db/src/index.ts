@@ -47,35 +47,44 @@ export function databasePath(home: string = homedir()): string {
 const SCHEMA_SQL = new URL("./schema.sql", import.meta.url);
 
 /**
- * Opens the database, creating the directory, the file, the schema and the
- * bundled prices on first run.
+ * Opens the database, creating the directory, the file and the schema on first
+ * run, and topping up the bundled prices on every run.
  *
- * An existing file is opened as-is: no schema re-apply, no re-seed, no
- * migration runner. Deleting the file is the reset path, and it is also how a
- * schema change is picked up until migrations exist.
+ * The schema itself is applied once: no re-apply, no migration runner, and
+ * deleting the file is still the reset path for a schema change. Prices are the
+ * exception — see `seedBundledPrices`.
  */
 export function openDatabase(path: string = databasePath()): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const isNew = !existsSync(path);
   const db = new DatabaseSync(path);
-  if (isNew) {
-    db.exec(readFileSync(SCHEMA_SQL, "utf8"));
-    seedBundledPrices(db);
-  }
+  if (isNew) db.exec(readFileSync(SCHEMA_SQL, "utf8"));
+  seedBundledPrices(db);
   return db;
 }
 
 /**
- * Inserts the bundled rates. Called once, on create — running it against a
- * populated database would duplicate every row, since a model legitimately has
- * many price rows across time.
+ * Inserts the bundled rates that this database does not have yet.
+ *
+ * Runs on every open, not only on create: a release that adds a model — a new
+ * Cursor id, a new vendor — has to reach databases that already exist, and
+ * there is no migration runner to carry it. Rows are matched on
+ * `(model, provider, effective_from)`, which is exactly one backdated seed row's
+ * identity, so nothing is duplicated, and a rate added in Settings or a later
+ * row closing a seed is never touched.
+ *
+ * The price of that: deleting a bundled row does not stick — it returns on the
+ * next open. Close it with `effective_until` instead.
  */
 export function seedBundledPrices(db: DatabaseSync): void {
   const insert = db.prepare(
     `INSERT INTO price_entries
        (model, provider, effective_from, effective_until,
         input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok)
-     VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`,
+     SELECT ?, ?, ?, NULL, ?, ?, ?, ?
+      WHERE NOT EXISTS (
+            SELECT 1 FROM price_entries
+             WHERE model = ? AND provider = ? AND effective_from = ?)`,
   );
   for (const rate of BUNDLED_PRICES) {
     insert.run(
@@ -86,6 +95,9 @@ export function seedBundledPrices(db: DatabaseSync): void {
       rate.outputPerMtok,
       rate.cacheReadPerMtok,
       rate.cacheWritePerMtok,
+      rate.model,
+      rate.provider,
+      SEED_EFFECTIVE_FROM,
     );
   }
 }

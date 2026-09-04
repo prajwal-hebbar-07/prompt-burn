@@ -266,6 +266,7 @@ it("prices a cycle aggregate on the next snapshot after Settings adds a rate", a
   // Tokens are untouched: the cost came from the price table, not a rewrite.
   expect(auto(after)?.tokens).toEqual(auto(before)?.tokens);
   expect(db.prepare("SELECT * FROM usage_events ORDER BY id").all()).toEqual(usageRows);
-  // The remaining unpriced Cursor models keep the subtotal unknown.
-  expect(after.cursor.estimatedCents).toBeNull();
+  // Auto was the last unpriced model in the fixture, so the subtotal resolves:
+  // 7565.98 grok-4.6 + 1059.582 opus + 2011.9 auto + 112.34 grok-4.5 + 12.1815 sol.
+  expect(after.cursor.estimatedCents).toBeCloseTo(10_761.9835, 4);
 });

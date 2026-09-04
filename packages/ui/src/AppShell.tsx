@@ -17,11 +17,19 @@ import { Dashboard } from "./Dashboard.js";
 import { FetchErrorBanner } from "./FetchBanner.js";
 import { PeriodBar } from "./PeriodBar.js";
 import { Settings, type SettingsProps } from "./Settings.js";
+import { THEME_PREFERENCES, type ThemePreference, useTheme } from "./theme.js";
 
 /** Always visible, on every route — docs/product.md Trust. */
 const TRUST_LINE = "Local only · nothing leaves this device";
 
 const ROUTES = ["Dashboard", "Settings"] as const;
+
+/** The theme switch reads as three states, not a mystery moon icon. */
+const THEME_LABELS: Record<ThemePreference, string> = {
+  system: "Auto",
+  light: "Light",
+  dark: "Dark",
+};
 
 export type Route = (typeof ROUTES)[number];
 
@@ -77,6 +85,7 @@ export interface AppShellProps {
 
 export function AppShell({ snapshot, period, onPeriodChange, onFetch, now, settings }: AppShellProps) {
   const [route, setRoute] = useState<Route>("Dashboard");
+  const { preference, setPreference } = useTheme();
   // The hook always runs; an injected clock only overrides what it reads.
   const ticking = useRoughlyMinuteClock();
   const fetching = snapshot.fetch.status === "fetching";
@@ -100,11 +109,33 @@ export function AppShell({ snapshot, period, onPeriodChange, onFetch, now, setti
             <span data-testid="fetch-status" className="text-small text-foreground-secondary">
               {fetchStatusLabel(snapshot, now ? now() : ticking)}
             </span>
+            <div
+              role="group"
+              aria-label="Theme"
+              className="flex items-center gap-0.5 rounded-full border border-border bg-surface-subtle p-0.5"
+            >
+              {THEME_PREFERENCES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setPreference(option)}
+                  aria-pressed={preference === option}
+                  className={`rounded-full px-2.5 py-1 text-small font-medium transition-colors ${
+                    preference === option
+                      ? "bg-surface text-foreground"
+                      : "text-foreground-muted hover:text-foreground"
+                  }`}
+                >
+                  {THEME_LABELS[option]}
+                </button>
+              ))}
+            </div>
+            {/* Chunky on purpose: the one action on the screen. */}
             <button
               type="button"
               onClick={onFetch}
               disabled={fetching}
-              className="flex items-center gap-2 rounded-control border border-brand bg-brand-subtle px-3 py-1.5 text-small font-medium text-brand disabled:opacity-50"
+              className="flex items-center gap-2 rounded-control border border-brand bg-brand-subtle px-3 py-1.5 text-small font-medium text-brand shadow-[0_2px_0_0_var(--color-brand)] transition-transform active:translate-y-0.5 active:shadow-none disabled:opacity-50 disabled:shadow-none"
             >
               <span aria-hidden="true">↻</span>
               Fetch data

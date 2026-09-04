@@ -55,7 +55,9 @@ Never invent daily splits from cycle aggregates. Cursor cycle rows are stored wi
 
 ## Cost rules
 
-- Unknown price → `estimatedCents: null`, UI shows `—`, never `$0`.
+- Unknown price → `estimatedCents: null`, and that row shows `—`, never `$0`.
+- A null **total** is not a blank screen: the hero sums the rows that do price and
+  shows `≈$X` plus an `N models unpriced` chip. Exact totals never carry `≈`.
 - Cursor's own `totalCents` is informational; it never feeds our estimate.
 - Never show quota, plan %, or "included pool" numbers.
 

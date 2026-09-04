@@ -113,9 +113,12 @@ byte-identical before and after a rate lands).
 yields `null` — the UI shows `—`, never `$0`. Cursor's own `totalCents` never enters the
 calculation. Zero-or-absent cache tokens never poison an otherwise known price.
 
-**Seeding.** `seedBundledPrices` runs only on file creation; running it against a populated
-database would duplicate every row, since a model legitimately has many price rows across
-time. Bundled rows carry no `effective_until` and are backdated to 1970 because they are the
+**Seeding.** `seedBundledPrices` runs on *every* open, not only on create: a release that adds
+a model has to reach databases that already exist, and there is no migration runner to carry
+it. Each row is inserted only when `(model, provider, effective_from)` is absent, so a rate
+added in Settings, or a later row closing a seed, is never touched or duplicated — the cost is
+that deleting a bundled row does not stick (close it with `effective_until` instead). Bundled
+rows carry no `effective_until` and are backdated to 1970 because they are the
 currently published rates with no history; a future rate change closes the row and inserts a
 new one with a real date. Ollama Cloud rows use the standard (non-peak) rates, and their cache
 _write_ rate is `0` because Ollama publishes no such category at all (the first pass is billed
@@ -148,16 +151,18 @@ Vitest (`pnpm --filter @prompt-burn/db test`), two files, all against throwaway 
 
 - `index.test.ts`: `databasePath` resolves under the home and contains no install dir;
   first open creates the four tables, seeds exactly `BUNDLED_PRICES.length` rows, and
-  spot-checks Anthropic, Ollama, deepseek-standard-rate, and the `qwen3.5` NULL rate; reopening
-  an existing file does not re-apply the schema or re-seed (a deleted bundled row stays
-  deleted, a settings row survives); the cycle/event timestamp CHECK rejects faked timestamps
-  in both directions.
+  spot-checks Anthropic, Ollama, deepseek-standard-rate, and the `qwen3.5` NULL rate;
+  reopening an existing file keeps its data, does not re-apply the schema, and tops the
+  bundled prices back up without duplicating a hand-added rate; the cycle/event timestamp
+  CHECK rejects faked timestamps in both directions.
 - `pricing.test.ts`: window selection across boundaries (`effective_from` inclusive,
-  `effective_until` exclusive), bundled seeds resolve, unpriced models return `null`, an empty
-  timestamp is refused, overlapping windows prefer the latest `effective_from`, retroactive
-  pricing inserts a rate without touching the event row, a rate change keeps old events on the
-  old rate, and `estimateCents` converts tokens at published rates — `null` never `$0` for
-  unknown models or unpriced cache kinds, zero cache tokens never poison the estimate.
+  `effective_until` exclusive), bundled seeds resolve — including the Cursor-side ids at their
+  vendors' public rates — `default` (Auto) and unobserved variants return `null`, an empty
+  timestamp is refused, overlapping windows prefer the latest `effective_from` and then the
+  newest row, retroactive pricing inserts a rate without touching the event row, a rate change
+  keeps old events on the old rate, and `estimateCents` converts tokens at published rates —
+  `null` never `$0` for unknown models or unpriced cache kinds, zero cache tokens never poison
+  the estimate.
 
 ## 9. Debt and traps
 
@@ -174,9 +179,12 @@ Vitest (`pnpm --filter @prompt-burn/db test`), two files, all against throwaway 
 - **Ollama's peak-window pricing is not modelled.** deepseek's doubled 12:00–18:00 UTC
   Mon–Fri rate is not in the table, so peak-hour usage under-estimates by 2x. Recorded in
   `prices.ts`, accepted for now.
-- **Seeding is create-only by design and is idempotence-hostile.** Re-running
-  `seedBundledPrices` against a populated database duplicates every row; nothing guards
-  against calling it directly.
+- **Seeding is idempotent by `(model, provider, effective_from)`, not by intent.** It runs on
+  every open, so a bundled row deleted by hand comes back; closing it with `effective_until`
+  is the way to retire one. Calling `seedBundledPrices` directly is safe.
+- **Cursor-side rates are the vendors' public list prices, not Cursor's bill.** Grok, Composer
+  and GPT rows price at xAI / Cursor / OpenAI published rates; Cursor's own pool bills
+  differently, and xAI's over-200K-context surcharge (every rate doubles) is not modelled.
 - **The bundled rows have no vendor-verified history.** They are the 2026-09-04 published
   rates backdated to 1970; pricing "before 1970 plus" with today's rate is an approximation,
   not a record.
@@ -186,9 +194,8 @@ Vitest (`pnpm --filter @prompt-burn/db test`), two files, all against throwaway 
 ## 10. Change guide
 
 - **Adding a bundled price:** append a `price(...)` row in `src/prices.ts`, keyed by the
-  canonical model id (`canonicalModelId` in `@prompt-burn/core`). Note that seeds only land on
-  newly created files — existing users need the rate inserted some other way (Settings, a
-  future migration) or a file reset.
+  canonical model id (`canonicalModelId` in `@prompt-burn/core`), with the vendor's price-page
+  URL and read date in the comment above it. Existing databases pick it up on the next open.
 - **Changing a rate:** never UPDATE the rate columns of an old row in production data; close
   it with `effective_until` and insert a new row with a new `effective_from`. That is the
   invariant retroactive pricing is built on.

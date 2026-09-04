@@ -78,12 +78,43 @@ describe("resolvePrice", () => {
     expect(resolvePrice(db, "glm-5.3-flash", "2026-09-02T08:31:31.505Z")?.inputPerMtok).toBe(0.15);
   });
 
+  it("prices the Cursor-side models at their vendors' public rates", () => {
+    const at = "2026-09-02T08:31:31.505Z";
+    expect(resolvePrice(db, "cursor-grok-4.6-high", at)).toMatchObject({
+      provider: "xai",
+      inputPerMtok: 2,
+      outputPerMtok: 6,
+      cacheReadPerMtok: 0.5,
+    });
+    // 4.5 and 4.6 differ only in the cached-input rate.
+    expect(resolvePrice(db, "cursor-grok-4.5-high", at)?.cacheReadPerMtok).toBe(0.3);
+    // Effort level is not a price tier: xhigh costs what high costs.
+    expect(resolvePrice(db, "cursor-grok-4.6-xhigh", at)?.inputPerMtok).toBe(2);
+    expect(resolvePrice(db, "gpt-5.6-sol-medium", at)).toMatchObject({
+      provider: "openai",
+      inputPerMtok: 5,
+      outputPerMtok: 30,
+    });
+    expect(resolvePrice(db, "composer-2.5", at)).toMatchObject({
+      provider: "cursor",
+      inputPerMtok: 0.5,
+      outputPerMtok: 2.5,
+    });
+    // Cursor's id for Haiku 4.5, on Anthropic's published rate.
+    expect(resolvePrice(db, "claude-4.5-haiku-thinking", at)).toMatchObject({
+      provider: "anthropic",
+      inputPerMtok: 1,
+      outputPerMtok: 5,
+    });
+  });
+
   it("returns null for models nobody has priced", () => {
-    // Cursor Auto and Cursor-hosted models have no public rate to bundle; a
-    // Settings insert is the only way they get one.
+    // Cursor Auto routes to whichever model Cursor picks per request, so there
+    // is no rate to bundle; a Settings insert is the only way it gets one.
     expect(resolvePrice(db, "default", "2026-09-02T08:31:31.505Z")).toBeNull();
-    expect(resolvePrice(db, "cursor-grok-4.6-high", "2026-09-02T08:31:31.505Z")).toBeNull();
-    expect(resolvePrice(db, "gpt-5.6-sol-medium", "2026-09-02T08:31:31.505Z")).toBeNull();
+    // The `-fast` Composer variant bills differently and is not bundled until
+    // it is actually observed on an account.
+    expect(resolvePrice(db, "composer-2.5-fast", "2026-09-02T08:31:31.505Z")).toBeNull();
   });
 
   it("refuses to price a cycle aggregate's empty timestamp", () => {

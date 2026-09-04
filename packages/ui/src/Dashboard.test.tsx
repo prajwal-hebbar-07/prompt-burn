@@ -165,6 +165,29 @@ describe("Dashboard", () => {
     expect(screen.getByTestId("cursor-subtotal").textContent).toContain("—");
   });
 
+  it("falls back to the priced rows instead of blanking the whole total", () => {
+    // One Cursor model has no rate, so the aggregator's combined total is null.
+    // The hero must still show what the priced rows come to, marked as a floor.
+    const base = snapshot({ kind: "today" }, [ompEvent()], CURSOR_WITH_USAGE, {
+      combined: null,
+      omp: 1200,
+      cursor: null,
+    });
+    const priced: DashboardSnapshot = {
+      ...base,
+      models: base.models.map((row) => ({
+        ...row,
+        estimatedCents: row.source === "omp" ? 1200 : null,
+      })),
+    };
+
+    render(<Dashboard snapshot={priced} />);
+
+    expect(screen.getByTestId("estimated-total").textContent).toBe("≈$12.00");
+    expect(screen.getByTestId("cursor-subtotal").textContent).toContain("—");
+    expect(screen.getByTestId("unpriced-note").textContent).toContain("1 model unpriced");
+  });
+
   it("sums the token breakdown across both sources without deduping", () => {
     render(
       <Dashboard snapshot={snapshot({ kind: "all_time" }, [ompEvent()], CURSOR_WITH_USAGE)} />,

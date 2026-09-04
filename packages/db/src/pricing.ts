@@ -44,7 +44,7 @@ const SELECT_RATE = `
    WHERE model = ?
      AND effective_from <= ?
      AND (effective_until IS NULL OR effective_until > ?)
-   ORDER BY effective_from DESC
+   ORDER BY effective_from DESC, id DESC
    LIMIT 1`;
 
 /**
@@ -55,7 +55,8 @@ const SELECT_RATE = `
  * only ordered if every value is written the same way (`Z`, not `+05:30`).
  * Cursor cycle aggregates have no timestamp and are rejected rather than priced
  * off an empty string. Overlapping windows resolve to the latest
- * `effective_from` — the most recently declared rate wins.
+ * `effective_from`, and a tie to the row inserted last — so a rate added in
+ * Settings wins over the bundled row it was meant to correct.
  */
 export function resolvePrice(
   db: DatabaseSync,
