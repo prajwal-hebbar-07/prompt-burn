@@ -34,13 +34,26 @@ export function App() {
     setFetching(true);
     try {
       const result = await fetchUsage();
-      if (!result.ok) throw new Error(result.error ?? "the OMP sync failed");
+      // Every source failed: nothing new is stored, so keep what is on screen
+      // rather than re-reading the same rows.
+      if (!result.omp.ok && !result.cursor.ok) {
+        throw new Error(result.error ?? "the fetch failed");
+      }
       const fetched = await getSnapshot(target);
-      // The aggregate carries no fetch bookkeeping; the host that fetched owns
-      // it, so `lastSuccessAt` comes from the sync's own timestamp.
-      setSnapshot({ ...fetched, fetch: { lastSuccessAt: result.at, status: "idle" } });
+      // Partial success still lands: the source that worked has new data and
+      // the one that failed kept its previous rows, so only the status carries
+      // the failure. The banner that reads it is commit 29.
+      setSnapshot({
+        ...fetched,
+        fetch: {
+          lastSuccessAt: result.at,
+          status: result.ok ? "idle" : "error",
+          ...(result.error === undefined ? {} : { error: result.error }),
+        },
+      });
+      if (!result.ok) console.error("prompt-burn: partial fetch", result.error);
     } catch (error) {
-      // Keep the last good snapshot on screen. The failure banner is commit 29.
+      // The whole call failed: keep the last good snapshot on screen.
       console.error("prompt-burn: fetch failed", error);
     } finally {
       setFetching(false);
