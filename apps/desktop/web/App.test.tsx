@@ -191,3 +191,22 @@ it("sends an applied date range as inclusive local dates", async () => {
   expect(screen.getByTestId("period-chip").textContent).toContain(dayLabel);
   expect(sidecar.methods.filter((method) => method === "fetch")).toHaveLength(1);
 });
+
+it("navigates to Settings without calling fetch or writing sidecar state", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await waitFor(() => expect(total()).toBe("$24.22"));
+  const methodsBefore = [...sidecar.methods];
+
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+
+  expect(screen.getByRole("heading", { name: "Settings", level: 2 })).toBeTruthy();
+  expect(screen.getByText("Oh My Pi (OMP)")).toBeTruthy();
+  expect(screen.getByText("Cursor")).toBeTruthy();
+  expect(screen.getByTestId("db-path").textContent).toBe("~/.prompt-burn/db.sqlite");
+  expect(screen.queryByRole("group", { name: "Period" })).toBeNull();
+  expect(screen.queryByTestId("estimated-total")).toBeNull();
+
+  // Navigating to Settings is pure view state: no extra fetch, no write side-effects.
+  expect(sidecar.methods).toEqual(methodsBefore);
+});
