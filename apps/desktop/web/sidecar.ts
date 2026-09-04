@@ -47,7 +47,7 @@ export function fetchUsage(): Promise<FetchResult> {
   return request<FetchResult>("fetch");
 }
 
-/** The dashboard view model. All-time until the period picker lands. */
-export function getSnapshot(period: PeriodFilter = { kind: "all_time" }): Promise<DashboardSnapshot> {
+/** The dashboard view model for one period; the caller owns the filter. */
+export function getSnapshot(period: PeriodFilter): Promise<DashboardSnapshot> {
   return request<DashboardSnapshot>("getSnapshot", { period });
 }
