@@ -1,5 +1,5 @@
 /**
- * The Dashboard route body: the hero totals card.
+ * The Dashboard route body: the hero totals card, then the by-model table.
  *
  * Combined estimate, then both source subtotals — always both, never deduped,
  * never re-derived here. Cursor Pro is cycle-to-date whatever the period is, so
@@ -12,33 +12,13 @@
  */
 
 import { CURSOR_CYCLE_LABEL, type DashboardSnapshot, type TokenCounts } from "@prompt-burn/core";
+import { formatCost, formatTokens } from "./format.js";
+import { ModelTable } from "./ModelTable.js";
 import { periodLabel } from "./PeriodBar.js";
-
-/** Em dash for every unknown cost — never `$0`. */
-const UNKNOWN_COST = "—";
-
-/** Formats fractional cents as USD with 2 decimals: 1234.5 -> "$12.35". */
-export function formatCents(cents: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
-}
-
-/** A cost cell: the amount, or the em dash when the price is unknown. */
-export function formatCost(cents: number | null): string {
-  return cents === null ? UNKNOWN_COST : formatCents(cents);
-}
 
 /** The combined total, or the em dash when any price is unknown. */
 export function formatEstimatedTotal(snapshot: DashboardSnapshot): string {
   return formatCost(snapshot.estimatedCents);
-}
-
-/** Compact token counts, as in the designs: `1.2M`, `340K`, `89`. */
-export function formatTokens(count: number): string {
-  const scale = (divisor: number, suffix: string) =>
-    `${(count / divisor).toFixed(1).replace(/\.0$/, "")}${suffix}`;
-  if (count >= 1_000_000) return scale(1_000_000, "M");
-  if (count >= 1_000) return scale(1_000, "K");
-  return String(count);
 }
 
 /** `Tokens: 1.2M in · 340K out · 89K cache` — cache is read plus write. */
@@ -94,45 +74,50 @@ export function Dashboard({ snapshot }: DashboardProps) {
     : "Cursor";
 
   return (
-    <section
-      aria-labelledby="hero-subtitle"
-      className="rounded-card border border-border bg-surface p-6"
-    >
-      <p
-        id="hero-subtitle"
-        data-testid="hero-subtitle"
-        className="text-small leading-small text-foreground-muted"
+    <>
+      <section
+        aria-labelledby="hero-subtitle"
+        className="rounded-card border border-border bg-surface p-6"
       >
-        {heroSubtitle(snapshot)}
-      </p>
-      <p
-        data-testid="estimated-total"
-        className="mt-1 text-display leading-display font-semibold tracking-tight tabular-nums"
-      >
-        {formatEstimatedTotal(snapshot)}
-      </p>
+        <p
+          id="hero-subtitle"
+          data-testid="hero-subtitle"
+          className="text-small leading-small text-foreground-muted"
+        >
+          {heroSubtitle(snapshot)}
+        </p>
+        <p
+          data-testid="estimated-total"
+          className="mt-1 text-display leading-display font-semibold tracking-tight tabular-nums"
+        >
+          {formatEstimatedTotal(snapshot)}
+        </p>
 
-      <div className="mt-4 border-t border-border pt-3">
-        <SubtotalRow
-          testId="omp-subtotal"
-          label="OMP"
-          dotClass="bg-source-omp"
-          cents={snapshot.omp.estimatedCents}
-        />
-        <SubtotalRow
-          testId="cursor-subtotal"
-          label={cursorLabel}
-          dotClass="bg-source-cursor"
-          cents={snapshot.cursor.estimatedCents}
-        />
+        <div className="mt-4 border-t border-border pt-3">
+          <SubtotalRow
+            testId="omp-subtotal"
+            label="OMP"
+            dotClass="bg-source-omp"
+            cents={snapshot.omp.estimatedCents}
+          />
+          <SubtotalRow
+            testId="cursor-subtotal"
+            label={cursorLabel}
+            dotClass="bg-source-cursor"
+            cents={snapshot.cursor.estimatedCents}
+          />
+        </div>
+
+        <p
+          data-testid="token-breakdown"
+          className="mt-3 text-small leading-small text-foreground-muted"
+        >
+          {tokenLine(snapshot.omp.tokens, snapshot.cursor.tokens)}
+        </p>
+      </section>
+      <div className="mt-6">
+        <ModelTable rows={snapshot.models} />
       </div>
-
-      <p
-        data-testid="token-breakdown"
-        className="mt-3 text-small leading-small text-foreground-muted"
-      >
-        {tokenLine(snapshot.omp.tokens, snapshot.cursor.tokens)}
-      </p>
-    </section>
+    </>
   );
 }
