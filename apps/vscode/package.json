@@ -3,7 +3,7 @@
   "displayName": "Prompt Burn",
   "description": "Local-only OMP and Cursor token usage dashboard, in an editor tab.",
   "publisher": "prompt-burn",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "repository": {
     "type": "git",
