@@ -181,7 +181,24 @@ describe("buildDashboardSnapshot edge cases", () => {
     });
     expect(snapshot.mixedPeriod).toBe(false);
     expect(snapshot.cursor.cycleLabel).toBeUndefined();
+    expect(snapshot.cursor.cycleStart).toBeUndefined();
+    expect(snapshot.cursor.cycleEnd).toBeUndefined();
     expect(snapshot.cursor.mode).toBe("events");
+  });
+
+  it("carries the Pro cycle window for labelling, unchanged by the period", () => {
+    // The window is the collector's, verbatim: it never bounds the rollup and
+    // is never month-aligned.
+    for (const period of [{ kind: "today" }, { kind: "all_time" }] as const) {
+      const snapshot = buildDashboardSnapshot({
+        period,
+        ompEvents: [],
+        cursor: CURSOR_CYCLE,
+        now: NOW,
+      });
+      expect(snapshot.cursor.cycleStart).toBe(CURSOR_CYCLE.cycleStart);
+      expect(snapshot.cursor.cycleEnd).toBe(CURSOR_CYCLE.cycleEnd);
+    }
   });
 
   it("passes the shell's fetch state through", () => {
