@@ -1,0 +1,43 @@
+{
+  "type": "message",
+  "id": "c646d42b",
+  "parentId": "1c4f5d1a",
+  "timestamp": "2026-09-04T12:59:03.516Z",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "REDACTED"
+      }
+    ],
+    "api": "google-gemini-cli",
+    "provider": "google-antigravity",
+    "model": "gemini-3.8-flash",
+    "usage": {
+      "input": 4159,
+      "output": 155,
+      "cacheRead": 187535,
+      "cacheWrite": 0,
+      "totalTokens": 191849,
+      "reasoningTokens": 110,
+      "cost": {
+        "input": 0.00311925,
+        "output": 0.0005812500000000001,
+        "cacheRead": 0.014065125,
+        "cacheWrite": 0,
+        "total": 0.017765625
+      }
+    },
+    "stopReason": "toolUse",
+    "timestamp": 1788526739923,
+    "duration": 3597.994208998978,
+    "ttft": 3512.103666998446,
+    "completedAt": 1788526743515,
+    "contextSnapshot": {
+      "promptTokens": 191694,
+      "nonMessageTokens": 23924,
+      "compactionEpoch": 0
+    }
+  }
+}
