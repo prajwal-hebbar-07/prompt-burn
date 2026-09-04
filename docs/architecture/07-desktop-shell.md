@@ -82,9 +82,12 @@ no kill logic — the pipe _is_ the shutdown signal.
   sidecar with the workspace packages inlined — resolved through
   `BaseDirectory::Resource`. `CARGO_MANIFEST_DIR` is a build-machine path and is used only
   under `debug_assertions`.
-- **Node is found, not assumed.** A GUI launch inherits launchd's `PATH`, which has no nvm,
-  fnm, asdf, Volta or Homebrew Node in it. `node_binary()` tries `PATH`, then asks the login
-  shell (`$SHELL -lc 'command -v node'`), then a short list of standard locations.
+- **Node is found and version-checked, not assumed.** A GUI launch inherits launchd's `PATH`,
+  which has no nvm, fnm, asdf, Volta or Homebrew Node in it. `node_binary()` tries `PATH`, then
+  `$SHELL -l -i -c 'command -v node'`, then every version-manager directory (nvm and fnm
+  newest-first, Volta and asdf shims), then `/opt/homebrew`, `/usr/local`, `/usr/bin`. Each
+  candidate must report major ≥ `MIN_NODE_MAJOR` (24), so an ancient `/usr/local/bin/node`
+  never beats a current nvm one, and a too-old Node produces its own message.
 - **A missing sidecar never takes the window with it.** The spawn happens in `setup` and its
   result is `manage`d as `Result<Sidecar, String>`; every `sidecar_request` answers with the
   stored error, so the window opens and the UI's error banner explains the problem.
@@ -138,10 +141,12 @@ database open without one.
   window and shows the "Node 24 or newer is required" error instead of data. Shipping a Node
   SEA — or compiling the sidecar to a standalone binary and declaring it as `externalBin` —
   is what removes that requirement.
-- **Node discovery reaches outside the process.** `node_binary()` runs `$SHELL -lc 'command -v
-  node'` when `PATH` fails, which sources the user's profile. That is what finds nvm; it also
-  means a profile that prints to stdout can confuse the probe, and the `-l` form does nothing
-  on Windows (where Node is normally on `PATH` anyway).
+- **Node discovery reaches outside the process.** The probe runs the user's shell login *and*
+  interactive (`-l -i -c`), because zsh reads `.zprofile` for a login shell but `.zshrc` — where
+  nvm initialises — only for an interactive one. Login-only was why the first packaged build
+  still could not find Node. Stdin is closed so an rc that reads input cannot hang the launch,
+  and the answer is the last stdout line starting with `/`, so rc banners do not confuse it.
+  None of this applies on Windows, where Node is normally on `PATH` anyway.
 - **The ready line prints the full home-relative database path** — user-visible on the console
   behind the window, in the logs, and in the test. Fine now; revisit if the line ever carries
   more.

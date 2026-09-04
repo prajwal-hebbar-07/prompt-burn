@@ -67,8 +67,9 @@ a version number.
 **Every desktop build needs Node 24 or newer on the machine.** The app's data layer is a Node
 sidecar bundled into the app (`sidecar.mjs`) and run by the user's own Node — it uses
 `node:sqlite`, which arrived in Node 22.5. Without Node the window still opens and says so
-instead of dying. The app finds Node on `PATH`, and failing that asks the login shell, so a
-version manager (nvm, fnm, asdf, Volta) works even though a Finder launch inherits none of it.
+instead of dying. The app looks on `PATH`, then asks the user's shell (login *and* interactive,
+so `.zshrc`-based nvm setups are seen), then reads the version-manager directories directly, and
+it rejects any Node older than 24 — a Finder launch inherits none of that `PATH` itself.
 
 - **`Prompt-Burn_X.Y.Z_universal.dmg`** — macOS, universal: one download for
   Apple Silicon and Intel. **Unsigned and unnotarised**, so macOS reports it as

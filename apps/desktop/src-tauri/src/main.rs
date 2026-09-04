@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::env;
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -33,51 +34,146 @@ struct Sidecar {
 /// start its sidecar still opens its window and says why.
 type SidecarState = Result<Sidecar, String>;
 
-/// Node interpreters to try when `node` is not on the inherited `PATH`.
-const NODE_FALLBACKS: [&str; 3] = [
+/// `node:sqlite` — the sidecar's whole database layer — needs a modern Node,
+/// and the workspace pins the same floor in `engines.node`.
+const MIN_NODE_MAJOR: u32 = 24;
+
+/// Interpreters outside any version manager, newest-first is not a thing here.
+const SYSTEM_NODES: [&str; 3] = [
     "/opt/homebrew/bin/node",
     "/usr/local/bin/node",
     "/usr/bin/node",
 ];
+
+/// The major version `node` reports, or `None` when it will not run at all.
+fn node_major(node: &Path) -> Option<u32> {
+    let output = Command::new(node).arg("--version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    // `v26.8.1` -> 26
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// `v26.8.1` as a sortable tuple; anything unparsable sorts to the bottom.
+fn version_key(path: &Path) -> (u32, u32, u32) {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let mut parts = name
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| part.parse().unwrap_or(0));
+    (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    )
+}
+
+/// Asks the user's shell where `node` is.
+///
+/// `-l` alone is not enough: zsh reads `.zprofile` for a login shell but
+/// `.zshrc` only for an interactive one, and nvm initialises in `.zshrc`. The
+/// probe therefore runs login *and* interactive, with stdin closed so an rc
+/// file that reads input cannot hang the launch. An interactive rc may print
+/// banners, so the answer is the last line that looks like a path.
+fn shell_node() -> Option<PathBuf> {
+    let shell = env::var("SHELL").ok()?;
+    let output = Command::new(shell)
+        .args(["-l", "-i", "-c", "command -v node"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('/'))
+        .next_back()
+        .map(PathBuf::from)
+}
+
+/// Every Node a version manager has installed, newest version first.
+///
+/// nvm and fnm keep one directory per version; Volta and asdf publish a shim.
+/// Reading the directories directly is what makes discovery work when the
+/// shell probe cannot run at all (no `SHELL`, an rc that fails, Windows).
+fn version_manager_nodes() -> Vec<PathBuf> {
+    let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+
+    for (root, suffix) in [
+        (home.join(".nvm/versions/node"), "bin/node"),
+        (
+            home.join(".local/share/fnm/node-versions"),
+            "installation/bin/node",
+        ),
+        (
+            home.join("Library/Application Support/fnm/node-versions"),
+            "installation/bin/node",
+        ),
+    ] {
+        let Ok(entries) = fs::read_dir(&root) else {
+            continue;
+        };
+        let mut versions: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+        versions.sort_by_key(|path| std::cmp::Reverse(version_key(path)));
+        found.extend(versions.into_iter().map(|version| version.join(suffix)));
+    }
+
+    found.push(home.join(".volta/bin/node"));
+    found.push(home.join(".asdf/shims/node"));
+    found
+}
 
 /// Finds the Node interpreter to run the sidecar with.
 ///
 /// An app launched from Finder or the Dock inherits launchd's `PATH`
 /// (`/usr/bin:/bin:/usr/sbin:/sbin`), not the shell's — so a Node installed by
 /// nvm, fnm, asdf, Volta or Homebrew is invisible to a bare `Command::new`,
-/// which is exactly why the packaged app died on startup while `tauri dev`
-/// worked. The login shell knows where it is, so ask it before giving up.
+/// which is exactly why the packaged app failed while `tauri dev` worked. Every
+/// candidate is version-checked rather than trusted: an ancient
+/// `/usr/local/bin/node` must not win over the nvm one that can actually run
+/// `node:sqlite`.
 fn node_binary() -> Result<PathBuf, String> {
-    let on_path = Command::new("node")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
-    if on_path {
-        return Ok(PathBuf::from("node"));
-    }
+    let candidates = [PathBuf::from("node")]
+        .into_iter()
+        .chain(shell_node())
+        .chain(version_manager_nodes())
+        .chain(SYSTEM_NODES.iter().map(PathBuf::from));
 
-    // `-l` sources the profile, so version managers are on the path by then.
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-    if let Ok(output) = Command::new(shell)
-        .args(["-lc", "command -v node"])
-        .output()
-    {
-        let found = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if output.status.success() && !found.is_empty() {
-            return Ok(PathBuf::from(found));
+    let mut too_old: Option<(PathBuf, u32)> = None;
+    for candidate in candidates {
+        match node_major(&candidate) {
+            Some(major) if major >= MIN_NODE_MAJOR => return Ok(candidate),
+            Some(major) => {
+                if too_old.as_ref().map_or(true, |(_, best)| major > *best) {
+                    too_old = Some((candidate, major));
+                }
+            }
+            None => {}
         }
     }
 
-    for candidate in NODE_FALLBACKS {
-        if Path::new(candidate).exists() {
-            return Ok(PathBuf::from(candidate));
-        }
-    }
-
-    Err("Node 24 or newer is required and could not be found. Install it from nodejs.org, then reopen Prompt Burn.".to_string())
+    Err(match too_old {
+        Some((path, major)) => format!(
+            "Prompt Burn needs Node {MIN_NODE_MAJOR} or newer. The newest one on this machine is v{major} ({}). Install a current Node from nodejs.org, then reopen Prompt Burn.",
+            path.display()
+        ),
+        None => format!(
+            "Node {MIN_NODE_MAJOR} or newer is required and could not be found. Install it from nodejs.org, then reopen Prompt Burn."
+        ),
+    })
 }
 
 /// The arguments that point Node at the sidecar.
