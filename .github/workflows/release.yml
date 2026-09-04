@@ -193,13 +193,17 @@ jobs:
       # --no-dependencies: the host bundle already contains the workspace code,
       # and vsce cannot walk pnpm's `workspace:*` links. --skip-license: no
       # LICENSE file in this repo yet.
+      # vsce reads the manifest in its working directory, so it has to run
+      # inside the extension, not at the workspace root. The .vsix goes to the
+      # repo-root dist/ because apps/vscode/dist is the webview bundle.
       - name: Package the extension
+        working-directory: apps/vscode
         env:
           NEXT: ${{ needs.prepare.outputs.next }}
         run: |
-          mkdir -p dist
+          mkdir -p ../../dist
           pnpm dlx @vscode/vsce package --no-dependencies --skip-license \
-            --out "dist/Prompt-Burn-${NEXT}.vsix"
+            --out "../../dist/Prompt-Burn-${NEXT}.vsix"
 
       - uses: actions/upload-artifact@v7
         with:
