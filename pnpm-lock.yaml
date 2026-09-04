@@ -76,6 +76,18 @@ importers:
         specifier: ^4.0.18
         version: 4.1.11(@types/node@24.13.3)(jsdom@27.4.0)(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
 
+  apps/vscode:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/vscode':
+        specifier: ^1.90.0
+        version: 1.136.0
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.11(@types/node@24.13.3)(jsdom@27.4.0)(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
+
   packages/collectors:
     dependencies:
       '@prompt-burn/core':
@@ -653,6 +665,9 @@ packages:
 
   '@types/react@19.2.18':
     resolution: {integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}
+
+  '@types/vscode@1.136.0':
+    resolution: {integrity: sha512-DO746VAfnHk8+Y8CsUKYMm2rjWD0mxEuYBZI+ssaqJY7yvLJPf9lcwxSSz9W60gbdvdcGyvHQxHTyByfF9mVqg==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -1835,6 +1850,8 @@ snapshots:
   '@types/react@19.2.18':
     dependencies:
       csstype: 3.2.3
+
+  '@types/vscode@1.136.0': {}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true

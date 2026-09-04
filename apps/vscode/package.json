@@ -1,0 +1,43 @@
+{
+  "name": "prompt-burn-vscode",
+  "displayName": "Prompt Burn",
+  "description": "Local-only OMP and Cursor token usage dashboard, in an editor tab.",
+  "publisher": "prompt-burn",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "promptBurn.open",
+        "category": "Prompt Burn",
+        "title": "Open Dashboard"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "promptBurn.dashboard",
+        "displayName": "Prompt Burn",
+        "priority": "default",
+        "selector": [
+          {
+            "filenamePattern": "**/Prompt Burn"
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.90.0",
+    "vitest": "^4.0.18"
+  }
+}
