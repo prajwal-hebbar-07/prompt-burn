@@ -7,8 +7,8 @@
  * info colours are never source identity, and a source colour is always paired
  * with a text label wherever a source is shown.
  *
- * Dark values ship as their own token names so later commits can consume them.
- * There is no theme switcher: nothing selects the `dark-*` set yet.
+ * These are the light values. Dark is one class — `.theme-dark` below rebinds
+ * the same names, so no component carries a `dark:` variant.
  *
  * Font families are Paper's, with local fallbacks because neither Inter nor
  * JetBrains Mono is bundled with the app.
@@ -32,24 +32,10 @@
   --color-error: #b91c1c;
   --color-info: #1d4ed8;
 
-  --color-dark-background: #111113;
-  --color-dark-surface: #18181b;
-  --color-dark-surface-subtle: #202024;
-  --color-dark-surface-raised: #252529;
-  --color-dark-border: #34343a;
-  --color-dark-foreground: #f4f4f5;
-  --color-dark-foreground-secondary: #d4d4d8;
-  --color-dark-foreground-muted: #a1a1aa;
-  --color-dark-brand: #f59e0b;
-  --color-dark-brand-subtle: #2b2111;
-  --color-dark-source-omp: #2dd4bf;
-  --color-dark-source-omp-subtle: #102a27;
-  --color-dark-source-cursor: #a78bfa;
-  --color-dark-source-cursor-subtle: #241b3a;
-  --color-dark-success: #4ade80;
-  --color-dark-warning: #fbbf24;
-  --color-dark-error: #f87171;
-  --color-dark-info: #60a5fa;
+  /* Leaderboard medals. Metallic in both themes, so they are not rebound. */
+  --color-rank-gold: #eab308;
+  --color-rank-silver: #94a3b8;
+  --color-rank-bronze: #c2703f;
 
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -60,6 +46,7 @@
   --text-section: 16px;
   --text-title: 24px;
   --text-display: 36px;
+  --text-hero: 56px;
 
   --font-weight-regular: 400;
   --font-weight-medium: 500;
@@ -75,6 +62,7 @@
   --leading-section: 24px;
   --leading-title: 32px;
   --leading-display: 40px;
+  --leading-hero: 60px;
 
   --breakpoint-sm: 640px;
   --breakpoint-md: 768px;
@@ -97,4 +85,87 @@
   --radius-card: 8px;
   --radius-popover: 10px;
   --radius-full: 9999px;
+
+  /*
+   * Motion. Bars grow from their own left edge on mount, the hero's glow
+   * breathes, and rows rise once. All three are decoration: nothing here
+   * carries meaning that is lost when a user turns motion off.
+   */
+  --animate-bar: bar-grow 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-glow: glow 6s ease-in-out infinite;
+  --animate-rise: rise 320ms ease-out both;
+
+  @keyframes bar-grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  @keyframes glow {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/*
+ * Dark theme. `useTheme` puts this class on <html>, following the OS unless the
+ * user picked a side. Only the colour names are rebound — every component keeps
+ * one set of class names.
+ */
+.theme-dark {
+  --color-background: #111113;
+  --color-surface: #18181b;
+  --color-surface-subtle: #202024;
+  --color-border: #34343a;
+  --color-foreground: #f4f4f5;
+  --color-foreground-secondary: #d4d4d8;
+  --color-foreground-muted: #a1a1aa;
+  --color-brand: #f59e0b;
+  --color-brand-subtle: #2b2111;
+  --color-source-omp: #2dd4bf;
+  --color-source-omp-subtle: #102a27;
+  --color-source-cursor: #a78bfa;
+  --color-source-cursor-subtle: #241b3a;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+  --color-info: #60a5fa;
+  /* Native scrollbars, form controls and the window chrome follow too. */
+  color-scheme: dark;
+}
+
+/* The element behind the app: overscroll must not flash white in the dark. */
+html {
+  background-color: var(--color-background);
+  color-scheme: light;
+}
+
+/* Decoration only: honour a system-level request for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

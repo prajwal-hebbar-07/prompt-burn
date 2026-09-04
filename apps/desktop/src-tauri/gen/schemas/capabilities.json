@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Dashboard window. Frontend IPC is the app's own sidecar_request command, which needs no plugin permission.","local":true,"windows":["main"],"permissions":["core:default"]}}

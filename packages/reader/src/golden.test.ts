@@ -82,15 +82,18 @@ const OMP_GEMINI: DashboardSnapshot["models"][number] = {
  * Five rows from six `aggregations`: `cursor-grok-4.6-high-fast` canonicalizes
  * onto `cursor-grok-4.6-high` and merges into it. `-medium` is not stripped,
  * the `cursor-` prefix survives, and `default` (Auto) stays as an unpriced row
- * rather than vanishing. `claude-opus-5` here is a second row for a model OMP
- * also reports: `(source, model)` is the key, and nothing dedupes.
+ * rather than vanishing — it is the one model with no rate to bundle, since
+ * Cursor picks a different model per request. `claude-opus-5` here is a second
+ * row for a model OMP also reports: `(source, model)` is the key, and nothing
+ * dedupes.
  */
 const CURSOR_ROWS: DashboardSnapshot["models"] = [
   {
     source: "cursor",
     model: "cursor-grok-4.6-high",
     tokens: { input: 9_544_000, output: 1_167_800, cacheRead: 99_130_000, cacheWrite: 0 },
-    estimatedCents: null,
+    // 9.544M in @ $2 + 1.1678M out @ $6 + 99.13M cached @ $0.50 per Mtok.
+    estimatedCents: 7565.98,
   },
   {
     source: "cursor",
@@ -108,13 +111,15 @@ const CURSOR_ROWS: DashboardSnapshot["models"] = [
     source: "cursor",
     model: "cursor-grok-4.5-high",
     tokens: { input: 262_000, output: 24_400, cacheRead: 1_510_000, cacheWrite: 0 },
-    estimatedCents: null,
+    // Same rates as 4.6 except cached input, which is $0.30 per Mtok.
+    estimatedCents: 112.34,
   },
   {
     source: "cursor",
     model: "gpt-5.6-sol-medium",
     tokens: { input: 3, output: 4060, cacheRead: 0, cacheWrite: 74_400 },
-    estimatedCents: null,
+    // Cache writes are free on OpenAI, so 74.4K of them cost nothing.
+    estimatedCents: 12.1815,
   },
 ];
 

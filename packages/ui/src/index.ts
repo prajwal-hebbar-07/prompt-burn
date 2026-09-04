@@ -2,7 +2,14 @@ export { AppShell, type AppShellProps, type Route } from "./AppShell.js";
 export { fetchStatusLabel, fetchedAgoLabel } from "./AppShell.js";
 export { CycleCard, CycleFootnote } from "./CursorCycle.js";
 export { Dashboard, type DashboardProps } from "./Dashboard.js";
-export { emptyStateMessage, formatEstimatedTotal, heroSubtitle } from "./Dashboard.js";
+export {
+  emptyStateMessage,
+  formatEstimatedTotal,
+  heroSubtitle,
+  pricedSubtotal,
+  sourceShares,
+  type PricedSubtotal,
+} from "./Dashboard.js";
 export {
   FetchErrorBanner,
   fetchErrorMessage,
@@ -17,7 +24,7 @@ export {
   formatTokens,
   tokenLine,
 } from "./format.js";
-export { ModelTable, type ModelTableProps } from "./ModelTable.js";
+export { ModelTable, rankRows, type ModelTableProps } from "./ModelTable.js";
 export { PeriodBar, type PeriodBarProps, formatRangeLabel, periodLabel } from "./PeriodBar.js";
 export {
   Settings,
@@ -27,3 +34,10 @@ export {
   type SourceHealth,
   type SourceSettings,
 } from "./Settings.js";
+export {
+  THEME_PREFERENCES,
+  useTheme,
+  type Theme,
+  type ThemeControl,
+  type ThemePreference,
+} from "./theme.js";

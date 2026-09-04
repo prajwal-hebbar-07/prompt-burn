@@ -13,6 +13,11 @@ import { buildDashboardSnapshot } from "@prompt-burn/core";
 import { AppShell, fetchStatusLabel } from "./index.js";
 
 afterEach(cleanup);
+// The theme lives on <html> and in storage, neither of which React unmounts.
+afterEach(() => {
+  globalThis.localStorage?.clear();
+  document.documentElement.classList.remove("theme-dark");
+});
 
 const TRUST_LINE = "Local only · nothing leaves this device";
 
@@ -159,5 +164,35 @@ describe("the period bar", () => {
     expect(onFetch).not.toHaveBeenCalled();
     // The snapshot on screen is still the old one; the host swaps it in.
     expect(screen.getByTestId("estimated-total").textContent).toBe("$24.22");
+  });
+});
+
+describe("theme", () => {
+  it("starts on the system preference and pins a side when asked", async () => {
+    const user = userEvent.setup();
+    render(<AppShell snapshot={snapshot(FETCHED)} />);
+
+    expect(button("Auto").getAttribute("aria-pressed")).toBe("true");
+    expect(document.documentElement.classList.contains("theme-dark")).toBe(false);
+
+    await user.click(button("Dark"));
+    expect(button("Dark").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Auto").getAttribute("aria-pressed")).toBe("false");
+    expect(document.documentElement.classList.contains("theme-dark")).toBe(true);
+
+    await user.click(button("Light"));
+    expect(document.documentElement.classList.contains("theme-dark")).toBe(false);
+  });
+
+  it("remembers the choice for the next mount", async () => {
+    const user = userEvent.setup();
+    render(<AppShell snapshot={snapshot(FETCHED)} />);
+    await user.click(button("Dark"));
+
+    cleanup();
+    render(<AppShell snapshot={snapshot(FETCHED)} />);
+
+    expect(button("Dark").getAttribute("aria-pressed")).toBe("true");
+    expect(document.documentElement.classList.contains("theme-dark")).toBe(true);
   });
 });

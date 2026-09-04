@@ -12,6 +12,12 @@
  *   (not batch / flex / priority) paid-tier rates, read 2026-09-04. Reached
  *   through Antigravity inside OMP, so `provider` carries OMP's own
  *   `google-antigravity` slot rather than a bare vendor name.
+ * - xAI Grok — https://docs.x.ai/developers/pricing, standard (<200K context)
+ *   rates, read 2026-09-05.
+ * - OpenAI — https://developers.openai.com/api/docs/models/gpt-5.6-sol, read
+ *   2026-09-05.
+ * - Cursor Composer — https://cursor.com/docs/models-and-pricing, the rates
+ *   Cursor bills once included usage runs out, read 2026-09-05.
  *
  * Models keyed by canonical id (`canonicalModelId` in `@prompt-burn/core`), the
  * same string OMP writes. Anything not listed prices as unknown — `—` in the
@@ -70,6 +76,33 @@ export const BUNDLED_PRICES: readonly BundledPrice[] = [
   // hour, which is not a token count and is not modelled. OMP reports
   // `cacheWrite: 0` on every Gemini line, so nothing is silently dropped.
   price("gemini-3.8-flash", "google-antigravity", 0.75, 3.75, 0.075, 0),
+  // Cursor-side models. The ids are Cursor's own `modelIntent` strings, kept
+  // verbatim by `canonicalModelId`, and they are priced at the *public* rate of
+  // whoever runs the model — the same choice already made for Gemini through
+  // Antigravity. Cursor's subscription pool bills differently; this product
+  // estimates PAYG cost, not the invoice.
+  //
+  // xAI Grok via Cursor: input / output / cached input. Effort levels (`-high`,
+  // `-xhigh`) are the same model at the same token price, so they carry the same
+  // row. Cache write is 0: xAI publishes no cache-write category.
+  // Under-estimates a request over 200K context, where every xAI rate doubles.
+  price("cursor-grok-4.6-high", "xai", 2, 6, 0.5, 0),
+  price("cursor-grok-4.6-xhigh", "xai", 2, 6, 0.5, 0),
+  price("cursor-grok-4.5-high", "xai", 2, 6, 0.3, 0),
+  // Cursor's own model. The `-fast` variant is billed at 3 / 15 / 0.5 and
+  // arrives as its own `modelIntent`, so it is not this row and stays unpriced
+  // until it is actually observed.
+  price("composer-2.5", "cursor", 0.5, 2.5, 0.2, 0),
+  // OpenAI GPT-5.6 Sol. `-medium` is reasoning effort, which does not change
+  // the token price. Cache write is 0: OpenAI caches automatically and bills no
+  // write.
+  price("gpt-5.6-sol-medium", "openai", 5, 30, 0.5, 0),
+  // Anthropic Haiku 4.5 under Cursor's id. Same rates as the `claude-haiku-4-5`
+  // row above; `-thinking` is a mode, not a price tier.
+  price("claude-4.5-haiku-thinking", "anthropic", 1, 5, 0.1, 1.25),
+  // Not bundled: `default` (Cursor Auto) routes to whichever model Cursor
+  // chooses per request. There is no rate to publish, so it stays `—` and is
+  // priced by hand in Settings or not at all.
 ];
 
 function price(

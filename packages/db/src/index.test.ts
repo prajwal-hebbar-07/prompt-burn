@@ -87,17 +87,29 @@ describe("openDatabase", () => {
     db.close();
   });
 
-  it("reopens an existing file without re-applying schema or re-seeding", () => {
+  it("reopens an existing file, keeps its data, and tops up missing prices", () => {
     const path = databasePath(fakeHome());
     const first = openDatabase(path);
     first.exec("INSERT INTO settings (key, value) VALUES ('omp_path', '~/.omp')");
+    // Stands in for a release that adds a model to BUNDLED_PRICES.
     first.exec("DELETE FROM price_entries WHERE model = 'gemma4'");
+    // A hand-added rate must survive the top-up, not be duplicated by it.
+    first.exec(
+      `INSERT INTO price_entries
+         (model, provider, effective_from, input_per_mtok, output_per_mtok)
+       VALUES ('claude-opus-5', 'custom', '2026-01-01T00:00:00Z', 9, 9)`,
+    );
     first.close();
 
     const second = openDatabase(path);
+    // The missing seed is back and nothing else was inserted twice.
     expect(second.prepare("SELECT COUNT(*) AS n FROM price_entries").get()?.["n"]).toBe(
-      BUNDLED_PRICES.length - 1,
+      BUNDLED_PRICES.length + 1,
     );
+    expect(
+      second.prepare("SELECT COUNT(*) AS n FROM price_entries WHERE model = ?").get("claude-opus-5")
+        ?.["n"],
+    ).toBe(2);
     expect(second.prepare("SELECT value FROM settings WHERE key = 'omp_path'").get()?.["value"]).toBe(
       "~/.omp",
     );
