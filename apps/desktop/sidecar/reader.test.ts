@@ -186,17 +186,23 @@ it("getSnapshot(all_time) aggregates synced OMP rows through core", async () => 
 
     const response = await sidecar.request("getSnapshot", { period: { kind: "all_time" } });
     expect(response["ok"]).toBe(true);
-    // The fixture line twice: input 2, output 105, cacheRead 37378, cacheWrite 463.
+    // The fixture line twice: input 4, output 210, cacheRead 74756, cacheWrite
+    // 926 of claude-opus-5, priced from the bundled 5 / 25 / 0.5 / 6.25 seed.
+    const priced = 4.84355;
     expect(response["result"]).toMatchObject({
       period: { kind: "all_time" },
-      estimatedCents: null, // pricing is not wired into the aggregate yet
-      omp: { estimatedCents: null, tokens: { input: 4, output: 210, cacheRead: 74756, cacheWrite: 926 } },
-      cursor: { mode: "cycle_aggregate", estimatedCents: null, tokens: { input: 0, output: 0 } },
+      estimatedCents: priced,
+      omp: {
+        estimatedCents: priced,
+        tokens: { input: 4, output: 210, cacheRead: 74756, cacheWrite: 926 },
+      },
+      // Cursor never fetched here, so its empty cycle costs nothing at all.
+      cursor: { mode: "cycle_aggregate", estimatedCents: 0, tokens: { input: 0, output: 0 } },
       models: [
         {
           source: "omp",
           model: "claude-opus-5",
-          estimatedCents: null,
+          estimatedCents: priced,
           tokens: { input: 4, output: 210, cacheRead: 74756, cacheWrite: 926 },
         },
       ],

@@ -2,14 +2,18 @@
  * Settings screen: sources (OMP + Cursor), pricing (bundled rates + unknown models),
  * and about (local SQLite database path).
  *
- * Display only in this commit: inputs and toggles accept in-memory changes so
- * they can be verified, but nothing persists to disk, database, or sidecar.
- * Writes land in commit 28.
+ * Props only, like the rest of this package: the toggles and the path are view
+ * state until `onSave` fires, and `onAddPrice` hands one hand-entered rate to
+ * the host, which inserts it and re-reads the snapshot. This file opens no
+ * database and knows no file paths — it is handed the strings it shows.
+ *
+ * The optional `crsr_` Enterprise key stays display-only: there is no event
+ * ingest for it yet, and it is never persisted.
  *
  * No Projects, no quota/usage-limit tiles.
  */
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import type { DashboardSnapshot } from "@prompt-burn/core";
 
 export interface PriceRate {
@@ -19,6 +23,26 @@ export interface PriceRate {
   outputPerMtok: number;
   cacheReadPerMtok?: number | null;
   cacheWritePerMtok?: number | null;
+}
+
+/** What the host persists for the two sources. `ompPath` is the real directory. */
+export interface SourceSettings {
+  ompEnabled: boolean;
+  ompPath: string;
+  cursorEnabled: boolean;
+}
+
+/**
+ * A hand-entered rate, USD per million tokens. Blank cache fields arrive as
+ * `null` — unknown, so that token kind keeps the estimate `—`, never `$0`.
+ */
+export interface NewPriceInput {
+  model: string;
+  provider: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+  cacheReadPerMtok: number | null;
+  cacheWritePerMtok: number | null;
 }
 
 export interface SourceHealth {
@@ -45,6 +69,10 @@ export interface SettingsProps {
   health?: SourceHealth[];
   /** Database path; defaults to `~/.prompt-burn/db.sqlite` */
   databasePath?: string;
+  /** Persists the toggles and the path. Absent: the section is read-only. */
+  onSave?: (settings: SourceSettings) => void;
+  /** Inserts one rate for an unknown model, retroactively. */
+  onAddPrice?: (price: NewPriceInput) => void;
 }
 
 const DEFAULT_OMP_PATH = "~/.omp/agent/sessions/";
@@ -53,6 +81,51 @@ const DEFAULT_DB_PATH = "~/.prompt-burn/db.sqlite";
 function formatRate(dollars: number | null | undefined): string {
   if (dollars === null || dollars === undefined) return "—";
   return `$${dollars.toFixed(2)}`;
+}
+
+/** The Add-price form's raw strings; blank cache fields mean unknown. */
+interface PriceDraft {
+  provider: string;
+  input: string;
+  output: string;
+  cacheRead: string;
+  cacheWrite: string;
+}
+
+const EMPTY_DRAFT: PriceDraft = {
+  provider: "custom",
+  input: "",
+  output: "",
+  cacheRead: "",
+  cacheWrite: "",
+};
+
+/** Blank is unknown (`null`); anything unparseable is invalid (`undefined`). */
+function optionalRate(value: string): number | null | undefined {
+  if (value.trim() === "") return null;
+  const rate = Number(value);
+  return Number.isFinite(rate) ? rate : undefined;
+}
+
+/**
+ * The draft as a price row, or `null` while it is not a complete rate. Input
+ * and output are required — a model priced without them would read as free.
+ */
+function parseDraft(model: string, draft: PriceDraft): NewPriceInput | null {
+  const inputPerMtok = optionalRate(draft.input);
+  const outputPerMtok = optionalRate(draft.output);
+  const cacheReadPerMtok = optionalRate(draft.cacheRead);
+  const cacheWritePerMtok = optionalRate(draft.cacheWrite);
+  if (typeof inputPerMtok !== "number" || typeof outputPerMtok !== "number") return null;
+  if (cacheReadPerMtok === undefined || cacheWritePerMtok === undefined) return null;
+  return {
+    model,
+    provider: draft.provider.trim() === "" ? "custom" : draft.provider.trim(),
+    inputPerMtok,
+    outputPerMtok,
+    cacheReadPerMtok,
+    cacheWritePerMtok,
+  };
 }
 
 export function Settings({
@@ -65,12 +138,33 @@ export function Settings({
   cursorKey: initialCursorKey = "",
   health = [],
   databasePath = DEFAULT_DB_PATH,
+  onSave,
+  onAddPrice,
 }: SettingsProps) {
-  // In-memory view state only — nothing writes to disk or database.
+  // View state until it is saved: a half-typed path must not reach the
+  // collectors, so the whole section persists on one click.
   const [ompEnabled, setOmpEnabled] = useState(initialOmpEnabled);
   const [ompPath, setOmpPath] = useState(initialOmpPath);
   const [cursorEnabled, setCursorEnabled] = useState(initialCursorEnabled);
   const [cursorKey, setCursorKey] = useState(initialCursorKey);
+  const [saved, setSaved] = useState(false);
+  /** The model whose Add-price form is open, if any. */
+  const [pricing, setPricing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<PriceDraft>(EMPTY_DRAFT);
+
+  const price = pricing === null ? null : parseDraft(pricing, draft);
+
+  function save(): void {
+    onSave?.({ ompEnabled, ompPath, cursorEnabled });
+    setSaved(true);
+  }
+
+  function submitPrice(event: FormEvent): void {
+    event.preventDefault();
+    if (price === null) return;
+    onAddPrice?.(price);
+    setPricing(null);
+  }
 
   const ompHealth = health.find((h) => h.source === "omp") ?? {
     available: true,
@@ -122,7 +216,10 @@ export function Settings({
                   type="checkbox"
                   aria-label="Enable OMP"
                   checked={ompEnabled}
-                  onChange={(e) => setOmpEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    setOmpEnabled(e.target.checked);
+                    setSaved(false);
+                  }}
                   className="rounded-control border-border text-brand focus:ring-brand"
                 />
                 <span>{ompEnabled ? "Enabled" : "Disabled"}</span>
@@ -136,7 +233,10 @@ export function Settings({
                   type="text"
                   aria-label="OMP sessions path"
                   value={ompPath}
-                  onChange={(e) => setOmpPath(e.target.value)}
+                  onChange={(e) => {
+                    setOmpPath(e.target.value);
+                    setSaved(false);
+                  }}
                   className="mt-1 w-full rounded-control border border-border px-3 py-1.5 font-mono text-small text-foreground"
                 />
               </label>
@@ -167,7 +267,10 @@ export function Settings({
                   type="checkbox"
                   aria-label="Enable Cursor"
                   checked={cursorEnabled}
-                  onChange={(e) => setCursorEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    setCursorEnabled(e.target.checked);
+                    setSaved(false);
+                  }}
                   className="rounded-control border-border text-brand focus:ring-brand"
                 />
                 <span>{cursorEnabled ? "Enabled" : "Disabled"}</span>
@@ -199,6 +302,22 @@ export function Settings({
             </div>
           </div>
         </div>
+
+        <div className="mt-6 flex items-center gap-3 border-t border-border pt-4">
+          <button
+            type="button"
+            data-testid="save-sources"
+            onClick={save}
+            className="rounded-control border border-brand bg-brand-subtle px-3 py-1.5 text-small font-medium text-brand"
+          >
+            Save sources
+          </button>
+          <span data-testid="save-state" className="text-small text-foreground-muted">
+            {saved
+              ? "Saved. The next fetch uses these settings."
+              : "Toggles and the path apply once saved."}
+          </span>
+        </div>
       </section>
 
       {/* Pricing section */}
@@ -222,15 +341,83 @@ export function Settings({
           {unpricedModels.length > 0 ? (
             <div data-testid="unknown-models" className="mt-3 divide-y divide-border border-t border-b border-border">
               {unpricedModels.map((model) => (
-                <div key={model} className="flex items-center justify-between py-2">
-                  <span className="font-mono text-small text-foreground">{model}</span>
-                  <button
-                    type="button"
-                    aria-label={`Add price for ${model}`}
-                    className="rounded-control border border-brand bg-brand-subtle px-2.5 py-1 text-small font-medium text-brand"
-                  >
-                    Add price
-                  </button>
+                <div key={model} className="py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-small text-foreground">{model}</span>
+                    <button
+                      type="button"
+                      aria-label={`Add price for ${model}`}
+                      onClick={() => {
+                        setPricing(model);
+                        setDraft(EMPTY_DRAFT);
+                      }}
+                      className="rounded-control border border-brand bg-brand-subtle px-2.5 py-1 text-small font-medium text-brand"
+                    >
+                      Add price
+                    </button>
+                  </div>
+
+                  {pricing === model ? (
+                    <form
+                      data-testid="add-price-form"
+                      aria-label={`Price ${model}`}
+                      onSubmit={submitPrice}
+                      className="mt-2 flex flex-col gap-2"
+                    >
+                      <div className="flex flex-wrap gap-2">
+                        <label className="text-table text-foreground-secondary">
+                          Provider
+                          <input
+                            type="text"
+                            aria-label="Provider"
+                            value={draft.provider}
+                            onChange={(e) => setDraft({ ...draft, provider: e.target.value })}
+                            className="mt-1 block w-32 rounded-control border border-border px-2 py-1 font-mono text-small"
+                          />
+                        </label>
+                        {(
+                          [
+                            ["input", "Input / 1M"],
+                            ["output", "Output / 1M"],
+                            ["cacheRead", "Cache read / 1M"],
+                            ["cacheWrite", "Cache write / 1M"],
+                          ] as const
+                        ).map(([field, label]) => (
+                          <label key={field} className="text-table text-foreground-secondary">
+                            {label}
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              aria-label={label}
+                              value={draft[field]}
+                              onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
+                              className="mt-1 block w-24 rounded-control border border-border px-2 py-1 text-right font-mono text-small tabular-nums"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={price === null}
+                          className="rounded-control border border-brand bg-brand-subtle px-2.5 py-1 text-small font-medium text-brand disabled:opacity-50"
+                        >
+                          Save price
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPricing(null)}
+                          className="rounded-control border border-border px-2.5 py-1 text-small text-foreground-secondary"
+                        >
+                          Cancel
+                        </button>
+                        <span className="text-table text-foreground-muted">
+                          USD per million tokens. Blank cache fields stay unknown, so those
+                          tokens keep the estimate at —. Applies to past usage too.
+                        </span>
+                      </div>
+                    </form>
+                  ) : null}
                 </div>
               ))}
             </div>

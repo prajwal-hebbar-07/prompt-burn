@@ -13,6 +13,7 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
+import { SEED_EFFECTIVE_FROM } from "./prices.js";
 
 /** A `price_entries` row. Rates are USD per million tokens. */
 export interface PriceRate {
@@ -97,6 +98,44 @@ export function estimateCents(rate: PriceRate | null, tokens: TokenCounts): numb
     cacheWrite * (rate.cacheWritePerMtok ?? 0);
   // USD per million tokens -> cents.
   return (perMtok / 1_000_000) * 100;
+}
+
+/** A hand-entered rate from Settings. USD per million tokens. */
+export interface NewPriceEntry {
+  model: string;
+  provider: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+  /** `null` when the rate is unknown — the estimate stays `null`, not `0`. */
+  cacheReadPerMtok: number | null;
+  cacheWritePerMtok: number | null;
+}
+
+/**
+ * Adds a rate for a model nobody has priced, backdated and open-ended exactly
+ * like the bundled seeds.
+ *
+ * Pricing a model in Settings is a statement about a rate we have no history
+ * for, so the window has to cover the events already on disk: a "from now on"
+ * row would leave every stored event — and every Cursor cycle aggregate, which
+ * has no timestamp at all — showing `—` forever. Correcting a rate later is a
+ * second row with a real `effective_from`, never an UPDATE of this one.
+ */
+export function insertPriceEntry(db: DatabaseSync, entry: NewPriceEntry): void {
+  db.prepare(
+    `INSERT INTO price_entries
+       (model, provider, effective_from, effective_until,
+        input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok)
+     VALUES (?, ?, ?, NULL, ?, ?, ?, ?)`,
+  ).run(
+    entry.model,
+    entry.provider,
+    SEED_EFFECTIVE_FROM,
+    entry.inputPerMtok,
+    entry.outputPerMtok,
+    entry.cacheReadPerMtok,
+    entry.cacheWritePerMtok,
+  );
 }
 
 function nullableRate(value: unknown): number | null {

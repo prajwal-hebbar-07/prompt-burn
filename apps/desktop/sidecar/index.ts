@@ -11,7 +11,12 @@
  */
 
 import { databasePath, openDatabase } from "@prompt-burn/db";
-import { createUsageReader, type UsageReader } from "@prompt-burn/reader";
+import {
+  createUsageReader,
+  type AppSettings,
+  type NewPriceEntry,
+  type UsageReader,
+} from "@prompt-burn/reader";
 
 const path = databasePath();
 const db = openDatabase(path);
@@ -40,6 +45,17 @@ const METHODS = {
         ? (request.period as Parameters<UsageReader["getSnapshot"]>[0])
         : { kind: "all_time" },
     ),
+  getSettings: () => reader.getSettings(),
+  saveSettings: async (request: { settings?: unknown }) => {
+    await reader.saveSettings((request.settings ?? {}) as Partial<AppSettings>);
+    // Answers with what is now stored, so the window shows the truth rather
+    // than what it hoped it wrote.
+    return reader.getSettings();
+  },
+  addPrice: async (request: { price?: unknown }) => {
+    await reader.addPrice(request.price as NewPriceEntry);
+    return null;
+  },
 } as const;
 
 /** One request line in, one response line out. Failures are data, not exits. */

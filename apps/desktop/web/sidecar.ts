@@ -8,6 +8,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { DashboardSnapshot, PeriodFilter } from "@prompt-burn/core";
+import type { NewPriceInput, SourceSettings } from "@prompt-burn/ui";
 
 /** What `fetch()` answers with — see `sidecar/reader.ts`. */
 export interface FetchResult {
@@ -58,4 +59,19 @@ export function fetchUsage(): Promise<FetchResult> {
 /** The dashboard view model for one period; the caller owns the filter. */
 export function getSnapshot(period: PeriodFilter): Promise<DashboardSnapshot> {
   return request<DashboardSnapshot>("getSnapshot", { period });
+}
+
+/** The persisted source toggles and OMP path override. */
+export function getSettings(): Promise<SourceSettings> {
+  return request<SourceSettings>("getSettings");
+}
+
+/** Persists the given keys and answers with what is now stored. */
+export function saveSettings(settings: Partial<SourceSettings>): Promise<SourceSettings> {
+  return request<SourceSettings>("saveSettings", { settings });
+}
+
+/** Inserts one rate; the next `getSnapshot` prices history with it. */
+export async function addPrice(price: NewPriceInput): Promise<void> {
+  await request<null>("addPrice", { price });
 }

@@ -21,7 +21,10 @@ re-aggregates what is already stored. Fetch happens once when the tab opens and
 again only on **Fetch data**; a period change is a `getSnapshot`, never a fetch,
 and a failed fetch keeps the previous numbers on screen.
 
-Settings are display only — writes are commit 28.
+Settings write through the same channel: `getSettings` / `saveSettings` carry
+the source toggles and the OMP path override, and `addPrice` inserts one
+`price_entries` row so the next `getSnapshot` prices history with it. The
+optional `crsr_` key stays display only — it has no ingest and is never stored.
 
 ```sh
 pnpm --filter prompt-burn-vscode build   # tsc -> out/ (host) + vite -> dist/ (webview)
