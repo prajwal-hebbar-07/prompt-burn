@@ -16,6 +16,7 @@ import {
   type DashboardSnapshot,
   type PeriodFilter,
 } from "@prompt-burn/core";
+import type { NewPriceInput, SourceSettings } from "@prompt-burn/ui";
 
 const invoke = vi.fn<(command: string, args: { request: string }) => Promise<string>>();
 vi.mock("@tauri-apps/api/core", () => ({
@@ -36,6 +37,24 @@ function snapshotWith(estimatedCents: number | null): DashboardSnapshot {
   };
 }
 
+/** A snapshot carrying one unpriced model, so Settings lists it as unknown. */
+function snapshotWithUnpriced(model: string): DashboardSnapshot {
+  return buildDashboardSnapshot({
+    period: { kind: "all_time" },
+    ompEvents: [
+      {
+        id: "omp:s1:1",
+        source: "omp",
+        timestamp: "2026-09-04T09:00:00.000Z",
+        model,
+        rawModel: model,
+        tokens: { input: 10, output: 20 },
+      },
+    ],
+    cursor: { mode: "cycle_aggregate", cycleStart: "", cycleEnd: "", models: [] },
+  });
+}
+
 interface FakeSidecar {
   /** Resolves the next fetch; unset means fetch answers immediately. */
   gate?: PromiseWithResolvers<void>;
@@ -46,19 +65,32 @@ interface FakeSidecar {
   methods: string[];
   /** The `period` every `getSnapshot` was asked for, in order. */
   periods: PeriodFilter[];
+  /** What the sidecar has persisted, as the database would hold it. */
+  settings: SourceSettings;
+  /** Every `price_entries` row the window asked for, in order. */
+  prices: NewPriceInput[];
 }
 
 let sidecar: FakeSidecar;
 
 beforeEach(() => {
-  sidecar = { fetchOk: true, snapshot: snapshotWith(2421.775), methods: [], periods: [] };
+  sidecar = {
+    fetchOk: true,
+    snapshot: snapshotWith(2421.775),
+    methods: [],
+    periods: [],
+    settings: { ompEnabled: true, ompPath: "~/.omp/agent/sessions/", cursorEnabled: true },
+    prices: [],
+  };
   vi.spyOn(console, "error").mockImplementation(() => {});
 
   invoke.mockImplementation(async (_command, args) => {
-    const { id, method, period } = JSON.parse(args.request) as {
+    const { id, method, period, settings, price } = JSON.parse(args.request) as {
       id: number;
       method: string;
       period?: PeriodFilter;
+      settings?: Partial<SourceSettings>;
+      price?: NewPriceInput;
     };
     sidecar.methods.push(method);
 
@@ -79,7 +111,9 @@ beforeEach(() => {
         : {
             at,
             ok: false,
-            error: "sync exploded",
+            // The reader's own wording: only real failures are named, so the
+            // not-installed Cursor below gets no line of its own.
+            error: "OMP failed: sync exploded",
             omp: { ok: false, error: "sync exploded", scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 },
             cursor: { ok: false, reason: "not_installed", error: "no state", models: 0 },
           };
@@ -88,6 +122,17 @@ beforeEach(() => {
     if (method === "getSnapshot") {
       if (period) sidecar.periods.push(period);
       return JSON.stringify({ type: "response", id, ok: true, result: sidecar.snapshot });
+    }
+    if (method === "getSettings") {
+      return JSON.stringify({ type: "response", id, ok: true, result: sidecar.settings });
+    }
+    if (method === "saveSettings") {
+      sidecar.settings = { ...sidecar.settings, ...settings };
+      return JSON.stringify({ type: "response", id, ok: true, result: sidecar.settings });
+    }
+    if (method === "addPrice") {
+      if (price) sidecar.prices.push(price);
+      return JSON.stringify({ type: "response", id, ok: true, result: null });
     }
     return JSON.stringify({ type: "response", id, ok: false, error: `unknown method ${method}` });
   });
@@ -111,7 +156,7 @@ it("fetches once when the window opens and shows the total", async () => {
   expect(status()).toBe("Fetching…");
 
   await waitFor(() => expect(total()).toBe("$24.22"));
-  expect(sidecar.methods).toEqual(["fetch", "getSnapshot"]);
+  expect(sidecar.methods).toEqual(["fetch", "getSettings", "getSnapshot"]);
   expect(status()).toContain("Fetched");
 });
 
@@ -124,11 +169,17 @@ it("fetches again when Fetch data is clicked, and not otherwise", async () => {
   await user.click(screen.getByRole("button", { name: "Fetch data" }));
 
   await waitFor(() => expect(total()).toBe("$5.00"));
-  expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "fetch", "getSnapshot"]);
+  expect(sidecar.methods).toEqual([
+    "fetch",
+    "getSettings",
+    "getSnapshot",
+    "fetch",
+    "getSnapshot",
+  ]);
 
   // No timers: nothing fetches on its own after the click settles.
   await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(sidecar.methods).toHaveLength(4);
+  expect(sidecar.methods).toHaveLength(5);
 });
 
 it("keeps the previous total on screen while a fetch is in flight", async () => {
@@ -164,7 +215,17 @@ it("keeps the last good snapshot when a fetch fails", async () => {
   // Old data survives the failure; the snapshot never advanced to $5.00.
   expect(total()).toBe("$24.22");
   expect(status()).toBe(fetchedLabel);
-  expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "fetch"]);
+  // A total failure is a banner too: today it only reached the console.
+  expect(screen.getByTestId("fetch-error-message").textContent).toContain(
+    "OMP failed — sync exploded",
+  );
+  expect(sidecar.methods).toEqual(["fetch", "getSettings", "getSnapshot", "fetch"]);
+
+  // Retry is the same fetch, and it does not clear the number on its way out.
+  sidecar.fetchOk = true;
+  await user.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(total()).toBe("$5.00"));
+  expect(screen.queryByTestId("fetch-error")).toBeNull();
 });
 
 it("applies the successful source when only one of the two fails", async () => {
@@ -176,10 +237,18 @@ it("applies the successful source when only one of the two fails", async () => {
   sidecar.snapshot = snapshotWith(500);
   await user.click(screen.getByRole("button", { name: "Fetch data" }));
 
-  // OMP's new rows land even though Cursor failed; the failure only sets the
-  // fetch status (the banner that reads it is commit 29).
+  // OMP's new rows land even though Cursor failed, and the banner names both.
   await waitFor(() => expect(total()).toBe("$5.00"));
-  expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "fetch", "getSnapshot"]);
+  expect(screen.getByTestId("fetch-error-message").textContent).toContain(
+    "Cursor failed · OMP OK — cursor.com said 503",
+  );
+  expect(sidecar.methods).toEqual([
+    "fetch",
+    "getSettings",
+    "getSnapshot",
+    "fetch",
+    "getSnapshot",
+  ]);
   expect(console.error).toHaveBeenCalledWith(
     "prompt-burn: partial fetch",
     "Cursor failed: cursor.com said 503",
@@ -199,7 +268,7 @@ it("opens on this month and re-reads the snapshot for a new period, without fetc
   await waitFor(() => expect(total()).toBe("$5.00"));
   // A period change re-aggregates: one more getSnapshot, no second fetch, and
   // the fetch bookkeeping (and so the status label) is untouched.
-  expect(sidecar.methods).toEqual(["fetch", "getSnapshot", "getSnapshot"]);
+  expect(sidecar.methods).toEqual(["fetch", "getSettings", "getSnapshot", "getSnapshot"]);
   expect(sidecar.periods).toEqual([{ kind: "this_month" }, { kind: "today" }]);
   expect(status()).toBe(fetchedLabel);
   expect(screen.queryByTestId("spinner")).toBeNull();
@@ -246,4 +315,49 @@ it("navigates to Settings without calling fetch or writing sidecar state", async
 
   // Navigating to Settings is pure view state: no extra fetch, no write side-effects.
   expect(sidecar.methods).toEqual(methodsBefore);
+});
+
+it("loads the stored settings, saves edits, and re-prices without fetching", async () => {
+  const user = userEvent.setup();
+  sidecar.settings = { ompEnabled: true, ompPath: "/stored/omp", cursorEnabled: false };
+  sidecar.snapshot = snapshotWithUnpriced("mystery-model");
+  render(<App />);
+  await waitFor(() => expect(sidecar.methods).toContain("getSettings"));
+
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  // The persisted values, not the component's defaults.
+  expect((screen.getByRole("textbox", { name: "OMP sessions path" }) as HTMLInputElement).value).toBe(
+    "/stored/omp",
+  );
+  expect((screen.getByRole("checkbox", { name: "Enable Cursor" }) as HTMLInputElement).checked).toBe(
+    false,
+  );
+
+  await user.click(screen.getByRole("checkbox", { name: "Enable OMP" }));
+  await user.click(screen.getByTestId("save-sources"));
+  await waitFor(() =>
+    expect(sidecar.settings).toEqual({
+      ompEnabled: false,
+      ompPath: "/stored/omp",
+      cursorEnabled: false,
+    }),
+  );
+
+  await user.click(screen.getByRole("button", { name: "Add price for mystery-model" }));
+  await user.type(screen.getByRole("textbox", { name: "Input / 1M" }), "2");
+  await user.type(screen.getByRole("textbox", { name: "Output / 1M" }), "10");
+  await user.click(screen.getByRole("button", { name: "Save price" }));
+
+  await waitFor(() => expect(sidecar.prices).toHaveLength(1));
+  expect(sidecar.prices[0]).toEqual({
+    model: "mystery-model",
+    provider: "custom",
+    inputPerMtok: 2,
+    outputPerMtok: 10,
+    cacheReadPerMtok: null,
+    cacheWritePerMtok: null,
+  });
+  // The new rate re-reads the snapshot; it never re-runs a collector.
+  await waitFor(() => expect(sidecar.methods.at(-1)).toBe("getSnapshot"));
+  expect(sidecar.methods.filter((method) => method === "fetch")).toHaveLength(1);
 });

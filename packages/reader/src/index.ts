@@ -20,7 +20,16 @@ import {
   type DashboardSnapshot,
   type PeriodFilter,
 } from "@prompt-burn/core";
-import { loadUsageEvents } from "@prompt-burn/db";
+import {
+  estimateCents,
+  insertPriceEntry,
+  loadUsageEvents,
+  readSettings,
+  resolvePrice,
+  writeSettings,
+  type AppSettings,
+  type NewPriceEntry,
+} from "@prompt-burn/db";
 import {
   collectAllSources,
   defaultCursorStatePath,
@@ -28,7 +37,7 @@ import {
   readCursorAuth,
 } from "@prompt-burn/collectors";
 
-export type { DashboardSnapshot, PeriodFilter };
+export type { AppSettings, DashboardSnapshot, NewPriceEntry, PeriodFilter };
 
 /** One source's availability, as `discover()` reports it to the UI. */
 export interface ReaderHealth {
@@ -60,16 +69,30 @@ const EMPTY_CURSOR_CYCLE: CursorSnapshot = {
 };
 
 /**
- * Local conditions, not failures: there is simply no Cursor session to read, so
- * the Cursor section degrades to empty and the pass still counts as clean.
- * `expired` and `unreadable` do count as failures — they are actionable.
+ * Local conditions, not failures: there is simply no Cursor session to read, or
+ * the user turned the source off, so the Cursor section degrades to empty and
+ * the pass still counts as clean. `expired` and `unreadable` do count as
+ * failures — they are actionable.
  */
-const CURSOR_DEGRADED: ReadonlySet<string> = new Set(["not_installed", "signed_out"]);
+const CURSOR_DEGRADED: ReadonlySet<string> = new Set([
+  "not_installed",
+  "signed_out",
+  "disabled",
+]);
+
+/** What `discover()` reports for a source the user switched off in Settings. */
+const DISABLED_DETAIL = "Disabled in Settings";
 
 export interface UsageReader {
   discover(): Promise<ReaderHealth[]>;
   fetch(): Promise<FetchResult>;
   getSnapshot(period: PeriodFilter): Promise<DashboardSnapshot>;
+  /** Persisted source toggles, with `ompPath` resolved to the real directory. */
+  getSettings(): Promise<AppSettings>;
+  /** Persists only the keys given; the next fetch and snapshot use them. */
+  saveSettings(patch: Partial<AppSettings>): Promise<void>;
+  /** Prices a previously unknown model. Retroactive by construction. */
+  addPrice(entry: NewPriceEntry): Promise<void>;
 }
 
 /**
@@ -95,29 +118,51 @@ export function createUsageReader(
   // true.
   let cursorCycle: CursorSnapshot | undefined;
 
+  /**
+   * The effective source configuration, re-read on every call: the other shell
+   * shares this file and may have changed a toggle or the path since this
+   * process started.
+   */
+  function sources(): AppSettings {
+    const stored = readSettings(db);
+    // A stored override wins, then the constructor injection (tests only),
+    // then the collector's own default location.
+    return { ...stored, ompPath: stored.ompPath || ompDirectory || defaultSessionsDirectory() };
+  }
+
   return {
     async discover() {
-      const ompPath = ompDirectory ?? defaultSessionsDirectory();
+      const { ompEnabled, ompPath, cursorEnabled } = sources();
       const statePath = cursorStatePath ?? defaultCursorStatePath();
-      const auth = readCursorAuth(statePath);
+      // A disabled source is not probed at all: Cursor's database is not even
+      // opened to look for a token.
+      const auth = cursorEnabled ? readCursorAuth(statePath) : undefined;
       return [
         {
           source: "omp",
-          available: existsSync(ompPath),
-          detail: ompPath,
+          available: ompEnabled && existsSync(ompPath),
+          detail: ompEnabled ? ompPath : DISABLED_DETAIL,
         },
         {
           source: "cursor",
-          available: auth.ok,
+          available: auth?.ok === true,
           // Never the token: only where it came from, or why there is none.
-          detail: auth.ok ? statePath : auth.detail,
+          detail: auth === undefined ? DISABLED_DETAIL : auth.ok ? statePath : auth.detail,
         },
       ];
     },
 
     async fetch() {
       const at = now().toISOString();
-      const result = await collectAllSources({ db, ompDirectory, cursorStatePath, fetchImpl });
+      const { ompEnabled, ompPath, cursorEnabled } = sources();
+      const result = await collectAllSources({
+        db,
+        ompDirectory: ompPath,
+        cursorStatePath,
+        fetchImpl,
+        ompEnabled,
+        cursorEnabled,
+      });
       const cycle = result.cursor.cycle;
       if (cycle) cursorCycle = cycle;
 
@@ -145,13 +190,34 @@ export function createUsageReader(
     },
 
     async getSnapshot(period: PeriodFilter) {
-      const ompEvents = loadUsageEvents(db, "omp");
+      const at = now().toISOString();
       return buildDashboardSnapshot({
         period,
-        ompEvents,
+        ompEvents: loadUsageEvents(db, "omp"),
         cursor: cursorCycle ?? EMPTY_CURSOR_CYCLE,
         now: now(),
+        // Cost is a join, never a stored column, so every snapshot re-reads
+        // `price_entries`: a rate added in Settings prices old events on the
+        // very next call, with no rewrite of `usage_events`. Cycle aggregates
+        // have no timestamp of their own and price at the rate in force now —
+        // the only honest window for a cycle-to-date total.
+        // ponytail: one prepared lookup per row. Cache by (model, window) if a
+        // snapshot over tens of thousands of events ever feels slow.
+        priceCents: (model, tokens, timestamp) =>
+          estimateCents(resolvePrice(db, model, timestamp === "" ? at : timestamp), tokens),
       });
+    },
+
+    async getSettings() {
+      return sources();
+    },
+
+    async saveSettings(patch: Partial<AppSettings>) {
+      writeSettings(db, patch);
+    },
+
+    async addPrice(entry: NewPriceEntry) {
+      insertPriceEntry(db, entry);
     },
   };
 }

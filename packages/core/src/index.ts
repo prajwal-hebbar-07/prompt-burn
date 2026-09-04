@@ -62,6 +62,18 @@ export interface SourceTotals {
 }
 
 /**
+ * Cost of one part's tokens in cents, or `null` when the model has no rate
+ * covering that instant. Injected by the host — this package never opens the
+ * price table, and `timestamp` is empty for Cursor cycle aggregates, which the
+ * host prices at the current rate or not at all.
+ */
+export type PriceCents = (
+  model: string,
+  tokens: TokenCounts,
+  timestamp: string,
+) => number | null;
+
+/**
  * What a Cursor collector can return.
  *
  * `cycle_aggregate` is the Cursor Pro path: cycle-to-date per-model totals with

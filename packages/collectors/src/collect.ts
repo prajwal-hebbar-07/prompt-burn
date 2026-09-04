@@ -29,6 +29,9 @@ export interface CollectOptions {
   cursorStatePath?: string;
   /** Injectable so tests never reach cursor.com. */
   fetchImpl?: typeof fetch;
+  /** Settings toggle. A disabled source is not read at all; default on. */
+  ompEnabled?: boolean;
+  cursorEnabled?: boolean;
 }
 
 export interface CollectResult {
@@ -41,10 +44,11 @@ export interface CollectResult {
   cursor: {
     ok: boolean;
     /**
-     * Why Cursor produced nothing. The auth reasons are local conditions;
-     * `fetch_failed` is a transport, HTTP or response-shape failure.
+     * Why Cursor produced nothing. The auth reasons are local conditions,
+     * `disabled` is the Settings toggle, and `fetch_failed` is a transport,
+     * HTTP or response-shape failure.
      */
-    reason?: CursorAuthUnavailable["reason"] | "fetch_failed";
+    reason?: CursorAuthUnavailable["reason"] | "fetch_failed" | "disabled";
     error?: string;
     /** Cycle-to-date aggregate; absent unless this pass fetched one. */
     cycle?: CursorSnapshot;
@@ -55,18 +59,33 @@ const NO_SYNC: OmpSyncResult = { scannedFiles: 0, skippedFiles: 0, insertedEvent
 
 /** Runs both collectors. Never throws: every failure is a per-source result. */
 export async function collectAllSources(options: CollectOptions): Promise<CollectResult> {
-  const { db, ompDirectory, cursorStatePath, fetchImpl } = options;
+  const {
+    db,
+    ompDirectory,
+    cursorStatePath,
+    fetchImpl,
+    ompEnabled = true,
+    cursorEnabled = true,
+  } = options;
 
-  // Started first so its I/O is already in flight during the OMP sync.
-  const cursor = collectCursor(cursorStatePath, fetchImpl);
+  // Started first so its I/O is already in flight during the OMP sync. A
+  // disabled source is not touched at all — no directory walk, and no read of
+  // Cursor's own database for a token.
+  const cursor: Promise<CollectResult["cursor"]> = cursorEnabled
+    ? collectCursor(cursorStatePath, fetchImpl)
+    : Promise.resolve({ ok: false, reason: "disabled" });
 
   let omp: CollectResult["omp"];
-  try {
-    omp = { ok: true, sync: syncOmpSessions(db, ompDirectory) };
-  } catch (error) {
-    // The sync is one transaction and rolls itself back, so stored OMP rows are
-    // still the last consistent ones.
-    omp = { ok: false, error: message(error), sync: NO_SYNC };
+  if (!ompEnabled) {
+    omp = { ok: true, sync: NO_SYNC };
+  } else {
+    try {
+      omp = { ok: true, sync: syncOmpSessions(db, ompDirectory) };
+    } catch (error) {
+      // The sync is one transaction and rolls itself back, so stored OMP rows
+      // are still the last consistent ones.
+      omp = { ok: false, error: message(error), sync: NO_SYNC };
+    }
   }
 
   return { omp, cursor: await cursor };
