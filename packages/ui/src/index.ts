@@ -13,3 +13,9 @@ export {
 } from "./format.js";
 export { ModelTable, type ModelTableProps } from "./ModelTable.js";
 export { PeriodBar, type PeriodBarProps, formatRangeLabel, periodLabel } from "./PeriodBar.js";
+export {
+  Settings,
+  type SettingsProps,
+  type PriceRate,
+  type SourceHealth,
+} from "./Settings.js";

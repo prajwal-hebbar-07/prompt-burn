@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import type { DashboardSnapshot, PeriodFilter } from "@prompt-burn/core";
 import { Dashboard } from "./Dashboard.js";
 import { PeriodBar } from "./PeriodBar.js";
+import { Settings, type SettingsProps } from "./Settings.js";
 
 /** Always visible, on every route — docs/product.md Trust. */
 const TRUST_LINE = "Local only · nothing leaves this device";
@@ -50,19 +51,6 @@ function useRoughlyMinuteClock(tickMs = 30_000): Date {
   return now;
 }
 
-/** Settings is reachable now; its sections land with the settings commit. */
-function Settings() {
-  return (
-    <section aria-labelledby="settings-heading">
-      <h2 id="settings-heading" className="text-section leading-section font-semibold">
-        Settings
-      </h2>
-      <p className="mt-2 text-body leading-body text-foreground-secondary">
-        Sources, pricing and unknown models are configured here.
-      </p>
-    </section>
-  );
-}
 
 export interface AppShellProps {
   snapshot: DashboardSnapshot;
@@ -77,9 +65,11 @@ export interface AppShellProps {
   onFetch?: () => void;
   /** Injectable clock for the relative label; defaults to the wall clock. */
   now?: () => Date;
+  /** Settings view configuration passed by the host. */
+  settings?: SettingsProps;
 }
 
-export function AppShell({ snapshot, period, onPeriodChange, onFetch, now }: AppShellProps) {
+export function AppShell({ snapshot, period, onPeriodChange, onFetch, now, settings }: AppShellProps) {
   const [route, setRoute] = useState<Route>("Dashboard");
   // The hook always runs; an injected clock only overrides what it reads.
   const ticking = useRoughlyMinuteClock();
@@ -147,7 +137,7 @@ export function AppShell({ snapshot, period, onPeriodChange, onFetch, now }: App
             <Dashboard snapshot={snapshot} />
           </>
         ) : (
-          <Settings />
+          <Settings snapshot={snapshot} {...settings} />
         )}
       </main>
     </div>
