@@ -1,15 +1,15 @@
 /**
- * The minimal surface, rendered from typed `DashboardSnapshot` mocks — the
- * same view model `buildDashboardSnapshot` produces. No host, no protocol:
- * the component gets props and that is all it can reach.
+ * The Dashboard body, rendered from typed `DashboardSnapshot` mocks — the same
+ * view model `buildDashboardSnapshot` produces. No host, no protocol: the
+ * component gets props and that is all it can reach. Chrome, nav and the fetch
+ * cluster are covered in AppShell.test.tsx.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CursorSnapshot, DashboardSnapshot, UsageEvent } from "@prompt-burn/core";
 import { buildDashboardSnapshot } from "@prompt-burn/core";
-import { Dashboard, fetchStatusLabel, formatCents, formatEstimatedTotal } from "./index.js";
+import { Dashboard, formatCents, formatEstimatedTotal } from "./index.js";
 
 afterEach(cleanup);
 
@@ -46,30 +46,14 @@ function ompEvent(): UsageEvent {
 describe("formatting", () => {
   it("keeps fractional cents and never rounds to $0", () => {
     expect(formatCents(0)).toBe("$0.00");
+    expect(formatCents(1234.5)).toBe("$12.35");
     expect(formatCents(0.4)).toBe("$0.00");
-    expect(formatCents(123_456.7)).toBe("$1,234.57");
   });
 
   it("renders the em dash for an unknown price, and $0.00 only when really zero", () => {
     expect(formatEstimatedTotal(snapshot([ompEvent()], null))).toBe("—");
-    expect(formatEstimatedTotal(snapshot([ompEvent()], 0))).toBe("$0.00");
+    expect(formatEstimatedTotal(snapshot([], 0))).toBe("$0.00");
     expect(formatEstimatedTotal(snapshot([ompEvent()], 2421.775))).toBe("$24.22");
-  });
-
-  it("labels never-fetched, fetching and error as Not fetched yet / Fetching…", () => {
-    const now = new Date("2026-09-04T12:00:00Z");
-    const base = { fetch: { lastSuccessAt: null as string | null, status: "idle" as const } };
-    expect(fetchStatusLabel(snapshot([], null), now)).toBe("Not fetched yet");
-    expect(fetchStatusLabel({ ...snapshot([], null), fetch: { ...base.fetch, status: "fetching" } }, now)).toBe("Fetching…");
-    // An error keeps the old data visible; its status text does not invent a time.
-    expect(fetchStatusLabel({ ...snapshot([], null), fetch: { ...base.fetch, status: "error", error: "boom" } }, now)).toBe("Not fetched yet");
-  });
-
-  it("labels a successful fetch relatively, refreshing without refetching", () => {
-    const now = new Date("2026-09-04T12:00:00Z");
-    const fetched = snapshot([], 500);
-    expect(fetchStatusLabel({ ...fetched, fetch: { lastSuccessAt: "2026-09-04T11:57:00Z", status: "idle" } }, now)).toBe("Fetched 3 min ago");
-    expect(fetchStatusLabel({ ...fetched, fetch: { lastSuccessAt: "2026-09-04T11:59:40Z", status: "idle" } }, now)).toBe("Fetched just now");
   });
 });
 
@@ -78,10 +62,7 @@ describe("Dashboard", () => {
     render(<Dashboard snapshot={snapshot([ompEvent()], null)} />);
 
     expect(screen.getByTestId("estimated-total").textContent).toBe("—");
-    expect(
-      (screen.getByRole("button", { name: "Fetch data" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
-    expect(screen.getByTestId("fetch-status").textContent).toBe("Not fetched yet");
+    expect(screen.getByText("Estimated total")).toBeTruthy();
   });
 
   it("renders a dollar total once a mock provides one", () => {
@@ -90,52 +71,9 @@ describe("Dashboard", () => {
     expect(screen.getByTestId("estimated-total").textContent).toBe("$24.22");
   });
 
-  it("renders the relative label against an injected clock", () => {
-    const fetched = {
-      ...snapshot([ompEvent()], 2421.775),
-      fetch: { lastSuccessAt: "2026-09-04T11:57:00Z", status: "idle" as const },
-    };
-    render(<Dashboard snapshot={fetched} now={() => new Date("2026-09-04T12:00:00Z")} />);
-
-    expect(screen.getByTestId("fetch-status").textContent).toBe("Fetched 3 min ago");
-    expect(screen.getByTestId("estimated-total").textContent).toBe("$24.22");
-  });
-
-  it("invokes onFetch when Fetch data is clicked, and nothing else", async () => {
-    const onFetch = vi.fn();
-    const user = userEvent.setup();
-    render(<Dashboard snapshot={snapshot([ompEvent()], 100)} onFetch={onFetch} />);
-
-    await user.click(screen.getByRole("button", { name: "Fetch data" }));
-    expect(onFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("disables the button while the snapshot says fetching", () => {
-    const fetching = {
-      ...snapshot([], null),
-      fetch: { lastSuccessAt: null as string | null, status: "fetching" as const },
-    };
-    render(<Dashboard snapshot={fetching} onFetch={vi.fn()} />);
-    expect(
-      (screen.getByRole("button", { name: "Fetch data" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-
-    expect(screen.getByTestId("fetch-status").textContent).toBe("Fetching…");
-    expect(screen.getByTestId("spinner")).toBeTruthy();
-
-    cleanup();
-    render(<Dashboard snapshot={snapshot([], null)} onFetch={vi.fn()} />);
-    expect(screen.queryByTestId("spinner")).toBeNull();
-  });
-
   it("shows $0.00 for a fetched snapshot with no usage, not the em dash", () => {
-    const zero = {
-      ...snapshot([], 0),
-      fetch: { lastSuccessAt: "2026-09-04T11:00:00Z", status: "idle" as const },
-    };
-    render(<Dashboard snapshot={zero} />);
+    render(<Dashboard snapshot={snapshot([], 0)} />);
 
     expect(screen.getByTestId("estimated-total").textContent).toBe("$0.00");
-    expect(screen.getByTestId("fetch-status").textContent).toContain("Fetched");
   });
 });
