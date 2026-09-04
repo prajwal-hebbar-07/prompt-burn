@@ -8,6 +8,7 @@
 
 export { filterEventsByPeriod, periodBounds } from "./period.js";
 export { canonicalModelId } from "./model.js";
+export { buildDashboardSnapshot, CURSOR_CYCLE_LABEL, type SnapshotInput } from "./aggregate.js";
 
 /** Usage origin. OMP and Cursor only; rows are never deduped across sources. */
 export type Source = "omp" | "cursor";
