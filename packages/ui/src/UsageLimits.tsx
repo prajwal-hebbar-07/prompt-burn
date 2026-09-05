@@ -287,7 +287,7 @@ export function UsageLimits({ snapshot, now }: UsageLimitsProps) {
           Provider clocks · not estimated cost · not period-filtered
         </p>
       </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {providers.map(([provider, accounts]) => (
           <ProviderCard key={provider} provider={provider} accounts={accounts} now={at} />
         ))}
