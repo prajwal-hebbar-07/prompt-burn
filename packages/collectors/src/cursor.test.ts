@@ -50,6 +50,10 @@ describe("fetchCursorCycle", () => {
       mode: "cycle_aggregate",
       cycleStart: "2026-08-26T07:25:29.000Z",
       cycleEnd: "2026-09-26T07:25:29.000Z",
+      included: {
+        autoPercentUsed: 19.575555555555553,
+        apiPercentUsed: 32.74074074074074,
+      },
       models: [
         {
           model: "cursor-grok-4.6-high",
