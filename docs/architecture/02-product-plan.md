@@ -52,8 +52,10 @@ restated in `docs/spec.md` (§ Locked decisions):
 - **Sources** — OMP + Cursor only; no other assistants.
 - **Metric** — estimated pay-as-you-go cost from tokens × the local price DB. Never invoices,
   never Cursor's own cents.
-- **OMP accounts** — no per-account split (two Claude Pro subscriptions + one Ollama Cloud key in
-  this household); model-level breakdown is enough.
+- **OMP accounts** — no per-account split of usage or cost (two Claude Pro subscriptions + one
+  Ollama Cloud key in this household); model-level breakdown is enough. Provider *limits* are the
+  exception: a subscription window belongs to an account, so the Usage limits panel shows one
+  block per account, labelled `Account A` / `B` with no email attached.
 - **Cursor Pro** — cycle-to-date per-model aggregates, labeled "Cycle to date". Calendar filters
   do **not** apply.
 - **Cursor Enterprise** — an optional `crsr_` admin key would unlock per-event timestamps and
@@ -76,6 +78,10 @@ restated in `docs/spec.md` (§ Locked decisions):
 - **VS Code** — full-width editor tab, not a sidebar.
 - **Trust** — local only. Never persist Cursor auth tokens in the DB; read them from Cursor's own
   local state at fetch time.
+- **Usage limits** — provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's
+  `usage_history`, Cursor's included-pool percentages from `/api/usage-summary`. Never priced,
+  never period-filtered, never summed. A provider with no usage API (Ollama Cloud) gets a card
+  that says so.
 
 The mixed-period consequence is part of the same contract: when the period is not all-time and
 Cursor is Pro, the grand total is OMP(filtered) + Cursor(cycle) and the hero must label both
@@ -242,11 +248,11 @@ The locked decisions are prose, but the code that landed against them now carrie
 - Resolving the Cursor Pro date-window question: decide in `product.md`, update all three
   locked-table copies, update or remove the three spike pointers, and revise the mixed-period
   contract + UI edge-case table together. All-time fetching gains the split-window constraint.
-- Adding a deferred feature (Projects view, quota tiles, source dropdown, auto-refresh,
-  migration runner, CSV export, other assistants, timezone setting, per-account OMP split,
-  Enterprise ingest): remove it from the deferred list in both `product.md` and
-  `implementation-plan.md` (and `spec.md`'s Deferred line), then extend the plan's commit
-  sequence — do not silently build it.
+- Adding a deferred feature (Projects view, source dropdown, auto-refresh, migration runner,
+  CSV export, other assistants, timezone setting, per-account OMP usage split, Enterprise
+  ingest): remove it from the deferred list in both `product.md` and `implementation-plan.md`
+  (and `spec.md`'s Deferred line), then extend the plan's commit sequence — do not silently
+  build it. Quota tiles left that list in commit 38, as the Usage limits panel.
 - Changing commit structure: `docs/implementation-plan.md` is the only owner of Phases, commit
   numbers, and PR grouping; keep the PR table consistent with the commit tables when renumbering.
 - Marking further rows landed: advance the §3 status table only from a docs sweep that has read

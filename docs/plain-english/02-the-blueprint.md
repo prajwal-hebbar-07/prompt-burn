@@ -98,9 +98,15 @@ up to three separate queries. That fact lives only in the survey notes.
 
 ## Deliberately not being built
 
-Projects grouping, quota tiles, a source on/off dropdown, automatic refreshing, a database
-migration system, CSV export, other assistants, and a timezone setting are all explicitly
-deferred. Nobody should add any of them until asked.
+Projects grouping, a source on/off dropdown, automatic refreshing, a database migration system,
+CSV export, other assistants, and a timezone setting are all explicitly deferred. Nobody should
+add any of them until asked.
+
+Quota tiles used to be on that list and have since been built, once, in a specific shape: a
+"Usage limits" panel that repeats what each provider says about its own subscription — how much
+of Claude's five-hour and seven-day window each account has spent, how much of Cursor's
+included allowance is gone. It quotes those numbers; it never works out a quota of its own, and
+they are kept well away from the money figures so nobody reads a percentage as a price.
 
 ## What is not proven
 

@@ -16,7 +16,7 @@ Coding assistants (OMP, Cursor) hide how much token work actually happens behind
 - What that would have cost at public API rates
 - How that usage sits against Cursor's billing-cycle aggregates
 
-Prompt Burn is that view. It is not a billing product, not a quota meter, and not a replacement for Cursor's spending dashboard.
+Prompt Burn is that view. It is not a billing product and not a replacement for Cursor's spending dashboard. It does show the providers' own usage clocks — how much of a 5-hour or 7-day window is gone — but it quotes them; it never computes a quota of its own.
 
 ---
 
@@ -39,11 +39,11 @@ Two sources only.
 | **Cursor (Pro, default)** | Dashboard API cycle aggregates (`GetAggregatedUsageEvents`), auth from local `state.vscdb` | **Billing cycle only** — labeled **“Cycle to date”** | Same price DB |
 | **Cursor (Enterprise, optional)** | Admin API usage events with a `crsr_` key | Per-event timestamps → calendar filters work | Same price DB |
 
-OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split by account.** Model-level breakdown is enough.
+OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split usage or cost by account.** Model-level breakdown is enough. Provider *limits* are the exception, because a 5-hour window belongs to one subscription and not to a model — those are shown per account, anonymously (`Account A` / `Account B`, never an email).
 
 Gemini is **not a third source.** It reaches OMP through Antigravity, so its turns are ordinary OMP session-log lines (`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage. Its public Gemini API rates are bundled, so those turns price like any other model.
 
-Cursor **subscription remaining / plan % / quota tiles are out of scope.** Only model usage → estimated cost.
+Cursor **subscription remaining and included-pool percentages are quoted on the Usage limits panel only** — provider clocks, next to Claude's. They are never a cost figure, never period-filtered, and never mixed into the estimate. Cursor's dollar spend and "$X of $20 plan used" stay out.
 
 ---
 
@@ -53,8 +53,9 @@ Cursor **subscription remaining / plan % / quota tiles are out of scope.** Only 
 |--------|---------|
 | **Estimated cost** | Tokens × versioned public rates in the local price DB. One number internally; the UI label can be informal. |
 | **Tokens** | Input, output, cache read, cache write when the source provides them. |
+| **Provider limits** | What a provider says is left of its own window: Claude 5-hour / 7-day per account, Cursor's included pools. Quoted, never derived, never added to anything. |
 
-Never show Cursor included-pool % or “$X of $20 plan used.” Never treat Cursor dashboard cents as the product’s source of truth unless we later choose them as a cross-check.
+Never treat Cursor dashboard cents as the product’s source of truth unless we later choose them as a cross-check. Provider limit percentages live on their own panel and may never appear inside a cost number.
 
 **Combined total:** OMP (filtered) + Cursor (cycle or filtered). **No dedupe** across sources. Same work in both tools can inflate the grand total; that is accepted.
 
@@ -145,6 +146,7 @@ Two routes. **No Projects view. No onboarding.** Open → Dashboard.
 3. **Mixed-scope footnote** when Cursor is Pro (violet-leaning callout): cycle dates + “period filters apply to OMP only”
 4. **Hero:** combined estimated cost, OMP subtotal, Cursor subtotal (with cycle label if Pro), token breakdown
 5. **By-model table:** Model, Source (OMP / Cursor), tokens, estimated cost
+6. **Usage limits:** provider clocks — Claude 5-hour / 7-day per account, Cursor's included pools against its cycle, Ollama Cloud's "unavailable". Captioned *Provider clocks · not estimated cost · not period-filtered*
 
 The cycle window, its tokens and its cost all live in items 3–5 already, so there is no
 separate Cursor cycle card at the bottom of the screen.
@@ -194,10 +196,10 @@ Desktop and VS Code share DB + collectors. The Tauri webview talks to a Node sid
 Until explicitly asked:
 
 - Projects / git-root grouping
-- Quota or subscription remaining
+- Our own quota accounting (spend forecasts, "N prompts left")
 - Source dropdown (OMP only / Cursor only)
 - Auto-refresh
-- Per-account OMP split
+- Per-account OMP usage or cost split (limits are per account; usage is not)
 - Timezone picker
 - OpenCode, Claude Code, OpenRouter, Codex, Copilot
 - Export CSV/JSON
@@ -219,6 +221,9 @@ Until explicitly asked:
 | Unknown model price | `—` in cost cell; Settings lists the model |
 | Cursor not installed / no token | Cursor section degraded; OMP still works |
 | Mixed period (Pro + Today) | Hero subtitle names both scopes; Cursor numbers do not shrink to “today” |
+| Provider limit window already reset | `—` and “window ended”, never the finished window's percentage |
+| OMP has not refreshed a provider clock in 30 min | The account line admits it: `Account A · as of 09:12` |
+| Provider with no usage API (Ollama Cloud) | A card saying so, never a comfortable `0%` |
 
 ---
 

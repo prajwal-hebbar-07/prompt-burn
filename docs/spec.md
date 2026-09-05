@@ -17,12 +17,13 @@ This page is the short version to keep open while coding. It duplicates no reaso
 |----------|----------------|
 | Sources | OMP + Cursor only. Gemini through Antigravity arrives **inside** OMP — `message.provider`, not a third source. |
 | Metric | Estimated PAYG cost from tokens × our price DB. Not subscription invoices. |
-| OMP accounts | Do not split Claude Pro / Ollama Cloud by account. Model-level breakdown is enough. |
+| OMP accounts | Do not split Claude Pro / Ollama Cloud by account **for usage or cost** — model-level breakdown is enough. Provider *limits* are per account, because a limit belongs to one subscription; the panel labels them `Account A` / `B` and carries no email. |
 | Cursor Pro | Cycle-to-date per-model aggregates. Calendar filters do **not** apply. Label **"Cycle to date"**. |
 | Cursor Enterprise | Optional `crsr_` admin key unlocks per-event timestamps and calendar filters. Not implemented — leave the type union open. |
 | Filters | Today, This month (calendar month, not rolling 30 days), All time, Date range (single day = same start and end). Device timezone. Inclusive end day in UI; exclusive next-day 00:00 in code. |
 | Combined total | Always shown. Per-source subtotals always shown. No dedupe across OMP + Cursor. |
 | By-model table | Rows keyed by `(source, model)`. Same model on both sources = two rows. |
+| Usage limits | Provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's `usage_history`, Cursor's included-pool percentages from `/api/usage-summary`. Never priced, never period-filtered, never summed with anything. Ollama Cloud has no usage API and says so. |
 | Fetch | On open + manual button. No background timers. Spinner while fetching; **keep previous data**. Relative "Fetched N min ago". On error: keep old data + banner. |
 | Persistence | SQLite at `~/.prompt-burn/db.sqlite`. Outside install dirs so updates/reinstalls keep data. |
 | Prices | Usage stores tokens only. Cost is derived from `price_entries` with `effective_from` / `effective_until`. Adding a price retroactively prices old events. Ship bundled Claude + Ollama Cloud + Google Gemini rates. Unknown models surface in Settings. |
@@ -59,13 +60,16 @@ Never invent daily splits from cycle aggregates. Cursor cycle rows are stored wi
 - A null **total** is not a blank screen: the hero sums the rows that do price and
   shows `≈$X` plus an `N models unpriced` chip. Exact totals never carry `≈`.
 - Cursor's own `totalCents` is informational; it never feeds our estimate.
-- Never show quota, plan %, or "included pool" numbers.
+- Provider limit percentages are the providers' own numbers and live only on the Usage limits
+  panel, labelled as provider clocks. They never enter a cost figure, and `$X of $20 plan used`
+  is still not a thing this app computes.
 
 ## Deferred
 
 Cursor Enterprise event ingest · schema migration runner · `model_aliases` table · Projects view ·
-quota tiles · source dropdown · auto-refresh · other assistants (OpenCode, Claude Code, Copilot,
-OpenRouter) · CSV/JSON export · per-account OMP split · timezone setting.
+source dropdown · auto-refresh · other assistants (OpenCode, Claude Code, Copilot,
+OpenRouter) · CSV/JSON export · per-account OMP usage split · timezone setting · our own quota
+accounting (spend forecasts, prompts-left estimates).
 
 ## Never commit
 

@@ -2,7 +2,7 @@
 
 Greenfield. Split into small, reviewable commits. Each commit is one concern, should typecheck, and should be reviewable in about 10 minutes.
 
-Product decisions live in [product.md](product.md). This file is the build sequence. Older wireframes that include Projects, quota tiles, or a source dropdown are out of date.
+Product decisions live in [product.md](product.md). This file is the build sequence. Older wireframes that include Projects or a source dropdown are out of date.
 
 ---
 
@@ -235,7 +235,7 @@ Build against **typed** `DashboardSnapshot` mocks (instances of commit 4), not a
 | 18 | `feat(ui): add hero totals card` | Combined + OMP/Cursor subtotals. Mixed-period subtitle. | Copy when scopes differ |
 | 19 | `feat(ui): add by-model table` | Source pills. Unknown price `—`. | Per `(source, model)` |
 | 20 | `feat(ui): add cycle banner and empty states` | Cycle dates. Not-fetched-yet. Zero usage. Fetching with data still visible. | Wireframe edge states |
-| 21 | `feat(ui): add settings screen` | OMP/Cursor toggles + paths. Unknown-model list. Display only — writes land in commit 28. | No Projects, no quota |
+| 21 | `feat(ui): add settings screen` | OMP/Cursor toggles + paths. Unknown-model list. Display only — writes land in commit 28. | No Projects; provider limits live on the Dashboard |
 
 ### Phase 6 — Cursor + orchestrator
 
@@ -275,6 +275,12 @@ One version, one button. Everything here is repo plumbing: no product behaviour 
 | 36 | `ci(desktop): attach macOS, Windows, and Linux bundles to the release` | `bundle.active: true`, `"targets": "all"`, and the icon set Tauri requires to bundle at all. Three-OS matrix uploads `.dmg`, `.msi`/`.exe`, `.deb`/`.rpm`/`.AppImage`. | Placeholder icons; every bundle unsigned |
 | 37 | `docs: record the release process` | `docs/release.md` — how to cut a release, what lands where, how to recover a failed run. | Matches the workflows as written |
 
+### Phase 11 — Provider limits
+
+| # | Commit | What lands | Review focus |
+|---|--------|------------|--------------|
+| 38 | `feat(ui): add the usage limits panel` | Provider clocks: Claude's 5-hour / 7-day per account out of OMP's `usage_history`, Cursor's included pools off `/api/usage-summary`, Ollama Cloud's honest blank. `DashboardSnapshot.limits`, never priced, never period-filtered. | Percentages can never read as cost; an ended window shows `—`, not a stale number |
+
 ---
 
 ## PR grouping
@@ -289,6 +295,7 @@ One version, one button. Everything here is repo plumbing: no product behaviour 
 | 6 VS Code | 25–27 | Extension tab |
 | 7 Polish | 28–30 | Settings writes, errors, goldens |
 | 8 Release | 31–37 | One version source, CI checks, published desktop + VS Code artifacts |
+| 9 Limits | 38 | Provider usage clocks |
 
 ---
 
@@ -300,7 +307,7 @@ Do not implement until asked:
 - Schema migration runner
 - `model_aliases` table (code map is enough)
 - Projects view
-- Quota / subscription tiles
+- Our own quota accounting (spend forecasts, "you have N prompts left")
 - Source dropdown (OMP only / Cursor only)
 - Auto-refresh
 - OpenCode, Claude Code, OpenRouter

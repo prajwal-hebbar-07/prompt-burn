@@ -4,7 +4,7 @@
   "version": "1.0.2",
   "identifier": "dev.promptburn.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm build:sidecar && pnpm dev",
     "beforeBuildCommand": "pnpm build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"

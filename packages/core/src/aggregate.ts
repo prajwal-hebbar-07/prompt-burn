@@ -22,6 +22,7 @@ import type {
   DashboardSnapshot,
   PeriodFilter,
   PriceCents,
+  ProviderLimits,
   Source,
   TokenCounts,
   UsageEvent,
@@ -36,6 +37,12 @@ export interface SnapshotInput {
   /** OMP usage events; `model` is already canonical. Filtered by `period`. */
   ompEvents: readonly UsageEvent[];
   cursor: CursorSnapshot;
+  /**
+   * Provider usage clocks, straight from the host. Passed through untouched:
+   * they carry no timestamps this package could filter and no tokens it could
+   * price.
+   */
+  limits?: readonly ProviderLimits[];
   /** Injectable clock for `today` / `this_month`. */
   now?: Date;
   /** Owned by the shell that fetched; aggregation never invents an error. */
@@ -153,6 +160,9 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
             cycleLabel: CURSOR_CYCLE_LABEL,
             cycleStart: cursor.cycleStart,
             cycleEnd: cursor.cycleEnd,
+            // Cursor's own plan percentages. Present only when Cursor sent
+            // them, so the limits panel can omit the rows rather than show 0%.
+            ...(cursor.included ? { included: cursor.included } : {}),
           }
         : {}),
     },
@@ -160,6 +170,8 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
     // All-time is the one period a cycle-to-date Cursor total does not clash
     // with; the cycle is still footnoted through `cycleLabel`.
     mixedPeriod: cursor.mode === "cycle_aggregate" && period.kind !== "all_time",
+    // Provider clocks are not calendar data: they never move with `period`.
+    limits: [...(input.limits ?? [])],
     fetch: input.fetch ?? { lastSuccessAt: null, status: "idle" },
   };
 }

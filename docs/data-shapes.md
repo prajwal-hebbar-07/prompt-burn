@@ -118,11 +118,60 @@ real assistant turn (4159 input / 155 output / 187535 cacheRead / 0 cacheWrite, 
 own `usage.cost.total` ($0.017765625) agrees to the fraction, which is all that number is good
 for — the estimate still comes from `price_entries`.
 
-### Per-account split: not needed, and not possible here
+### Per-account split: not needed for usage, and not possible from a session line
 
 `provider` is present but there is no account id, key hash, or subscription marker on a usage
 line (`credential_pin.hash` exists but is per-provider, not per-account). Model-level breakdown
 is all the log supports — matches the locked decision.
+
+Provider **limits** are a different table and do carry the account; see
+[Provider usage clocks](#provider-usage-clocks--usage_history-2026-09-05).
+
+### Provider usage clocks — `usage_history`, 2026-09-05
+
+OMP asks each provider what is left on the subscription and appends every answer to
+`usage_history` in `~/.omp/agent/agent.db` (the sibling of the sessions directory). It also
+caches the whole report in `cache` under `usage_cache:report:…`, with a ~6-minute expiry — the
+history table is the durable copy, so that is what Prompt Burn reads.
+
+```sql
+CREATE TABLE usage_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, recorded_at INTEGER NOT NULL,
+  provider TEXT NOT NULL, account_key TEXT NOT NULL, email TEXT, account_id TEXT,
+  limit_id TEXT NOT NULL, label TEXT NOT NULL, window_label TEXT,
+  used_fraction REAL, status TEXT, resets_at INTEGER)
+```
+
+| Our field | `usage_history` column | Example |
+|-----------|------------------------|---------|
+| grouping key (never exposed) | `provider` + `account_key` | `anthropic` + `oauth\|account:…\|email:…\|org:…` |
+| `UsageLimit.id` | `limit_id` | `anthropic:5h`, `google-antigravity:google:default:gemini-weekly` |
+| `UsageLimit.label` | `label` | `Claude 5 Hour`, `Usage (Google)` |
+| `UsageLimit.windowLabel` | `window_label` | `5 Hour`, `7 Day`, `Weekly`, `extra` |
+| `UsageLimit.usedFraction` | `used_fraction` (0–1, `NULL` when the provider gave no number) | `0.38` |
+| `UsageLimit.resetsAt` | `resets_at` — **epoch milliseconds**, `NULL` when no window is running | `1788626400097` |
+| `ProviderLimits.observedAt` | `recorded_at` — epoch milliseconds | `1788609218274` |
+
+Confirmed on this machine: `anthropic` (two accounts, ids `anthropic:5h` / `:7d` / `:extra`) and
+`google-antigravity` (one account, six ids — a 5-hour and a weekly pool for each of Google,
+Anthropic and OpenAI). `ollama-cloud` writes **no rows at all**: its cached report is
+`{ limits: [], notes: ["Ollama does not expose a standalone quota usage API…"] }`, which is why
+the panel carries a written "unavailable" card instead of a zero.
+
+Reading notes, all of them load-bearing:
+
+- The table is a **series**, one row per limit per refresh (371 rows here). Only the newest row
+  per `(provider, account_key, limit_id)` is current.
+- `email` and `account_id` are right there and are deliberately **not read** — the panel labels
+  accounts `Account A` / `B`, and an email on screen is an email in every screenshot.
+- Rows for a **removed** credential are never deleted, so observations older than 7 days (the
+  longest window a provider reports) are dropped rather than shown as current.
+- `anthropic:extra` is dollars, not a clock: `used_fraction` is the fraction of the extra-usage
+  cap, and `resets_at` is `NULL`. The raw report has `extra_usage.monthly_limit` in credits;
+  none of that is read.
+- The database is **live** — OMP writes it while the app reads — so the open is `mode=ro`
+  *without* `immutable=1`, unlike Cursor's `state.vscdb`.
+- `status` (`ok` observed) is not read: the percentage already says when a window is nearly out.
 
 ### Dedupe key
 
@@ -194,7 +243,11 @@ Ignored for our estimate (we price from `price_entries`), and never mixed into `
 `tier` (1 or 2) is a Cursor pricing bucket; not modelled.
 
 `/api/usage-summary` also returns `membershipType: "pro"` — the cheap way to decide Pro vs
-Enterprise without a `crsr_` key — plus included-quota percentages that are explicitly out of scope.
+Enterprise without a `crsr_` key — plus `individualUsage.plan.autoPercentUsed` /
+`apiPercentUsed` (19.58 / 32.74 here). Those two feed the Usage limits panel as
+`CursorIncludedUsage`, quoted as Cursor's own plan percentages and never mixed into a cost.
+Everything else in that block — `used` / `limit` / `breakdown.bonus` credits, `onDemand`,
+`limitType`, the `…DisplayMessage` sentences — stays unread.
 
 ---
 
@@ -241,6 +294,9 @@ already keeps the union open.
 - Gemini `reasoningTokens` needs no billing of its own: `totalTokens` equals the four counted
   kinds on all 374 lines, `reasoningTokens` never exceeds `output`, and Google's output price
   includes thinking tokens. Checked before seeding the rate (2026-09-04).
+- OMP records provider usage clocks per account in `~/.omp/agent/agent.db` `usage_history`:
+  `anthropic` 5-hour / 7-day / extra for two accounts, `google-antigravity` six pools for one,
+  `ollama-cloud` nothing at all (2026-09-05).
 
 ## Assumed / unknown
 
