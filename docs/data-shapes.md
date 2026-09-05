@@ -4,7 +4,8 @@ Spiked on this machine (macOS, 2026-09-02) before freezing `packages/core` types
 Fixtures: [`fixtures/omp-session-line.json`](fixtures/omp-session-line.json),
 [`fixtures/omp-gemini-session-line.json`](fixtures/omp-gemini-session-line.json),
 [`fixtures/cursor-cycle-aggregates.json`](fixtures/cursor-cycle-aggregates.json),
-[`fixtures/cursor-usage-summary.json`](fixtures/cursor-usage-summary.json).
+[`fixtures/cursor-usage-summary.json`](fixtures/cursor-usage-summary.json),
+[`fixtures/ollama-usage.json`](fixtures/ollama-usage.json).
 A second OMP scan on 2026-09-04 added Gemini through Antigravity — see
 [Gemini through Antigravity](#gemini-through-antigravity--second-scan-2026-09-04).
 
@@ -155,8 +156,9 @@ CREATE TABLE usage_history (
 Confirmed on this machine: `anthropic` (two accounts, ids `anthropic:5h` / `:7d` / `:extra`) and
 `google-antigravity` (one account, six ids — a 5-hour and a weekly pool for each of Google,
 Anthropic and OpenAI). `ollama-cloud` writes **no rows at all**: its cached report is
-`{ limits: [], notes: ["Ollama does not expose a standalone quota usage API…"] }`, which is why
-the panel carries a written "unavailable" card instead of a zero.
+`{ limits: [], notes: ["Ollama does not expose a standalone quota usage API…"] }`. That note is
+out of date — see [Ollama Cloud usage](#ollama-cloud-usage--apiusage-2026-09-05), which Prompt
+Burn fetches for itself rather than waiting for OMP to record it.
 
 Reading notes, all of them load-bearing:
 
@@ -172,6 +174,49 @@ Reading notes, all of them load-bearing:
 - The database is **live** — OMP writes it while the app reads — so the open is `mode=ro`
   *without* `immutable=1`, unlike Cursor's `state.vscdb`.
 - `status` (`ok` observed) is not read: the percentage already says when a window is nearly out.
+
+### Ollama Cloud usage — `/api/usage`, 2026-09-05
+
+`GET https://ollama.com/api/usage` with `Authorization: Bearer <api key>` answers with the
+account's two clocks. **Undocumented**: it is what the ollama.com dashboard reads, and Ollama
+has three open requests for a supported endpoint (ollama/ollama
+[#15132](https://github.com/ollama/ollama/issues/15132),
+[#15663](https://github.com/ollama/ollama/issues/15663),
+[#16448](https://github.com/ollama/ollama/issues/16448)). `/api/account/usage`, `/api/user`,
+`/api/account` and `/api/v1/usage` are all 404; unauthenticated is 401.
+
+The key is the one `ollama login` leaves in OMP's `auth_credentials`
+(`provider = 'ollama-cloud'`, `json_extract(data, '$.key')`, 57 chars here, `source: "login"`).
+Read at fetch time, used for one header, never stored by us — the same contract as Cursor's
+token.
+
+Fixture: [`fixtures/ollama-usage.json`](fixtures/ollama-usage.json) — the real response with
+nothing removed; it carries no identifiers.
+
+| Our field | Ollama source | Example |
+|-----------|---------------|---------|
+| `ProviderLimits.provider` | constant | `ollama-cloud` |
+| `ProviderLimits.observedAt` | our own clock at fetch — the payload has no timestamp | `2026-09-05T12:47:59.159Z` |
+| `UsageLimit.id` / `label` | constant per window | `ollama-cloud:session`, `Ollama Cloud Session` |
+| `UsageLimit.windowLabel` | `Session` / `Weekly` — Ollama's own words | `Session` |
+| `UsageLimit.usedFraction` | `limits.session.usage` / `limits.weekly.usage` | `0.037`, `0.358` |
+| `UsageLimit.resetsAt` | **nothing to map** — always `null` | |
+
+Reading notes:
+
+- `usage` is read as a **fraction, not a percent**: 0.037 and 0.358 against 27 session and 2147
+  weekly requests only makes sense as 3.7% / 35.8%. Both samples are ≤ 1. This is the one
+  inference in the mapping — cross-check it against ollama.com/settings, and see
+  [Assumed / unknown](#assumed--unknown).
+- **No reset instant.** The cadence is public (session 5 hours, weekly 7 days) but the moment
+  the window turns over is not in the payload, so the rows carry no clock rather than a
+  computed one.
+- `activity.cost` (`"0.00000"`, a string) is Ollama's own money figure and is ignored, exactly
+  like Cursor's `totalCents`.
+- `limits.*.models[].request_count` is a request tally, not tokens — it prices nothing and is
+  not read. Token usage for Ollama models still comes from OMP session lines.
+- Because this is a network call it happens in `fetch()`, unlike the `usage_history` clocks
+  which are re-read per snapshot. A failure never fails the pass: the panel loses one card.
 
 ### Dedupe key
 
@@ -297,6 +342,9 @@ already keeps the union open.
 - OMP records provider usage clocks per account in `~/.omp/agent/agent.db` `usage_history`:
   `anthropic` 5-hour / 7-day / extra for two accounts, `google-antigravity` six pools for one,
   `ollama-cloud` nothing at all (2026-09-05).
+- Ollama Cloud **does** serve usage after all, at the undocumented
+  `GET https://ollama.com/api/usage` with the login API key: `limits.session.usage` and
+  `limits.weekly.usage`, no reset instants (2026-09-05).
 
 ## Assumed / unknown
 
@@ -308,6 +356,11 @@ already keeps the union open.
 - `teamId: 0` was accepted but untested for a real team account.
 - `gemini-3.8-flash` is the only Gemini id seen. Other Gemini ids (Pro tiers, dated
   snapshots) may appear under different routing and are simply unobserved, not ruled out.
+- `limits.*.usage` from Ollama's `/api/usage` is read as a 0–1 fraction. Both observed values
+  are ≤ 1 and a percent reading would make 2147 weekly requests round to nothing, but Ollama
+  documents neither the field nor the endpoint. Cross-check against ollama.com/settings.
+- Ollama's `/api/usage` is undocumented and may change or disappear without notice; three open
+  feature requests are asking for a supported replacement.
 
 ## Blockers
 

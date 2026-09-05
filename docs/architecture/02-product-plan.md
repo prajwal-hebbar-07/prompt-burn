@@ -79,9 +79,10 @@ restated in `docs/spec.md` (§ Locked decisions):
 - **Trust** — local only. Never persist Cursor auth tokens in the DB; read them from Cursor's own
   local state at fetch time.
 - **Usage limits** — provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's
-  `usage_history`, Cursor's included-pool percentages from `/api/usage-summary`. Never priced,
-  never period-filtered, never summed. A provider with no usage API (Ollama Cloud) gets a card
-  that says so.
+  `usage_history`, Ollama Cloud's session / weekly from the undocumented `ollama.com/api/usage`,
+  Cursor's included-pool percentages from `/api/usage-summary`. Never priced, never
+  period-filtered, never summed. A provider that has not answered gets no card, and a failed
+  Ollama call never fails the fetch pass.
 
 The mixed-period consequence is part of the same contract: when the period is not all-time and
 Cursor is Pro, the grand total is OMP(filtered) + Cursor(cycle) and the hero must label both

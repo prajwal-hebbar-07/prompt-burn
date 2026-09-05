@@ -100,7 +100,7 @@ describe("the usage limits panel", () => {
 
     const card = screen.getByTestId("limit-card-anthropic");
     expect(card.textContent).toContain("Claude");
-    expect(screen.getByTestId("limit-row-anthropic:5h").textContent).toBe(
+    expect(screen.getAllByTestId("limit-row-anthropic:5h")[0]?.textContent).toBe(
       `5-hour38%resets ${at("2026-09-05T14:20:00.000Z")}`,
     );
     expect(screen.getByTestId("limit-row-anthropic:7d").textContent).toBe(
@@ -187,21 +187,49 @@ describe("the usage limits panel", () => {
 
     const card = screen.getByTestId("limit-card-google-antigravity");
     expect(card.textContent).toContain("Antigravity");
+    expect(card.textContent).toContain("Google");
+    expect(card.textContent).not.toContain("Account A");
     expect(
       screen.getByTestId("limit-row-google-antigravity:google:default:gemini-5h").textContent,
-    ).toContain("Usage (Google) · 5 Hour");
+    ).toContain("5-hour");
     expect(
       screen.getByTestId("limit-row-google-antigravity:google:default:gemini-weekly").textContent,
-    ).toContain("Usage (Google) · Weekly6%");
+    ).toContain("weekly6%");
+    expect(card.textContent).not.toContain("Usage (");
+    expect(card.textContent).not.toContain("Google ·");
   });
 
-  it("says Ollama Cloud has no numbers rather than showing zero", () => {
-    render(<UsageLimits snapshot={snapshot()} now={now} />);
+  it("shows Ollama Cloud's own two clocks, in Ollama's words", () => {
+    const ollama: ProviderLimits[] = [
+      {
+        provider: "ollama-cloud",
+        observedAt: "2026-09-05T11:59:00.000Z",
+        limits: [
+          {
+            id: "ollama-cloud:session",
+            label: "Ollama Cloud Session",
+            windowLabel: "Session",
+            usedFraction: 0.037,
+            resetsAt: null,
+          },
+          {
+            id: "ollama-cloud:weekly",
+            label: "Ollama Cloud Weekly",
+            windowLabel: "Weekly",
+            usedFraction: 0.358,
+            resetsAt: null,
+          },
+        ],
+      },
+    ];
 
-    const card = screen.getByTestId("limit-card-ollama-cloud");
-    expect(card.textContent).toContain("Unavailable");
-    expect(card.textContent).toContain("ollama.com/settings");
-    expect(card.textContent).not.toContain("0%");
+    render(<UsageLimits snapshot={snapshot(ollama)} now={now} />);
+
+    expect(screen.getByTestId("limit-card-ollama-cloud").textContent).toContain("Ollama Cloud");
+    expect(screen.getByTestId("limit-card-ollama-cloud").textContent).not.toContain("Account A");
+    // No reset clock in the payload, so the row carries none — not a made-up one.
+    expect(screen.getByTestId("limit-row-ollama-cloud:session").textContent).toBe("session4%");
+    expect(screen.getByTestId("limit-row-ollama-cloud:weekly").textContent).toBe("weekly36%");
   });
 
   it("shows Cursor's included pools against its own cycle, rounded", () => {
@@ -223,10 +251,11 @@ describe("the usage limits panel", () => {
     expect(screen.queryByTestId("usage-limits")).toBeNull();
   });
 
-  it("keeps the Ollama note out of a Cursor-only panel", () => {
+  it("has no card for a provider that never answered", () => {
     render(<UsageLimits snapshot={snapshot([])} now={now} />);
 
     expect(screen.getByTestId("limit-card-cursor")).toBeTruthy();
     expect(screen.queryByTestId("limit-card-ollama-cloud")).toBeNull();
+    expect(screen.queryByTestId("limit-card-anthropic")).toBeNull();
   });
 });

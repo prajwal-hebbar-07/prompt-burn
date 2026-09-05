@@ -280,6 +280,7 @@ One version, one button. Everything here is repo plumbing: no product behaviour 
 | # | Commit | What lands | Review focus |
 |---|--------|------------|--------------|
 | 38 | `feat(ui): add the usage limits panel` | Provider clocks: Claude's 5-hour / 7-day per account out of OMP's `usage_history`, Cursor's included pools off `/api/usage-summary`, Ollama Cloud's honest blank. `DashboardSnapshot.limits`, never priced, never period-filtered. | Percentages can never read as cost; an ended window shows `—`, not a stale number |
+| 39 | `feat(collectors): fetch Ollama Cloud session and weekly clocks` | Undocumented `GET ollama.com/api/usage` with the `ollama login` key from OMP's `auth_credentials`; replaces commit 38's written "unavailable" card with the real fractions. Fixture `docs/fixtures/ollama-usage.json`. | Key never stored or logged; a failure loses one card, not the pass |
 
 ---
 
@@ -295,7 +296,7 @@ One version, one button. Everything here is repo plumbing: no product behaviour 
 | 6 VS Code | 25–27 | Extension tab |
 | 7 Polish | 28–30 | Settings writes, errors, goldens |
 | 8 Release | 31–37 | One version source, CI checks, published desktop + VS Code artifacts |
-| 9 Limits | 38 | Provider usage clocks |
+| 9 Limits | 38–39 | Provider usage clocks |
 
 ---
 

@@ -104,9 +104,12 @@ add any of them until asked.
 
 Quota tiles used to be on that list and have since been built, once, in a specific shape: a
 "Usage limits" panel that repeats what each provider says about its own subscription — how much
-of Claude's five-hour and seven-day window each account has spent, how much of Cursor's
-included allowance is gone. It quotes those numbers; it never works out a quota of its own, and
-they are kept well away from the money figures so nobody reads a percentage as a price.
+of Claude's five-hour and seven-day window each account has spent, how much of Ollama Cloud's
+session and weekly allowance is gone, how much of Cursor's included allowance is used. It
+quotes those numbers; it never works out a quota of its own, and they are kept well away from
+the money figures so nobody reads a percentage as a price. Ollama's numbers come from an
+endpoint Ollama has never documented, so that one is expected to break some day — when it
+does, the card simply disappears and nothing else changes.
 
 ## What is not proven
 

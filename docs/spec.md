@@ -23,7 +23,7 @@ This page is the short version to keep open while coding. It duplicates no reaso
 | Filters | Today, This month (calendar month, not rolling 30 days), All time, Date range (single day = same start and end). Device timezone. Inclusive end day in UI; exclusive next-day 00:00 in code. |
 | Combined total | Always shown. Per-source subtotals always shown. No dedupe across OMP + Cursor. |
 | By-model table | Rows keyed by `(source, model)`. Same model on both sources = two rows. |
-| Usage limits | Provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's `usage_history`, Cursor's included-pool percentages from `/api/usage-summary`. Never priced, never period-filtered, never summed with anything. Ollama Cloud has no usage API and says so. |
+| Usage limits | Provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's `usage_history`, Ollama Cloud's session / weekly from the undocumented `GET ollama.com/api/usage`, Cursor's included-pool percentages from `/api/usage-summary`. Never priced, never period-filtered, never summed with anything. A provider that has not answered has no card; an Ollama failure never fails the fetch. |
 | Fetch | On open + manual button. No background timers. Spinner while fetching; **keep previous data**. Relative "Fetched N min ago". On error: keep old data + banner. |
 | Persistence | SQLite at `~/.prompt-burn/db.sqlite`. Outside install dirs so updates/reinstalls keep data. |
 | Prices | Usage stores tokens only. Cost is derived from `price_entries` with `effective_from` / `effective_until`. Adding a price retroactively prices old events. Ship bundled Claude + Ollama Cloud + Google Gemini rates. Unknown models surface in Settings. |

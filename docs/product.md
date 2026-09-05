@@ -43,7 +43,7 @@ OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API 
 
 Gemini is **not a third source.** It reaches OMP through Antigravity, so its turns are ordinary OMP session-log lines (`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage. Its public Gemini API rates are bundled, so those turns price like any other model.
 
-Cursor **subscription remaining and included-pool percentages are quoted on the Usage limits panel only** — provider clocks, next to Claude's. They are never a cost figure, never period-filtered, and never mixed into the estimate. Cursor's dollar spend and "$X of $20 plan used" stay out.
+Cursor **subscription remaining and included-pool percentages are quoted on the Usage limits panel only** — provider clocks, next to Claude's and Ollama Cloud's. They are never a cost figure, never period-filtered, and never mixed into the estimate. Cursor's dollar spend and "$X of $20 plan used" stay out.
 
 ---
 
@@ -53,7 +53,7 @@ Cursor **subscription remaining and included-pool percentages are quoted on the 
 |--------|---------|
 | **Estimated cost** | Tokens × versioned public rates in the local price DB. One number internally; the UI label can be informal. |
 | **Tokens** | Input, output, cache read, cache write when the source provides them. |
-| **Provider limits** | What a provider says is left of its own window: Claude 5-hour / 7-day per account, Cursor's included pools. Quoted, never derived, never added to anything. |
+| **Provider limits** | What a provider says is left of its own window: Claude 5-hour / 7-day per account, Ollama Cloud session / weekly, Cursor's included pools. Quoted, never derived, never added to anything. |
 
 Never treat Cursor dashboard cents as the product’s source of truth unless we later choose them as a cross-check. Provider limit percentages live on their own panel and may never appear inside a cost number.
 
@@ -146,7 +146,7 @@ Two routes. **No Projects view. No onboarding.** Open → Dashboard.
 3. **Mixed-scope footnote** when Cursor is Pro (violet-leaning callout): cycle dates + “period filters apply to OMP only”
 4. **Hero:** combined estimated cost, OMP subtotal, Cursor subtotal (with cycle label if Pro), token breakdown
 5. **By-model table:** Model, Source (OMP / Cursor), tokens, estimated cost
-6. **Usage limits:** provider clocks — Claude 5-hour / 7-day per account, Cursor's included pools against its cycle, Ollama Cloud's "unavailable". Captioned *Provider clocks · not estimated cost · not period-filtered*
+6. **Usage limits:** provider clocks — Claude 5-hour / 7-day per account, Ollama Cloud session / weekly, Cursor's included pools against its cycle. Captioned *Provider clocks · not estimated cost · not period-filtered*
 
 The cycle window, its tokens and its cost all live in items 3–5 already, so there is no
 separate Cursor cycle card at the bottom of the screen.
@@ -223,7 +223,7 @@ Until explicitly asked:
 | Mixed period (Pro + Today) | Hero subtitle names both scopes; Cursor numbers do not shrink to “today” |
 | Provider limit window already reset | `—` and “window ended”, never the finished window's percentage |
 | OMP has not refreshed a provider clock in 30 min | The account line admits it: `Account A · as of 09:12` |
-| Provider with no usage API (Ollama Cloud) | A card saying so, never a comfortable `0%` |
+| Provider never answered (no key, dead endpoint) | No card for it at all — never a comfortable `0%`. An Ollama failure does not fail the fetch |
 
 ---
 

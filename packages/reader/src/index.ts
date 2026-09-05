@@ -19,6 +19,7 @@ import {
   type CursorSnapshot,
   type DashboardSnapshot,
   type PeriodFilter,
+  type ProviderLimits,
 } from "@prompt-burn/core";
 import {
   estimateCents,
@@ -60,6 +61,11 @@ export interface FetchResult {
   /** Per-source sync counters, straight from the collectors. */
   omp: { ok: boolean; error?: string; scannedFiles: number; skippedFiles: number; insertedEvents: number };
   cursor: { ok: boolean; reason?: string; error?: string; models: number };
+  /**
+   * Ollama Cloud's clocks. Never flips `ok`: they are a panel, not usage, and
+   * the endpoint behind them is undocumented.
+   */
+  ollama: { ok: boolean; reason?: string; error?: string };
 }
 
 /** Before the first Cursor fetch: an empty cycle, never a faked timestamp. */
@@ -119,6 +125,9 @@ export function createUsageReader(
   // anyway. Persist to `usage_events` (period = 'cycle') if that stops being
   // true.
   let cursorCycle: CursorSnapshot | undefined;
+  // Ollama's clocks, same deal: fetched over the network, so unlike the OMP
+  // clocks in `usage_history` they cannot be re-read per snapshot.
+  let ollamaLimits: ProviderLimits | undefined;
 
   /**
    * The effective source configuration, re-read on every call: the other shell
@@ -167,6 +176,7 @@ export function createUsageReader(
       });
       const cycle = result.cursor.cycle;
       if (cycle) cursorCycle = cycle;
+      if (result.ollama.limits) ollamaLimits = result.ollama.limits;
 
       const cursorFailed = !result.cursor.ok && !CURSOR_DEGRADED.has(result.cursor.reason ?? "");
       const errors: string[] = [];
@@ -188,6 +198,11 @@ export function createUsageReader(
           ...(result.cursor.error === undefined ? {} : { error: result.cursor.error }),
           models: cycle?.mode === "cycle_aggregate" ? cycle.models.length : 0,
         },
+        ollama: {
+          ok: result.ollama.ok,
+          ...(result.ollama.reason === undefined ? {} : { reason: result.ollama.reason }),
+          ...(result.ollama.error === undefined ? {} : { error: result.ollama.error }),
+        },
       };
     },
 
@@ -199,11 +214,14 @@ export function createUsageReader(
         ompEvents: loadUsageEvents(db, "omp"),
         cursor: cursorCycle ?? EMPTY_CURSOR_CYCLE,
         now: now(),
-        // Provider clocks, read fresh out of OMP's own agent database on every
-        // snapshot: OMP refreshes them while it works, this app never fetches
-        // them, and they are not ours to cache. A disabled OMP source reports
-        // none, exactly like its events.
-        limits: ompEnabled ? readOmpLimits(ompAgentDatabase(ompPath), now()) : [],
+        // Provider clocks. The OMP ones are re-read out of OMP's own agent
+        // database on every snapshot — OMP refreshes them while it works, and
+        // they are not ours to cache — while Ollama's came over the network in
+        // the last `fetch()`. A disabled OMP source reports none of either,
+        // exactly like its events.
+        limits: ompEnabled
+          ? [...readOmpLimits(ompAgentDatabase(ompPath), now()), ...(ollamaLimits ? [ollamaLimits] : [])]
+          : [],
         // Cost is a join, never a stored column, so every snapshot re-reads
         // `price_entries`: a rate added in Settings prices old events on the
         // very next call, with no rewrite of `usage_events`. Cycle aggregates

@@ -1,0 +1,32 @@
+{
+  "activity": {
+    "cost": "0.00000",
+    "period": {
+      "type": "last_4_weeks",
+      "starting_at": "2026-08-10T00:00:00Z",
+      "ending_at": "2026-09-05T12:42:36.084637646Z"
+    },
+    "models": []
+  },
+  "limits": {
+    "session": {
+      "usage": 0.037,
+      "models": [
+        { "name": "glm-5.3", "request_count": 11 },
+        { "name": "glm-5.3-flash", "request_count": 13 },
+        { "name": "gemma4:31b", "request_count": 2 },
+        { "name": "deepseek-v4-flash:0731", "request_count": 1 }
+      ]
+    },
+    "weekly": {
+      "usage": 0.358,
+      "models": [
+        { "name": "glm-5.3-flash", "request_count": 1753 },
+        { "name": "kimi-k2.7-code", "request_count": 259 },
+        { "name": "glm-5.3", "request_count": 132 },
+        { "name": "gemma4:31b", "request_count": 2 },
+        { "name": "deepseek-v4-flash:0731", "request_count": 1 }
+      ]
+    }
+  }
+}
