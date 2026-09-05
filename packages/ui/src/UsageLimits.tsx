@@ -31,15 +31,45 @@ const NEAR_CAP = 0.8;
  */
 const STALE_MS = 30 * 60 * 1000;
 
-/** OMP's provider ids, in product words. Unknown ids show their own id. */
-const PROVIDER_NAMES: Record<string, string> = {
-  anthropic: "Claude",
-  "google-antigravity": "Antigravity",
-  "ollama-cloud": "Ollama Cloud",
+const TILE = "flex h-full flex-col gap-3 rounded-control border-l-[3px] px-3.5 py-3";
+
+/**
+ * One accent per provider, always with the title so colour is not the only cue.
+ * Cursor keeps the source-violet token; the others are panel-only and must not
+ * reuse OMP teal (that colour already means the OMP source on this screen).
+ */
+const PROVIDERS: Record<string, { name: string; tile: string; title: string; bar: string }> = {
+  anthropic: {
+    name: "Claude",
+    tile: `${TILE} border-l-provider-claude bg-provider-claude-subtle`,
+    title: "text-provider-claude",
+    bar: "bg-provider-claude",
+  },
+  "google-antigravity": {
+    name: "Antigravity",
+    tile: `${TILE} border-l-provider-antigravity bg-provider-antigravity-subtle`,
+    title: "text-provider-antigravity",
+    bar: "bg-provider-antigravity",
+  },
+  "ollama-cloud": {
+    name: "Ollama Cloud",
+    tile: `${TILE} border-l-provider-ollama bg-provider-ollama-subtle`,
+    title: "text-provider-ollama",
+    bar: "bg-provider-ollama",
+  },
 };
 
-/** Nested tiles sit on the panel; only Cursor carries a source-colour edge. */
-const CARD = "flex h-full flex-col gap-3 rounded-control bg-surface-subtle px-3.5 py-3";
+const CURSOR = {
+  tile: `${TILE} border-l-source-cursor bg-source-cursor-subtle`,
+  title: "text-source-cursor",
+  bar: "bg-source-cursor",
+};
+
+const FALLBACK = {
+  tile: `${TILE} border-l-border bg-surface-subtle`,
+  title: "text-foreground-muted",
+  bar: "bg-foreground",
+};
 
 interface RowProps {
   testId: string;
@@ -48,6 +78,8 @@ interface RowProps {
   fraction: number | null;
   /** `resets 14:20`, `of included` — whatever qualifies the percentage. */
   note?: string;
+  /** Provider accent for the bar; near-cap still wins and turns amber. */
+  bar: string;
 }
 
 /**
@@ -57,7 +89,7 @@ interface RowProps {
  * Name | percent | note is a three-column grid so long Antigravity labels
  * truncate instead of shoving the number around.
  */
-function LimitRow({ testId, name, fraction, note }: RowProps) {
+function LimitRow({ testId, name, fraction, note, bar }: RowProps) {
   const nearCap = fraction !== null && fraction >= NEAR_CAP;
   return (
     <div data-testid={testId} className="flex flex-col gap-1">
@@ -74,10 +106,10 @@ function LimitRow({ testId, name, fraction, note }: RowProps) {
       </div>
       <div
         aria-hidden="true"
-        className="h-1 overflow-hidden rounded-full bg-border"
+        className="h-1.5 overflow-hidden rounded-full bg-border"
       >
         <span
-          className={`animate-bar block h-full origin-left rounded-full ${nearCap ? "bg-warning" : "bg-foreground"}`}
+          className={`animate-bar block h-full origin-left rounded-full ${nearCap ? "bg-warning" : bar}`}
           style={{ width: `${(fraction ?? 0) * 100}%` }}
         />
       </div>
@@ -167,11 +199,11 @@ interface ProviderCardProps {
 }
 
 function ProviderCard({ provider, accounts, now }: ProviderCardProps) {
-  const name = PROVIDER_NAMES[provider] ?? provider;
+  const theme = PROVIDERS[provider] ?? { ...FALLBACK, name: provider };
   return (
-    <div data-testid={`limit-card-${provider}`} className={CARD}>
-      <h3 className="text-small leading-small font-semibold tracking-wide text-foreground-muted uppercase">
-        {name}
+    <div data-testid={`limit-card-${provider}`} className={theme.tile}>
+      <h3 className={`text-small leading-small font-semibold tracking-wide uppercase ${theme.title}`}>
+        {theme.name}
       </h3>
       {accounts.map((group, index) => {
         const nearCap = group.limits.some(
@@ -202,11 +234,12 @@ function ProviderCard({ provider, accounts, now }: ProviderCardProps) {
                     <LimitRow
                       key={limit.id}
                       testId={`limit-row-${limit.id}`}
-                      name={limitName(limit, name, block.vendor !== null)}
+                      name={limitName(limit, theme.name, block.vendor !== null)}
                       // A window that has already rolled over says nothing about
                       // the one running now, so the number goes, not the row.
                       fraction={ended ? null : limit.usedFraction}
                       note={ended ? "window ended" : reset ? `resets ${reset}` : undefined}
+                      bar={theme.bar}
                     />
                   );
                 })}
@@ -262,9 +295,9 @@ export function UsageLimits({ snapshot, now }: UsageLimitsProps) {
           // Violet is Cursor's identity token, and it always travels with text.
           <div
             data-testid="limit-card-cursor"
-            className="flex h-full flex-col gap-3 rounded-control border-l-[3px] border-l-source-cursor bg-source-cursor-subtle px-3.5 py-3"
+            className={CURSOR.tile}
           >
-            <h3 className="text-small leading-small font-semibold tracking-wide text-source-cursor uppercase">
+            <h3 className={`text-small leading-small font-semibold tracking-wide uppercase ${CURSOR.title}`}>
               Cursor
             </h3>
             <p className="text-small leading-small font-medium">
@@ -276,12 +309,14 @@ export function UsageLimits({ snapshot, now }: UsageLimitsProps) {
                 name="Auto models"
                 fraction={Math.min(included.autoPercentUsed / 100, 1)}
                 note="of included"
+                bar={CURSOR.bar}
               />
               <LimitRow
                 testId="limit-row-cursor-api"
                 name="API models"
                 fraction={Math.min(included.apiPercentUsed / 100, 1)}
                 note="of included"
+                bar={CURSOR.bar}
               />
             </div>
           </div>
