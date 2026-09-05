@@ -102,6 +102,9 @@ it("aggregates both sources after a dual-success fetch", async () => {
     omp: { ok: true, scannedFiles: 1, insertedEvents: 1 },
     cursor: { ok: true, models: 6 },
   });
+  // No Ollama key under this temp home, and that is not a failed pass: the
+  // clocks are a panel, not usage data.
+  expect(result.ollama).toMatchObject({ ok: false, reason: "signed_out" });
   expect(result.error).toBeUndefined();
 
   const snapshot = await host.getSnapshot({ kind: "all_time" });
@@ -206,6 +209,8 @@ it("does not fetch a source the settings switched off", async () => {
     ok: true,
     omp: { ok: true, scannedFiles: 0, insertedEvents: 0 },
     cursor: { ok: false, reason: "disabled", models: 0 },
+    // Ollama's key lives in OMP's credential store, so the OMP toggle owns it.
+    ollama: { ok: false, reason: "disabled" },
   });
   expect(result.error).toBeUndefined();
   expect(calls).toEqual([]);

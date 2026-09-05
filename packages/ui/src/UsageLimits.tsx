@@ -14,9 +14,8 @@
  * which mailbox pays is not what the panel is for, and an email on screen is
  * an email in every screenshot.
  *
- * Ollama Cloud is a card with no numbers on purpose: OMP asks, and Ollama has
- * no usage endpoint to answer with. Saying so beats leaving a hole where a
- * user would assume zero.
+ * Every card is data: a provider that has not answered has no card, and none
+ * of them is hardcoded here.
  */
 
 import type { DashboardSnapshot, ProviderLimits, UsageLimit } from "@prompt-burn/core";
@@ -39,11 +38,8 @@ const PROVIDER_NAMES: Record<string, string> = {
   "ollama-cloud": "Ollama Cloud",
 };
 
-/** Product copy, not a provider message: Ollama publishes no usage API. */
-const OLLAMA_NOTE =
-  "Cloud usage isn’t exposed to this app yet. Check session and weekly remaining at ollama.com/settings.";
-
-const CARD = "rounded-card border border-border bg-surface p-4";
+/** Nested tiles sit on the panel; only Cursor carries a source-colour edge. */
+const CARD = "flex h-full flex-col gap-3 rounded-control bg-surface-subtle px-3.5 py-3";
 
 interface RowProps {
   testId: string;
@@ -57,23 +53,28 @@ interface RowProps {
 /**
  * One clock: name, percentage, qualifier, and a bar under all three. The bar is
  * decoration — the percentage is text, so the row survives with colour off.
+ *
+ * Name | percent | note is a three-column grid so long Antigravity labels
+ * truncate instead of shoving the number around.
  */
 function LimitRow({ testId, name, fraction, note }: RowProps) {
   const nearCap = fraction !== null && fraction >= NEAR_CAP;
   return (
-    <div data-testid={testId} className="mt-3 first:mt-0">
-      <div className="flex items-baseline gap-2">
-        <span className="text-body">{name}</span>
+    <div data-testid={testId} className="flex flex-col gap-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_2.5rem_auto] items-baseline gap-x-2">
+        <span className="truncate text-small leading-small">{name}</span>
         <span
-          className={`text-body font-semibold tabular-nums ${nearCap ? "text-warning" : ""}`}
+          className={`text-right font-mono text-small leading-small font-medium tabular-nums ${nearCap ? "text-warning" : ""}`}
         >
           {fraction === null ? UNKNOWN_COST : `${Math.round(fraction * 100)}%`}
         </span>
-        {note ? <span className="text-small text-foreground-muted">{note}</span> : null}
+        <span className="whitespace-nowrap text-small leading-small text-foreground-muted">
+          {note ?? ""}
+        </span>
       </div>
       <div
         aria-hidden="true"
-        className="mt-1 h-1 overflow-hidden rounded-full bg-surface-subtle"
+        className="h-1 overflow-hidden rounded-full bg-border"
       >
         <span
           className={`animate-bar block h-full origin-left rounded-full ${nearCap ? "bg-warning" : "bg-foreground"}`}
@@ -84,22 +85,64 @@ function LimitRow({ testId, name, fraction, note }: RowProps) {
   );
 }
 
+/** `5 Hour` → `5-hour`, `Weekly` → `weekly` — one shape for every provider. */
+function windowSlug(window: string): string {
+  return window
+    .trim()
+    .toLowerCase()
+    .replace(/(\d+)\s+/, "$1-")
+    .replace(/\s+/g, "-");
+}
+
+/** Antigravity's `Usage (Google)` — the vendor, or null for everyone else. */
+function usageVendor(label: string): string | null {
+  return /^usage\s*\((.+)\)\s*$/i.exec(label)?.[1] ?? null;
+}
+
 /**
- * `5-hour`, `7-day` — the window, once the card title has already said Claude.
- * Providers that label several clocks with the same window (Antigravity's
- * per-vendor pools) keep their own label, so two rows never read alike.
+ * Consecutive `Usage (Google)` clocks become one Google block, so the window
+ * can sit on its own row instead of repeating the vendor six times.
  */
-function limitName(limit: UsageLimit, providerName: string): string {
+function vendorBlocks(limits: UsageLimit[]): Array<{ vendor: string | null; limits: UsageLimit[] }> {
+  const blocks: Array<{ vendor: string | null; limits: UsageLimit[] }> = [];
+  for (const limit of limits) {
+    const vendor = usageVendor(limit.label);
+    const last = blocks.at(-1);
+    if (vendor && last?.vendor === vendor) last.limits.push(limit);
+    else blocks.push({ vendor, limits: [limit] });
+  }
+  return blocks;
+}
+
+/**
+ * `5-hour`, or the provider's own words when the window is already in the
+ * label. A vendor heading, when there is one, has already named the pool.
+ */
+function limitName(limit: UsageLimit, providerName: string, underVendor: boolean): string {
+  if (underVendor && limit.windowLabel) return windowSlug(limit.windowLabel);
+
   const prefix = `${providerName.toLowerCase()} `;
-  const label = limit.label.toLowerCase().startsWith(prefix)
+  let label = limit.label.toLowerCase().startsWith(prefix)
     ? limit.label.slice(prefix.length).trim()
     : limit.label;
+  const vendor = usageVendor(label);
+  if (vendor) label = vendor;
+
   const window = limit.windowLabel;
   if (!window) return label;
-  if (label.toLowerCase() === window.toLowerCase()) {
-    return window.toLowerCase().replace(/\s+/g, "-");
+  const slug = windowSlug(window);
+  if (!label || label.toLowerCase() === window.toLowerCase() || label.toLowerCase() === slug) {
+    return slug;
   }
-  return label.toLowerCase().includes(window.toLowerCase()) ? label : `${label} · ${window}`;
+  if (label.toLowerCase().includes(window.toLowerCase()) || label.toLowerCase().includes(slug)) {
+    return label;
+  }
+  return `${label} · ${slug}`;
+}
+
+/** A window that has already rolled over says nothing about the one running now. */
+function windowEnded(limit: UsageLimit, now: Date): boolean {
+  return limit.resetsAt !== null && Date.parse(limit.resetsAt) < now.getTime();
 }
 
 /**
@@ -127,35 +170,48 @@ function ProviderCard({ provider, accounts, now }: ProviderCardProps) {
   const name = PROVIDER_NAMES[provider] ?? provider;
   return (
     <div data-testid={`limit-card-${provider}`} className={CARD}>
-      <h3 className="text-small leading-small font-medium tracking-wide text-foreground-muted uppercase">
+      <h3 className="text-small leading-small font-semibold tracking-wide text-foreground-muted uppercase">
         {name}
       </h3>
       {accounts.map((group, index) => {
         const nearCap = group.limits.some(
-          (limit) => limit.usedFraction !== null && limit.usedFraction >= NEAR_CAP,
+          (limit) =>
+            !windowEnded(limit, now) &&
+            limit.usedFraction !== null &&
+            limit.usedFraction >= NEAR_CAP,
         );
+        const letter = String.fromCharCode(65 + index);
+        const account = accountLine(group, letter, now, nearCap);
+        const showAccount = accounts.length > 1 || account !== `Account ${letter}`;
         return (
-          <div key={`${provider}:${index}`} className="mt-3">
-            <p className={`text-body font-medium ${nearCap ? "text-warning" : ""}`}>
-              {accountLine(group, String.fromCharCode(65 + index), now, nearCap)}
-            </p>
-            <div className="mt-2">
-              {group.limits.map((limit) => {
-                const reset = limit.resetsAt ? formatShortTime(limit.resetsAt, now) : null;
-                const ended = limit.resetsAt !== null && Date.parse(limit.resetsAt) < now.getTime();
-                return (
-                  <LimitRow
-                    key={limit.id}
-                    testId={`limit-row-${limit.id}`}
-                    name={limitName(limit, name)}
-                    // A window that has already rolled over says nothing about
-                    // the one running now, so the number goes, not the row.
-                    fraction={ended ? null : limit.usedFraction}
-                    note={ended ? "window ended" : reset ? `resets ${reset}` : undefined}
-                  />
-                );
-              })}
-            </div>
+          <div key={`${provider}:${index}`} className="flex flex-col gap-2">
+            {showAccount ? (
+              <p className={`text-small leading-small font-medium ${nearCap ? "text-warning" : ""}`}>
+                {account}
+              </p>
+            ) : null}
+            {vendorBlocks(group.limits).map((block) => (
+              <div key={block.vendor ?? block.limits[0]?.id} className="flex flex-col gap-2">
+                {block.vendor ? (
+                  <p className="text-small leading-small font-medium">{block.vendor}</p>
+                ) : null}
+                {block.limits.map((limit) => {
+                  const reset = limit.resetsAt ? formatShortTime(limit.resetsAt, now) : null;
+                  const ended = windowEnded(limit, now);
+                  return (
+                    <LimitRow
+                      key={limit.id}
+                      testId={`limit-row-${limit.id}`}
+                      name={limitName(limit, name, block.vendor !== null)}
+                      // A window that has already rolled over says nothing about
+                      // the one running now, so the number goes, not the row.
+                      fraction={ended ? null : limit.usedFraction}
+                      note={ended ? "window ended" : reset ? `resets ${reset}` : undefined}
+                    />
+                  );
+                })}
+              </div>
+            ))}
           </div>
         );
       })}
@@ -188,44 +244,33 @@ export function UsageLimits({ snapshot, now }: UsageLimitsProps) {
     <section
       aria-labelledby="usage-limits-title"
       data-testid="usage-limits"
-      className="rounded-card border border-border bg-surface p-6"
+      className="rounded-card border border-border bg-surface px-5 py-4"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="usage-limits-title" className="text-section leading-section font-semibold">
+        <h2 id="usage-limits-title" className="text-body leading-body font-semibold">
           Usage limits
         </h2>
         <p className="text-small leading-small text-foreground-muted">
           Provider clocks · not estimated cost · not period-filtered
         </p>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {providers.map(([provider, accounts]) => (
           <ProviderCard key={provider} provider={provider} accounts={accounts} now={at} />
         ))}
-        {/* Only alongside the providers OMP does report: on its own it would be
-            a card about a source this snapshot knows nothing about. */}
-        {providers.length > 0 ? (
-          <div data-testid="limit-card-ollama-cloud" className={CARD}>
-            <h3 className="text-small leading-small font-medium tracking-wide text-foreground-muted uppercase">
-              {PROVIDER_NAMES["ollama-cloud"]}
-            </h3>
-            <p className="mt-3 text-section leading-section font-semibold">Unavailable</p>
-            <p className="mt-2 text-body text-foreground-secondary">{OLLAMA_NOTE}</p>
-          </div>
-        ) : null}
         {included ? (
           // Violet is Cursor's identity token, and it always travels with text.
           <div
             data-testid="limit-card-cursor"
-            className="rounded-card border border-border border-l-2 border-l-source-cursor bg-source-cursor-subtle p-4"
+            className="flex h-full flex-col gap-3 rounded-control border-l-[3px] border-l-source-cursor bg-source-cursor-subtle px-3.5 py-3"
           >
-            <h3 className="text-small leading-small font-medium tracking-wide text-source-cursor uppercase">
+            <h3 className="text-small leading-small font-semibold tracking-wide text-source-cursor uppercase">
               Cursor
             </h3>
-            <p className="mt-3 text-body font-medium">
+            <p className="text-small leading-small font-medium">
               {cycle ? `This cycle · ${cycle}` : "This cycle"}
             </p>
-            <div className="mt-2">
+            <div className="flex flex-col gap-2">
               <LimitRow
                 testId="limit-row-cursor-auto"
                 name="Auto models"

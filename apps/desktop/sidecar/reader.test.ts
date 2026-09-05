@@ -168,6 +168,8 @@ it("fetch syncs OMP transcripts incrementally", async () => {
       ok: true,
       omp: { ok: true, scannedFiles: 1, skippedFiles: 0, insertedEvents: 2 },
       cursor: { ok: false, reason: "not_installed", error: expect.any(String), models: 0 },
+      // No `ollama login` under the temp HOME, so there is no key to try.
+      ollama: { ok: false, reason: "signed_out", error: expect.any(String) },
     });
 
     // Nothing changed on disk: the second sync opens no file (one transcript).

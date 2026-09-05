@@ -24,6 +24,8 @@ export interface FetchResult {
     insertedEvents: number;
   };
   cursor: { ok: boolean; reason?: string; error?: string; models: number };
+  /** Provider clocks only; a failure here never flips `ok`. */
+  ollama: { ok: boolean; reason?: string; error?: string };
 }
 
 let lastId = 0;
