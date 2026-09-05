@@ -34,7 +34,9 @@ import {
   collectAllSources,
   defaultCursorStatePath,
   defaultSessionsDirectory,
+  ompAgentDatabase,
   readCursorAuth,
+  readOmpLimits,
 } from "@prompt-burn/collectors";
 
 export type { AppSettings, DashboardSnapshot, NewPriceEntry, PeriodFilter };
@@ -191,11 +193,17 @@ export function createUsageReader(
 
     async getSnapshot(period: PeriodFilter) {
       const at = now().toISOString();
+      const { ompEnabled, ompPath } = sources();
       return buildDashboardSnapshot({
         period,
         ompEvents: loadUsageEvents(db, "omp"),
         cursor: cursorCycle ?? EMPTY_CURSOR_CYCLE,
         now: now(),
+        // Provider clocks, read fresh out of OMP's own agent database on every
+        // snapshot: OMP refreshes them while it works, this app never fetches
+        // them, and they are not ours to cache. A disabled OMP source reports
+        // none, exactly like its events.
+        limits: ompEnabled ? readOmpLimits(ompAgentDatabase(ompPath), now()) : [],
         // Cost is a join, never a stored column, so every snapshot re-reads
         // `price_entries`: a rate added in Settings prices old events on the
         // very next call, with no rewrite of `usage_events`. Cycle aggregates

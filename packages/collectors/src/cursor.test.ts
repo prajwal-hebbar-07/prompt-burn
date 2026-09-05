@@ -132,6 +132,36 @@ describe("fetchCursorCycle", () => {
     await expect(fetchCursorCycle(SESSION, impl)).rejects.toThrow("billing cycle window");
   });
 
+  it("carries the plan percentages, and nothing else about the plan", async () => {
+    const { impl } = stubFetch();
+    const snapshot = await fetchCursorCycle(SESSION, impl);
+    if (snapshot.mode !== "cycle_aggregate") throw new Error("expected cycle mode");
+
+    expect(snapshot.included).toEqual({
+      autoPercentUsed: 19.575555555555553,
+      apiPercentUsed: 32.74074074074074,
+    });
+    // The credit pool, the bonus grant and Cursor's display sentences stay out:
+    // two percentages are the whole of what the limits panel shows.
+    const json = JSON.stringify(snapshot);
+    expect(json).not.toContain("7914");
+    expect(json).not.toContain("You've used");
+  });
+
+  it("omits the percentages when Cursor answers without a personal plan", async () => {
+    const { impl } = stubFetch({
+      "https://cursor.com/api/usage-summary": JSON.stringify({
+        billingCycleStart: "2026-08-26T07:25:29.000Z",
+        billingCycleEnd: "2026-09-26T07:25:29.000Z",
+        teamUsage: {},
+      }),
+    });
+    const snapshot = await fetchCursorCycle(SESSION, impl);
+    if (snapshot.mode !== "cycle_aggregate") throw new Error("expected cycle mode");
+
+    expect(snapshot.included).toBeUndefined();
+  });
+
   it("throws when the aggregate response has no aggregations", async () => {
     const { impl } = stubFetch({
       "https://cursor.com/api/dashboard/get-aggregated-usage-events": "{}",

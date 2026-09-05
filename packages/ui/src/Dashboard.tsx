@@ -22,6 +22,7 @@ import { CycleFootnote } from "./CursorCycle.js";
 import { UNKNOWN_COST, formatCents, tokenLine } from "./format.js";
 import { ModelTable } from "./ModelTable.js";
 import { periodLabel } from "./PeriodBar.js";
+import { UsageLimits } from "./UsageLimits.js";
 
 /** Product's exact sentence for a successful fetch with nothing in it. */
 const NO_USAGE = "No OMP or Cursor usage for this period";
@@ -248,6 +249,9 @@ export function Dashboard({ snapshot }: DashboardProps) {
           {empty}
         </p>
       )}
+      {/* Last, and outside the period's reach: subscription windows are the
+          providers' clocks, not this screen's calendar. */}
+      <UsageLimits snapshot={snapshot} />
     </div>
   );
 }

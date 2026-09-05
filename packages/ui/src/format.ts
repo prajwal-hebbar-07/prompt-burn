@@ -75,3 +75,26 @@ export function formatCycleWindow(
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
   return formatDateSpan(from, to);
 }
+
+/** 24-hour clock, device timezone. `h23` so midnight is `00:00`, not `24:00`. */
+const CLOCK: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+const TIME = new Intl.DateTimeFormat("en-US", CLOCK);
+const WEEKDAY_TIME = new Intl.DateTimeFormat("en-US", { weekday: "short", ...CLOCK });
+const DAY_TIME = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", ...CLOCK });
+
+/**
+ * A nearby instant at the precision that is useful: `14:20` later today,
+ * `Wed 08:00` inside the week, `Sep 26, 08:00` beyond it. A provider's 5-hour
+ * window resets today; a 7-day one names its weekday.
+ *
+ * `null` for an instant we cannot read, so the caller shows no clock at all
+ * rather than an invented one.
+ */
+export function formatShortTime(iso: string, now: Date): string | null {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  if (at.toDateString() === now.toDateString()) return TIME.format(at);
+  // Six days keeps the weekday unambiguous: "Wed" is never last Wednesday.
+  if (at.getTime() - now.getTime() < 6 * 24 * 60 * 60 * 1000) return WEEKDAY_TIME.format(at);
+  return DAY_TIME.format(at);
+}

@@ -99,7 +99,10 @@ Almost none, on purpose:
 - `tauri.conf.json`: `identifier dev.promptburn.desktop`, one window (`main`, "Prompt Burn",
   900×620), CSP `default-src 'self'`, frontend served from `../dist`. `bundle.active: true`
   with `targets: "all"`, the icon set, and `sidecar-dist/sidecar.mjs` carried as the
-  `sidecar.mjs` resource.
+  `sidecar.mjs` resource. A declared resource is checked by Tauri's build script on **every**
+  profile, dev included, and `sidecar-dist/` is gitignored — so `beforeDevCommand` is
+  `pnpm build:sidecar && pnpm dev`, not bare `pnpm dev`. A debug build never executes that
+  bundle (`sidecar_arguments()` runs the TypeScript source); it only has to exist.
 - `capabilities/default.json`: `core:default` only, scoped to `windows: ["main"]`.
 - `tsconfig.json` extends `tsconfig.base.json`, adds `"types": ["node"]`, includes
   `sidecar/**/*.ts`.
@@ -167,8 +170,9 @@ database open without one.
   line, stdin idle. Keep the ready line the first stdout output (the test parses the _first_
   line) and keep shutdown as close-and-exit-0; the pipe-closes contract depends on it.
 - **Packaging:** `pnpm --filter @prompt-burn/desktop build` produces both `dist/` (webview) and
-  `src-tauri/sidecar-dist/sidecar.mjs` (sidecar); `tauri.conf.json` carries the second as a
-  resource. Changing either output path means changing `resources` and
-  `sidecar_arguments()` together.
+  `src-tauri/sidecar-dist/sidecar.mjs` (`pnpm build:sidecar`); `tauri.conf.json` carries the
+  second as a resource. Changing either output path means changing `resources` and
+  `sidecar_arguments()` together — and `beforeDevCommand`, which builds the bundle so
+  `tauri dev` can compile at all.
 - **Touching the database open:** `openDatabase` in `@prompt-burn/db` owns creation and schema
   application; the sidecar only calls it. Do not re-create that logic here.

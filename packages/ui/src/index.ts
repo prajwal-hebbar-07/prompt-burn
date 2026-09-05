@@ -21,6 +21,7 @@ export {
   formatCost,
   formatCycleWindow,
   formatDateSpan,
+  formatShortTime,
   formatTokens,
   tokenLine,
 } from "./format.js";
@@ -41,3 +42,4 @@ export {
   type ThemeControl,
   type ThemePreference,
 } from "./theme.js";
+export { UsageLimits, type UsageLimitsProps } from "./UsageLimits.js";

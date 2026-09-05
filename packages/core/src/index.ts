@@ -74,6 +74,56 @@ export type PriceCents = (
 ) => number | null;
 
 /**
+ * Cursor's included-pool percentages, from `/api/usage-summary`
+ * `individualUsage.plan`. Cursor's own numbers about Cursor's own plan — never
+ * derived from our tokens, never mixed into `estimatedCents`.
+ */
+export interface CursorIncludedUsage {
+  /** 0–100, `autoPercentUsed`: the Auto (`default`) model pool. */
+  autoPercentUsed: number;
+  /** 0–100, `apiPercentUsed`: the named-model pool. */
+  apiPercentUsed: number;
+}
+
+/**
+ * One provider-reported usage clock: a subscription window, and how much of it
+ * is gone. The fraction is the provider's own answer about its own limit — it
+ * is not derived from token counts and has nothing to do with estimated cost.
+ */
+export interface UsageLimit {
+  /** OMP's limit id, e.g. `anthropic:5h`. Stable per provider window. */
+  id: string;
+  /** The provider's own label, e.g. `Claude 5 Hour`. */
+  label: string;
+  /** The provider's own window label, e.g. `5 Hour`, `Weekly`. */
+  windowLabel?: string;
+  /** 0–1 as the provider reported it; `null` when it reported no number. */
+  usedFraction: number | null;
+  /** ISO instant the window rolls over; `null` when there is no clock yet. */
+  resetsAt: string | null;
+}
+
+/**
+ * Every limit one account holds with one provider. Two Claude subscriptions are
+ * two entries with the same `provider` — the only place this app splits by
+ * account, because a limit belongs to an account and to nothing else.
+ *
+ * Deliberately anonymous: OMP stores the email and account id next to these
+ * rows and neither is carried here. The UI labels accounts `Account A` / `B` in
+ * array order.
+ */
+export interface ProviderLimits {
+  /** OMP's provider id, e.g. `anthropic`, `google-antigravity`. */
+  provider: string;
+  /**
+   * ISO of the newest observation in this group. These are provider answers
+   * OMP cached while it worked, not something this app fetched.
+   */
+  observedAt: string;
+  limits: UsageLimit[];
+}
+
+/**
  * What a Cursor collector can return.
  *
  * `cycle_aggregate` is the Cursor Pro path: cycle-to-date per-model totals with
@@ -89,6 +139,11 @@ export type CursorSnapshot =
       /** ISO, from `/api/usage-summary` `billingCycleEnd`. */
       cycleEnd: string;
       models: ModelAggregate[];
+      /**
+       * Plan percentages from the same `/api/usage-summary` call. Absent when
+       * Cursor answered without them (a team plan, an unlimited account).
+       */
+      included?: CursorIncludedUsage;
     }
   | {
       mode: "events";
@@ -119,11 +174,19 @@ export interface DashboardSnapshot {
      */
     cycleStart?: string;
     cycleEnd?: string;
+    /** Cursor's own included-pool percentages, for the limits panel only. */
+    included?: CursorIncludedUsage;
   };
   /** By-model rows keyed by `(source, model)`; same model twice is expected. */
   models: Array<ModelAggregate & { source: Source; estimatedCents: number | null }>;
   /** Cursor is cycle-only while the period is not all-time-equivalent. */
   mixedPeriod: boolean;
+  /**
+   * Provider usage clocks, one entry per (provider, account). Never filtered by
+   * `period` and never priced: a subscription window is not a calendar month.
+   * Empty when OMP has reported none.
+   */
+  limits: ProviderLimits[];
   fetch: {
     /** ISO timestamp, serializable counterpart of `FetchState.lastSuccessAt`. */
     lastSuccessAt: string | null;

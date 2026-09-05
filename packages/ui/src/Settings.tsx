@@ -10,7 +10,7 @@
  * The optional `crsr_` Enterprise key stays display-only: there is no event
  * ingest for it yet, and it is never persisted.
  *
- * No Projects, no quota/usage-limit tiles.
+ * No Projects. Provider usage clocks live on the Dashboard's limits panel, not here.
  */
 
 import { useState, type FormEvent } from "react";

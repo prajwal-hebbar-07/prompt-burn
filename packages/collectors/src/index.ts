@@ -14,4 +14,5 @@ export {
   scanOmpSessionFile,
   type OmpFileScan,
 } from "./omp.js";
+export { ompAgentDatabase, readOmpLimits } from "./omp-limits.js";
 export { syncOmpSessions, type OmpSyncResult } from "./sync.js";

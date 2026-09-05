@@ -15,17 +15,24 @@
  * persists or logs the token.
  */
 
-import { canonicalModelId, type CursorSnapshot, type TokenCounts } from "@prompt-burn/core";
+import {
+  canonicalModelId,
+  type CursorIncludedUsage,
+  type CursorSnapshot,
+  type TokenCounts,
+} from "@prompt-burn/core";
 import type { CursorToken } from "./cursor-auth.js";
 
 const ORIGIN = "https://cursor.com";
 const SUMMARY_PATH = "/api/usage-summary";
 const AGGREGATE_PATH = "/api/dashboard/get-aggregated-usage-events";
 
-/** The `/api/usage-summary` fields we use. Both are re-checked at runtime. */
+/** The `/api/usage-summary` fields we use. Each one is re-checked at runtime. */
 interface CursorUsageSummary {
   billingCycleStart?: unknown;
   billingCycleEnd?: unknown;
+  /** `{ plan: { autoPercentUsed, apiPercentUsed } }` on a Pro account. */
+  individualUsage?: unknown;
 }
 
 /** One `aggregations` row. Token totals are decimal strings. */
@@ -68,6 +75,9 @@ export async function fetchCursorCycle(
   }
   const rows: CursorAggregation[] = aggregate.aggregations;
 
+  // Absent unless both numbers are there: half a pool is not worth showing.
+  const included = includedUsage(summary.individualUsage);
+
   return {
     mode: "cycle_aggregate",
     cycleStart: billingCycleStart,
@@ -80,7 +90,30 @@ export async function fetchCursorCycle(
       model: canonicalModelId(typeof row.modelIntent === "string" ? row.modelIntent : "unknown"),
       tokens: tokens(row),
     })),
+    // Cursor's own plan percentages, for the limits panel.
+    ...(included ? { included } : {}),
   };
+}
+
+/**
+ * `individualUsage.plan`'s Auto and named-model percentages, or `undefined`.
+ *
+ * These are the only numbers this app takes from Cursor about Cursor's own
+ * plan: they are percentages of an included pool, not tokens and not cost, and
+ * they never reach `estimatedCents`. A team account answers with `teamUsage`
+ * instead and gets nothing here.
+ */
+function includedUsage(individualUsage: unknown): CursorIncludedUsage | undefined {
+  if (typeof individualUsage !== "object" || individualUsage === null) return undefined;
+  const { plan } = individualUsage as { plan?: unknown };
+  if (typeof plan !== "object" || plan === null) return undefined;
+  const { autoPercentUsed, apiPercentUsed } = plan as {
+    autoPercentUsed?: unknown;
+    apiPercentUsed?: unknown;
+  };
+  if (typeof autoPercentUsed !== "number" || !Number.isFinite(autoPercentUsed)) return undefined;
+  if (typeof apiPercentUsed !== "number" || !Number.isFinite(apiPercentUsed)) return undefined;
+  return { autoPercentUsed, apiPercentUsed };
 }
 
 /** Cycle counts. A cache key Cursor omitted stays omitted — never a fake `0`. */

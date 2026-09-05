@@ -136,6 +136,9 @@ const CURSOR_SLICE: DashboardSnapshot["cursor"] = {
   cycleLabel: "Cycle to date",
   cycleStart: "2026-08-26T07:25:29.000Z",
   cycleEnd: "2026-09-26T07:25:29.000Z",
+  // Cursor's own plan percentages, straight off `/api/usage-summary`. Numbers
+  // about Cursor's included pool, never folded into the estimate above.
+  included: { autoPercentUsed: 19.575555555555553, apiPercentUsed: 32.74074074074074 },
 };
 
 const ALL_TIME: DashboardSnapshot = {
@@ -151,6 +154,9 @@ const ALL_TIME: DashboardSnapshot = {
   models: [OMP_OPUS, OMP_GEMINI, ...CURSOR_ROWS],
   // All-time is the one period a cycle-to-date Cursor total does not clash with.
   mixedPeriod: false,
+  // No OMP agent database under this temp root, so no provider clocks. The
+  // panel shows nothing rather than assuming a full subscription.
+  limits: [],
   fetch: { lastSuccessAt: null, status: "idle" },
 };
 
@@ -165,6 +171,7 @@ const TODAY: DashboardSnapshot = {
   cursor: CURSOR_SLICE,
   models: [OMP_GEMINI, ...CURSOR_ROWS],
   mixedPeriod: true,
+  limits: [],
   fetch: { lastSuccessAt: null, status: "idle" },
 };
 
