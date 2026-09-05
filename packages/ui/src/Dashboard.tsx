@@ -1,5 +1,6 @@
 /**
- * The Dashboard route body: the hero score panel, then the by-model board.
+ * The Dashboard route body: the hero score panel, then provider clocks, then
+ * the by-model board.
  *
  * Combined estimate, then both source subtotals — always both, never deduped,
  * never re-derived here. Cursor Pro is cycle-to-date whatever the period is, so
@@ -242,6 +243,9 @@ export function Dashboard({ snapshot }: DashboardProps) {
           {tokenLine(snapshot.omp.tokens, snapshot.cursor.tokens)}
         </p>
       </section>
+      {/* Subscription windows sit under the score and above the by-model board.
+          They are still the providers' clocks, not this screen's calendar. */}
+      <UsageLimits snapshot={snapshot} />
       {empty === null ? (
         <ModelTable rows={snapshot.models} />
       ) : (
@@ -249,9 +253,6 @@ export function Dashboard({ snapshot }: DashboardProps) {
           {empty}
         </p>
       )}
-      {/* Last, and outside the period's reach: subscription windows are the
-          providers' clocks, not this screen's calendar. */}
-      <UsageLimits snapshot={snapshot} />
     </div>
   );
 }
