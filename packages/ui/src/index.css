@@ -5,7 +5,8 @@
  * Design tokens from Paper (`prompt-burn` / `v0-designs`). Amber is brand and
  * actions; teal is OMP; violet is Cursor. The semantic success/warning/error/
  * info colours are never source identity, and a source colour is always paired
- * with a text label wherever a source is shown.
+ * with a text label wherever a source is shown. Provider-claude / antigravity /
+ * ollama exist only for Usage-limits tiles and are not source identity.
  *
  * These are the light values. Dark is one class — `.theme-dark` below rebinds
  * the same names, so no component carries a `dark:` variant.
@@ -27,6 +28,13 @@
   --color-source-omp-subtle: #f0fdfa;
   --color-source-cursor: #6d28d9;
   --color-source-cursor-subtle: #f5f3ff;
+  /* Usage-limits tiles. Not OMP/Cursor source identity — those stay teal/violet. */
+  --color-provider-claude: #c15f3c;
+  --color-provider-claude-subtle: #fdf0ea;
+  --color-provider-antigravity: #2563eb;
+  --color-provider-antigravity-subtle: #eff4ff;
+  --color-provider-ollama: #0e7490;
+  --color-provider-ollama-subtle: #e7f6f8;
   --color-success: #15803d;
   --color-warning: #b45309;
   --color-error: #b91c1c;
@@ -145,6 +153,12 @@
   --color-source-omp-subtle: #102a27;
   --color-source-cursor: #a78bfa;
   --color-source-cursor-subtle: #241b3a;
+  --color-provider-claude: #e7a88a;
+  --color-provider-claude-subtle: #2a1c18;
+  --color-provider-antigravity: #7aa2f7;
+  --color-provider-antigravity-subtle: #182033;
+  --color-provider-ollama: #2dd4e8;
+  --color-provider-ollama-subtle: #0c2428;
   --color-success: #4ade80;
   --color-warning: #fbbf24;
   --color-error: #f87171;

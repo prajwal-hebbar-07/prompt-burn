@@ -110,6 +110,7 @@ describe("the usage limits panel", () => {
     expect(card.textContent).toContain("Account A");
     expect(card.textContent).toContain("Account B");
     expect(card.textContent).not.toContain("@");
+    expect(card.className).toContain("provider-claude");
   });
 
   it("says near cap in words, not only in amber", () => {
@@ -197,6 +198,7 @@ describe("the usage limits panel", () => {
     ).toContain("weekly6%");
     expect(card.textContent).not.toContain("Usage (");
     expect(card.textContent).not.toContain("Google ·");
+    expect(card.className).toContain("provider-antigravity");
   });
 
   it("shows Ollama Cloud's own two clocks, in Ollama's words", () => {
@@ -230,6 +232,7 @@ describe("the usage limits panel", () => {
     // No reset clock in the payload, so the row carries none — not a made-up one.
     expect(screen.getByTestId("limit-row-ollama-cloud:session").textContent).toBe("session4%");
     expect(screen.getByTestId("limit-row-ollama-cloud:weekly").textContent).toBe("weekly36%");
+    expect(screen.getByTestId("limit-card-ollama-cloud").className).toContain("provider-ollama");
   });
 
   it("shows Cursor's included pools against its own cycle, rounded", () => {
@@ -243,6 +246,7 @@ describe("the usage limits panel", () => {
     expect(screen.getByTestId("limit-row-cursor-api").textContent).toBe(
       "API models33%of included",
     );
+    expect(card.className).toContain("source-cursor");
   });
 
   it("disappears entirely when no provider has answered yet", () => {
