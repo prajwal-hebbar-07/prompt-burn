@@ -2,7 +2,7 @@
 
 Greenfield. Split into small, reviewable commits. Each commit is one concern, should typecheck, and should be reviewable in about 10 minutes.
 
-Product decisions live in [product.md](product.md). This file is the build sequence. Older wireframes that include Projects or a source dropdown are out of date.
+Product decisions live in [product.md](product.md). This file is the build sequence. Older wireframes that include a source dropdown are out of date; the Projects route landed after this plan was written.
 
 ---
 
@@ -307,7 +307,7 @@ Do not implement until asked:
 - Cursor Enterprise `crsr_` event ingest (type union already allows it)
 - Schema migration runner
 - `model_aliases` table (code map is enough)
-- Projects view
+- Git-root grouping (the Projects route groups by OMP working directory)
 - Our own quota accounting (spend forecasts, "you have N prompts left")
 - Source dropdown (OMP only / Cursor only)
 - Auto-refresh

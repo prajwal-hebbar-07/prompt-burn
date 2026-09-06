@@ -61,6 +61,21 @@ export interface ModelAggregate {
   tokens: TokenCounts;
 }
 
+/**
+ * One project's OMP usage for the selected period: its models, its tokens and
+ * its estimate. A project is an OMP working directory (`cwd` off the session
+ * header); `null` is the bucket for transcripts that named none.
+ *
+ * Cursor never appears here — its cycle totals carry no directory.
+ */
+export interface ProjectUsage {
+  project: string | null;
+  tokens: TokenCounts;
+  estimatedCents: number | null;
+  /** Same row shape as `DashboardSnapshot.models`, always `source: "omp"`. */
+  models: Array<ModelAggregate & { source: Source; estimatedCents: number | null }>;
+}
+
 /** Subtotal for one source. `null` cost means at least one price is unknown. */
 export interface SourceTotals {
   estimatedCents: number | null;
@@ -167,13 +182,10 @@ export interface FetchState {
 export interface DashboardSnapshot {
   period: PeriodFilter;
   /**
-   * The project the rows are scoped to (an absolute path), or `null` for every
-   * project. Only OMP events carry a project, so a selected one excludes
-   * Cursor entirely rather than pretending its cycle belongs to one directory.
+   * Every project that used tokens in `period`, biggest spender first. The
+   * Projects route is this list; nothing on the Dashboard filters by it.
    */
-  project: string | null;
-  /** Every project present in `period`, before `project` narrowed the rows. */
-  projects: string[];
+  projects: ProjectUsage[];
   /** Combined estimate; `null` if any included row has an unknown price. */
   estimatedCents: number | null;
   omp: SourceTotals;

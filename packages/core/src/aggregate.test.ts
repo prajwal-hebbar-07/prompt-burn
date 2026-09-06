@@ -272,55 +272,88 @@ describe("buildDashboardSnapshot edge cases", () => {
   });
 });
 
-describe("buildDashboardSnapshot scoped to one project", () => {
-  const inApi = { ...ompEvent("2026-09-02T09:00:00.000", "claude-opus-5", 5, 50), project: "/w/api" };
-  const inWeb = { ...ompEvent("2026-09-02T10:00:00.000", "glm-5.3-flash", 7, 70), project: "/w/web" };
+describe("buildDashboardSnapshot per-project rollups", () => {
+  const api = { ...ompEvent("2026-09-02T09:00:00.000", "claude-opus-5", 5, 50), project: "/w/api" };
+  const apiAgain = {
+    ...ompEvent("2026-09-02T09:30:00.000", "glm-5.3-flash", 1, 10),
+    project: "/w/api",
+  };
+  const web = { ...ompEvent("2026-09-02T10:00:00.000", "glm-5.3-flash", 7, 70), project: "/w/web" };
   // A headerless transcript: real usage, no directory to attribute it to.
   const unattributed = ompEvent("2026-09-02T11:00:00.000", "claude-opus-5", 9, 90);
-  const events = [inApi, inWeb, unattributed];
+  const events = [web, api, apiAgain, unattributed];
 
-  it("offers every project in the period, sorted, and no undefined entry", () => {
-    const all = buildDashboardSnapshot({
+  /** One cent per output token, so ranking is predictable and OMP-only. */
+  const priceCents = (_model: string, tokens: { output: number }) => tokens.output;
+
+  it("groups each project's models and buckets the unattributed usage", () => {
+    const snapshot = buildDashboardSnapshot({
       period: { kind: "today" },
-      ompEvents: [inWeb, inApi, unattributed],
-      cursor: CURSOR_CYCLE,
-      now: NOW,
-    });
-
-    expect(all.projects).toEqual(["/w/api", "/w/web"]);
-    expect(all.project).toBeNull();
-  });
-
-  it("keeps only that project's rows and drops Cursor, which has none", () => {
-    const scoped = buildDashboardSnapshot({
-      period: { kind: "today" },
-      project: "/w/api",
       ompEvents: events,
       cursor: CURSOR_CYCLE,
       now: NOW,
+      priceCents,
     });
 
-    expect(scoped.project).toBe("/w/api");
-    // The other project's tokens and the unattributed ones are both out.
-    expect(scoped.omp.tokens).toEqual({ input: 5, output: 50, cacheRead: 100, cacheWrite: 10 });
-    expect(scoped.models.map((row) => [row.source, row.model])).toEqual([["omp", "claude-opus-5"]]);
-    expect(scoped.cursor.tokens).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-    // Nothing to mix: with Cursor out, only OMP's calendar period is on screen.
-    expect(scoped.mixedPeriod).toBe(false);
-    // The picker still lists both, or picking one would empty its own options.
-    expect(scoped.projects).toEqual(["/w/api", "/w/web"]);
+    // Cost descending: unattributed 90c, /w/web 70c, /w/api 50c + 10c.
+    expect(snapshot.projects.map((p) => [p.project, p.estimatedCents])).toEqual([
+      [null, 90],
+      ["/w/web", 70],
+      ["/w/api", 60],
+    ]);
+
+    const apiUsage = snapshot.projects.find((p) => p.project === "/w/api");
+    // Both models of that project, and only that project's tokens.
+    expect(apiUsage?.models.map((row) => [row.source, row.model])).toEqual([
+      ["omp", "claude-opus-5"],
+      ["omp", "glm-5.3-flash"],
+    ]);
+    expect(apiUsage?.tokens).toEqual({ input: 6, output: 60, cacheRead: 200, cacheWrite: 20 });
+
+    // Cursor is never a project row: its cycle carries no directory.
+    expect(snapshot.projects.some((p) => p.models.some((row) => row.source === "cursor"))).toBe(
+      false,
+    );
+    // …and the combined view is untouched by the breakdown.
+    expect(snapshot.omp.tokens.output).toBe(220);
+    expect(snapshot.cursor.tokens.input).toBe(CURSOR_CYCLE.models[0]!.tokens.input + 3_200_000);
   });
 
-  it("still applies the period inside a project", () => {
-    const yesterday = { ...ompEvent("2026-09-01T09:00:00.000", "claude-opus-5", 3, 3), project: "/w/api" };
-    const scoped = buildDashboardSnapshot({
+  it("takes the same period as everything else on screen", () => {
+    const yesterday = {
+      ...ompEvent("2026-09-01T09:00:00.000", "claude-opus-5", 3, 3),
+      project: "/w/old",
+    };
+    const today = buildDashboardSnapshot({
       period: { kind: "today" },
-      project: "/w/api",
+      ompEvents: [...events, yesterday],
+      cursor: CURSOR_CYCLE,
+      now: NOW,
+    });
+    const allTime = buildDashboardSnapshot({
+      period: { kind: "all_time" },
       ompEvents: [...events, yesterday],
       cursor: CURSOR_CYCLE,
       now: NOW,
     });
 
-    expect(scoped.omp.tokens.input).toBe(5);
+    expect(today.projects.map((p) => p.project)).not.toContain("/w/old");
+    expect(allTime.projects.map((p) => p.project)).toContain("/w/old");
+  });
+
+  it("sinks a project holding an unpriced model below every priced one", () => {
+    const snapshot = buildDashboardSnapshot({
+      period: { kind: "today" },
+      ompEvents: [api, web],
+      cursor: CURSOR_CYCLE,
+      now: NOW,
+      // /w/web's only model has no rate at all.
+      priceCents: (model, tokens) => (model === "glm-5.3-flash" ? null : tokens.output),
+    });
+
+    expect(snapshot.projects.map((p) => [p.project, p.estimatedCents])).toEqual([
+      ["/w/api", 50],
+      ["/w/web", null],
+    ]);
   });
 });

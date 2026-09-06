@@ -98,7 +98,7 @@ up to three separate queries. That fact lives only in the survey notes.
 
 ## Deliberately not being built
 
-Projects grouping, a source on/off dropdown, automatic refreshing, a database migration system,
+A source on/off dropdown, automatic refreshing, a database migration system,
 CSV export, other assistants, and a timezone setting are all explicitly deferred. Nobody should
 add any of them until asked.
 

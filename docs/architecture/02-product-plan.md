@@ -249,7 +249,7 @@ The locked decisions are prose, but the code that landed against them now carrie
 - Resolving the Cursor Pro date-window question: decide in `product.md`, update all three
   locked-table copies, update or remove the three spike pointers, and revise the mixed-period
   contract + UI edge-case table together. All-time fetching gains the split-window constraint.
-- Adding a deferred feature (Projects view, source dropdown, auto-refresh, migration runner,
+- Adding a deferred feature (source dropdown, auto-refresh, migration runner,
   CSV export, other assistants, timezone setting, per-account OMP usage split, Enterprise
   ingest): remove it from the deferred list in both `product.md` and `implementation-plan.md`
   (and `spec.md`'s Deferred line), then extend the plan's commit sequence — do not silently

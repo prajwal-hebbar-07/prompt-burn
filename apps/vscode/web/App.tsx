@@ -41,8 +41,6 @@ const NEVER_FETCHED: DashboardSnapshot = buildDashboardSnapshot({
 export function App() {
   const [snapshot, setSnapshot] = useState(NEVER_FETCHED);
   const [period, setPeriod] = useState(DEFAULT_PERIOD);
-  /** `null` is every project; only OMP rows carry one. */
-  const [project, setProject] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
   const [settings, setSettings] = useState<SourceSettings>();
 
@@ -52,7 +50,7 @@ export function App() {
   }, []);
 
   const refresh = useCallback(
-    async (target: PeriodFilter, scope: string | null) => {
+    async (target: PeriodFilter) => {
       setFetching(true);
       try {
         const result = await fetchUsage();
@@ -63,7 +61,7 @@ export function App() {
           console.error("prompt-burn: fetch failed", result.error);
           return;
         }
-        const fetched = await getSnapshot(target, scope);
+        const fetched = await getSnapshot(target);
         // Partial success still lands: the source that worked has new data and
         // the one that failed kept its previous rows, so the banner names both
         // while the numbers stay.
@@ -88,10 +86,10 @@ export function App() {
     [failed],
   );
 
-  /** Re-aggregates the stored rows for one filter. Not a fetch: nothing syncs. */
-  const reloadSnapshot = useCallback(async (target: PeriodFilter, scope: string | null) => {
+  /** Re-aggregates the stored rows for one period. Not a fetch: nothing syncs. */
+  const reloadSnapshot = useCallback(async (target: PeriodFilter) => {
     try {
-      const fetched = await getSnapshot(target, scope);
+      const fetched = await getSnapshot(target);
       // The previous fetch bookkeeping survives: nothing was fetched here.
       setSnapshot((previous) => ({ ...fetched, fetch: previous.fetch }));
     } catch (error) {
@@ -103,18 +101,9 @@ export function App() {
   const changePeriod = useCallback(
     (target: PeriodFilter) => {
       setPeriod(target);
-      void reloadSnapshot(target, project);
+      void reloadSnapshot(target);
     },
-    [project, reloadSnapshot],
-  );
-
-  /** Same deal for the project picker: a filter, never a fetch. */
-  const changeProject = useCallback(
-    (target: string | null) => {
-      setProject(target);
-      void reloadSnapshot(period, target);
-    },
-    [period, reloadSnapshot],
+    [reloadSnapshot],
   );
 
   const saveSources = useCallback((next: SourceSettings) => {
@@ -130,14 +119,14 @@ export function App() {
   const applyPrice = useCallback(
     (price: NewPriceInput) => {
       void addPrice(price)
-        .then(() => reloadSnapshot(period, project))
+        .then(() => reloadSnapshot(period))
         .catch((error: unknown) => console.error("prompt-burn: price insert failed", error));
     },
-    [period, project, reloadSnapshot],
+    [period, reloadSnapshot],
   );
 
   useEffect(() => {
-    void refresh(DEFAULT_PERIOD, null);
+    void refresh(DEFAULT_PERIOD);
   }, [refresh]);
 
   // Read after the open fetch is already in flight: the tab must not wait on
@@ -157,9 +146,7 @@ export function App() {
       snapshot={shown}
       period={period}
       onPeriodChange={changePeriod}
-      project={project}
-      onProjectChange={changeProject}
-      onFetch={() => void refresh(period, project)}
+      onFetch={() => void refresh(period)}
       settings={{ ...settings, onSave: saveSources, onAddPrice: applyPrice }}
     />
   );

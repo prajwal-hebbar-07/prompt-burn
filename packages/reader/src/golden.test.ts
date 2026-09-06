@@ -143,9 +143,16 @@ const CURSOR_SLICE: DashboardSnapshot["cursor"] = {
 
 const ALL_TIME: DashboardSnapshot = {
   period: { kind: "all_time" },
-  project: null,
-  // The transcript's `cwd`, the one project this fixture ran in.
-  projects: ["/Users/example/project"],
+  // One project — the transcript's `cwd` — holding both OMP rows and neither
+  // Cursor row: Cursor reports no directory.
+  projects: [
+    {
+      project: "/Users/example/project",
+      tokens: { input: 4161, output: 260, cacheRead: 224_913, cacheWrite: 463 },
+      estimatedCents: 4.1983375,
+      models: [OMP_OPUS, OMP_GEMINI],
+    },
+  ],
   // Cursor holds unpriced models, so the combined estimate is unknown — the UI
   // renders `—`, never `$0`, and never Cursor's own cents.
   estimatedCents: null,
@@ -165,8 +172,15 @@ const ALL_TIME: DashboardSnapshot = {
 
 const TODAY: DashboardSnapshot = {
   period: { kind: "today" },
-  project: null,
-  projects: ["/Users/example/project"],
+  // Today keeps only the Gemini turn, so the project shrinks with it.
+  projects: [
+    {
+      project: "/Users/example/project",
+      tokens: { input: 4159, output: 155, cacheRead: 187_535, cacheWrite: 0 },
+      estimatedCents: 1.7765625,
+      models: [OMP_GEMINI],
+    },
+  ],
   estimatedCents: null,
   // OMP filters to the Gemini turn; Cursor does not move.
   omp: {
