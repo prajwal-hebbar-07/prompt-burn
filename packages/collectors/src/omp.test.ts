@@ -65,6 +65,8 @@ describe("parseOmpSessionFile", () => {
         rawModel: "claude-opus-5",
         tokens: { input: 2, output: 105, cacheRead: 37378, cacheWrite: 463 },
         sessionId: SESSION_ID,
+        // The header's `cwd`: which project this usage belongs to.
+        project: "/Users/example/project",
       },
     ]);
   });
@@ -84,6 +86,8 @@ describe("parseOmpSessionFile", () => {
     // No session uuid to scope `line.id`, so position in the file is the key.
     expect(first?.id).toMatch(/^omp:[0-9a-f]{16}$/);
     expect(first?.sessionId).toBeUndefined();
+    // No header, so no `cwd` either: unattributable, never guessed.
+    expect(first?.project).toBeUndefined();
     // Two identical turns must not collapse into one id.
     expect(second?.id).not.toBe(first?.id);
     // …and the id is stable across re-reads, so a resync does not duplicate.

@@ -26,6 +26,8 @@ interface OmpLine {
   type?: unknown;
   id?: unknown;
   timestamp?: unknown;
+  /** Session header only: the directory OMP ran in — our project identity. */
+  cwd?: unknown;
   message?: {
     role?: unknown;
     model?: unknown;
@@ -95,6 +97,7 @@ export function scanOmpSessionFile(filePath: string, fromOffset = 0): OmpFileSca
 
   const events: UsageEvent[] = [];
   let sessionId: string | undefined;
+  let project: string | undefined;
   let offset = 0;
   let consumed = 0;
 
@@ -117,10 +120,11 @@ export function scanOmpSessionFile(filePath: string, fromOffset = 0): OmpFileSca
 
     if (line.type === "session") {
       if (typeof line.id === "string") sessionId = line.id;
+      if (typeof line.cwd === "string" && line.cwd !== "") project = line.cwd;
       continue;
     }
     if (lineOffset < fromOffset) continue;
-    const event = toUsageEvent(line, sessionId, filePath, lineOffset);
+    const event = toUsageEvent(line, sessionId, project, filePath, lineOffset);
     if (event) events.push(event);
   }
 
@@ -130,6 +134,7 @@ export function scanOmpSessionFile(filePath: string, fromOffset = 0): OmpFileSca
 function toUsageEvent(
   line: OmpLine,
   sessionId: string | undefined,
+  project: string | undefined,
   filePath: string,
   offset: number,
 ): UsageEvent | null {
@@ -158,6 +163,7 @@ function toUsageEvent(
       cacheWrite: count(message.usage.cacheWrite),
     },
     ...(sessionId ? { sessionId } : {}),
+    ...(project ? { project } : {}),
   };
 }
 

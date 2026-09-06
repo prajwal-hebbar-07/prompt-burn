@@ -38,6 +38,12 @@ export interface SnapshotInput {
   ompEvents: readonly UsageEvent[];
   cursor: CursorSnapshot;
   /**
+   * Scope the rollup to one project (an absolute `cwd`). Only OMP events carry
+   * one, so a selected project drops Cursor's rows: a cycle-to-date aggregate
+   * belongs to no directory, and splitting it would be invention.
+   */
+  project?: string | null;
+  /**
    * Provider usage clocks, straight from the host. Passed through untouched:
    * they carry no timestamps this package could filter and no tokens it could
    * price.
@@ -124,21 +130,26 @@ function rollup(source: Source, parts: readonly PricedPart[], priceCents?: Price
  */
 export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot {
   const { period, ompEvents, cursor, now, priceCents } = input;
+  const project = input.project ?? null;
 
+  const inPeriod = filterEventsByPeriod(ompEvents, period, now);
   const omp = rollup(
     "omp",
-    filterEventsByPeriod(ompEvents, period, now).map(({ model, tokens, timestamp }) => ({
-      model,
-      tokens,
-      timestamp,
-    })),
+    inPeriod
+      .filter((event) => project === null || event.project === project)
+      .map(({ model, tokens, timestamp }) => ({
+        model,
+        tokens,
+        timestamp,
+      })),
     priceCents,
   );
 
   // Enterprise events are timestamped, so they take the same period as OMP.
   // Pro cycle aggregates have no timestamps and are used exactly as fetched.
-  const cursorParts: PricedPart[] =
-    cursor.mode === "events"
+  const cursorParts: PricedPart[] = project
+    ? []
+    : cursor.mode === "events"
       ? filterEventsByPeriod(cursor.events, period, now).map(({ model, tokens, timestamp }) => ({
           model,
           tokens,
@@ -149,6 +160,10 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
 
   return {
     period,
+    project,
+    // The picker's options: every project in the period, whichever one is
+    // selected, so narrowing to one never empties the list you narrowed with.
+    projects: [...new Set(inPeriod.map((event) => event.project).filter((p) => p !== undefined))].sort(),
     estimatedCents: addCents(omp.totals.estimatedCents, cursorRollup.totals.estimatedCents),
     omp: omp.totals,
     cursor: {
@@ -169,7 +184,7 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
     models: [...omp.rows, ...cursorRollup.rows],
     // All-time is the one period a cycle-to-date Cursor total does not clash
     // with; the cycle is still footnoted through `cycleLabel`.
-    mixedPeriod: cursor.mode === "cycle_aggregate" && period.kind !== "all_time",
+    mixedPeriod: !project && cursor.mode === "cycle_aggregate" && period.kind !== "all_time",
     // Provider clocks are not calendar data: they never move with `period`.
     limits: [...(input.limits ?? [])],
     fetch: input.fetch ?? { lastSuccessAt: null, status: "idle" },

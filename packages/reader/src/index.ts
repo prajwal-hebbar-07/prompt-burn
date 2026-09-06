@@ -94,7 +94,8 @@ const DISABLED_DETAIL = "Disabled in Settings";
 export interface UsageReader {
   discover(): Promise<ReaderHealth[]>;
   fetch(): Promise<FetchResult>;
-  getSnapshot(period: PeriodFilter): Promise<DashboardSnapshot>;
+  /** `project` (an absolute OMP `cwd`) scopes the rows; omitted means all. */
+  getSnapshot(period: PeriodFilter, project?: string | null): Promise<DashboardSnapshot>;
   /** Persisted source toggles, with `ompPath` resolved to the real directory. */
   getSettings(): Promise<AppSettings>;
   /** Persists only the keys given; the next fetch and snapshot use them. */
@@ -206,11 +207,12 @@ export function createUsageReader(
       };
     },
 
-    async getSnapshot(period: PeriodFilter) {
+    async getSnapshot(period: PeriodFilter, project?: string | null) {
       const at = now().toISOString();
       const { ompEnabled, ompPath } = sources();
       return buildDashboardSnapshot({
         period,
+        project: project ?? null,
         ompEvents: loadUsageEvents(db, "omp"),
         cursor: cursorCycle ?? EMPTY_CURSOR_CYCLE,
         now: now(),

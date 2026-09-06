@@ -37,6 +37,12 @@ export interface UsageEvent {
   rawModel: string;
   tokens: TokenCounts;
   sessionId?: string;
+  /**
+   * Absolute working directory the session ran in — OMP's `cwd` off the
+   * session header, which is what "project" means here. Absent for sources
+   * that report no directory at all (Cursor) and for headerless transcripts.
+   */
+  project?: string;
 }
 
 /**
@@ -160,6 +166,14 @@ export interface FetchState {
 /** The full view model the dashboard renders. Frozen contract for the UI. */
 export interface DashboardSnapshot {
   period: PeriodFilter;
+  /**
+   * The project the rows are scoped to (an absolute path), or `null` for every
+   * project. Only OMP events carry a project, so a selected one excludes
+   * Cursor entirely rather than pretending its cycle belongs to one directory.
+   */
+  project: string | null;
+  /** Every project present in `period`, before `project` narrowed the rows. */
+  projects: string[];
   /** Combined estimate; `null` if any included row has an unknown price. */
   estimatedCents: number | null;
   omp: SourceTotals;

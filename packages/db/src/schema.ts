@@ -32,11 +32,14 @@ CREATE TABLE usage_events (
   cache_read  INTEGER NOT NULL DEFAULT 0,
   cache_write INTEGER NOT NULL DEFAULT 0,
   session_id  TEXT,
+  -- Absolute cwd of the OMP session; NULL for sources that report none.
+  project     TEXT,
   CHECK ((period = 'cycle') = (timestamp = ''))
 );
 
 CREATE INDEX usage_events_timestamp ON usage_events (timestamp);
 CREATE INDEX usage_events_source_model ON usage_events (source, model);
+CREATE INDEX usage_events_project ON usage_events (project);
 
 -- Rates in USD per million tokens, versioned by validity window. The row that
 -- prices an event is the one where effective_from <= timestamp AND

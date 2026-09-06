@@ -26,10 +26,18 @@ export interface OmpSyncResult {
   insertedEvents: number;
 }
 
+/**
+ * `DO UPDATE` only where the stored row has no project yet: that is the
+ * backfill path after the `project` migration cleared `omp_sync_state`, and it
+ * leaves `changes` at 0 for a row that is genuinely a re-read, so the counters
+ * still say what was written.
+ */
 const INSERT_EVENT = `
-  INSERT OR IGNORE INTO usage_events
-    (id, source, period, timestamp, model, raw_model, input, output, cache_read, cache_write, session_id)
-  VALUES (?, 'omp', 'event', ?, ?, ?, ?, ?, ?, ?, ?)`;
+  INSERT INTO usage_events
+    (id, source, period, timestamp, model, raw_model, input, output, cache_read, cache_write, session_id, project)
+  VALUES (?, 'omp', 'event', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET project = excluded.project
+    WHERE usage_events.project IS NULL AND excluded.project IS NOT NULL`;
 
 const UPSERT_STATE = `
   INSERT INTO omp_sync_state (path, mtime, offset) VALUES (?, ?, ?)
@@ -110,6 +118,7 @@ function insert(statement: StatementSync, event: UsageEvent): number {
     event.tokens.cacheRead ?? 0,
     event.tokens.cacheWrite ?? 0,
     event.sessionId ?? null,
+    event.project ?? null,
   ).changes;
   return Number(changes);
 }

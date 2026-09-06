@@ -12,7 +12,7 @@ import type { Source, UsageEvent } from "@prompt-burn/core";
 
 const COLUMNS = `
   SELECT id, source, timestamp, model, raw_model,
-         input, output, cache_read, cache_write, session_id
+         input, output, cache_read, cache_write, session_id, project
   FROM usage_events`;
 
 /**
@@ -40,5 +40,8 @@ export function loadUsageEvents(db: DatabaseSync, source?: Source): UsageEvent[]
       cacheWrite: Number(row["cache_write"]),
     },
     ...(row["session_id"] === null ? {} : { sessionId: String(row["session_id"]) }),
+    ...(row["project"] === null || row["project"] === undefined
+      ? {}
+      : { project: String(row["project"]) }),
   }));
 }

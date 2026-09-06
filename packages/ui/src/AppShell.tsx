@@ -16,6 +16,7 @@ import type { DashboardSnapshot, PeriodFilter } from "@prompt-burn/core";
 import { Dashboard } from "./Dashboard.js";
 import { FetchErrorBanner } from "./FetchBanner.js";
 import { PeriodBar } from "./PeriodBar.js";
+import { ProjectBar } from "./ProjectBar.js";
 import { Settings, type SettingsProps } from "./Settings.js";
 import { THEME_PREFERENCES, type ThemePreference, useTheme } from "./theme.js";
 
@@ -75,6 +76,13 @@ export interface AppShellProps {
   period?: PeriodFilter;
   /** A new period was chosen. Loading its snapshot is not a fetch. */
   onPeriodChange?: (period: PeriodFilter) => void;
+  /**
+   * The project the host has selected, `null` for all of them. It leads
+   * `snapshot.project` exactly as `period` leads `snapshot.period`.
+   */
+  project?: string | null;
+  /** A new project was chosen. Loading its snapshot is not a fetch either. */
+  onProjectChange?: (project: string | null) => void;
   /** Clicking "Fetch data" — the host owns the actual fetch. */
   onFetch?: () => void;
   /** Injectable clock for the relative label; defaults to the wall clock. */
@@ -83,7 +91,16 @@ export interface AppShellProps {
   settings?: SettingsProps;
 }
 
-export function AppShell({ snapshot, period, onPeriodChange, onFetch, now, settings }: AppShellProps) {
+export function AppShell({
+  snapshot,
+  period,
+  onPeriodChange,
+  project,
+  onProjectChange,
+  onFetch,
+  now,
+  settings,
+}: AppShellProps) {
   const [route, setRoute] = useState<Route>("Dashboard");
   const { preference, setPreference } = useTheme();
   // The hook always runs; an injected clock only overrides what it reads.
@@ -165,12 +182,17 @@ export function AppShell({ snapshot, period, onPeriodChange, onFetch, now, setti
         <FetchErrorBanner snapshot={snapshot} onRetry={onFetch} />
         {route === "Dashboard" ? (
           <>
-            {/* The period bar is a Dashboard control, not chrome: Settings has none. */}
-            <div className="mb-6">
+            {/* Dashboard controls, not chrome: Settings filters nothing. */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
               <PeriodBar
                 period={period ?? snapshot.period}
                 onPeriodChange={onPeriodChange}
                 now={now}
+              />
+              <ProjectBar
+                projects={snapshot.projects}
+                project={project === undefined ? snapshot.project : project}
+                onProjectChange={onProjectChange}
               />
             </div>
             <Dashboard snapshot={snapshot} />

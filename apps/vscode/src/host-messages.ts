@@ -21,7 +21,7 @@ import type { AppSettings, NewPriceEntry, UsageReader } from "@prompt-burn/reade
 
 export type HostRequest =
   | { id: number; method: "fetch" }
-  | { id: number; method: "getSnapshot"; period: PeriodFilter }
+  | { id: number; method: "getSnapshot"; period: PeriodFilter; project?: string | null }
   | { id: number; method: "getSettings" }
   | { id: number; method: "saveSettings"; settings: Partial<AppSettings> }
   | { id: number; method: "addPrice"; price: NewPriceEntry };
@@ -38,7 +38,7 @@ export async function respond(reader: UsageReader, message: unknown): Promise<Ho
       case "fetch":
         return { id, ok: true, result: await reader.fetch() };
       case "getSnapshot":
-        return { id, ok: true, result: await reader.getSnapshot(request.period) };
+        return { id, ok: true, result: await reader.getSnapshot(request.period, request.project) };
       case "getSettings":
         return { id, ok: true, result: await reader.getSettings() };
       case "saveSettings":

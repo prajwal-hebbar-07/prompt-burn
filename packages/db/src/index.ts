@@ -48,19 +48,36 @@ export function databasePath(home: string = homedir()): string {
 
 /**
  * Opens the database, creating the directory, the file and the schema on first
- * run, and topping up the bundled prices on every run.
+ * run, topping up the bundled prices, and adding `usage_events.project` to a
+ * database created before it existed.
  *
- * The schema itself is applied once: no re-apply, no migration runner, and
- * deleting the file is still the reset path for a schema change. Prices are the
- * exception — see `seedBundledPrices`.
+ * That column is the one migration there is (there is still no runner). Stored
+ * rows keep their tokens and gain a NULL project; clearing `omp_sync_state`
+ * makes the next fetch re-read every transcript, and the sync's upsert fills
+ * the column in from each session header's `cwd`. Nothing is deleted, so a
+ * project whose transcripts have since been pruned keeps its history — it just
+ * stays unattributed.
  */
 export function openDatabase(path: string = databasePath()): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const isNew = !existsSync(path);
   const db = new DatabaseSync(path);
   if (isNew) db.exec(SCHEMA_SQL);
+  else addProjectColumn(db);
   seedBundledPrices(db);
   return db;
+}
+
+/** No-op once the column is there; the whole migration is idempotent. */
+function addProjectColumn(db: DatabaseSync): void {
+  const columns = db.prepare("SELECT name FROM pragma_table_info('usage_events')").all() as Array<{
+    name: string;
+  }>;
+  if (columns.some((column) => column.name === "project")) return;
+  db.exec(`
+    ALTER TABLE usage_events ADD COLUMN project TEXT;
+    CREATE INDEX IF NOT EXISTS usage_events_project ON usage_events (project);
+    DELETE FROM omp_sync_state;`);
 }
 
 /**

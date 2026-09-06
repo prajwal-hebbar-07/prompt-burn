@@ -141,4 +141,52 @@ describe("openDatabase", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM usage_events").get()?.["n"]).toBe(2);
     db.close();
   });
+
+  it("adds the project column, keeps every row, and forces one OMP re-scan", () => {
+    const path = databasePath(fakeHome());
+    const first = openDatabase(path);
+    // Rewind to the shape v1.0.3 shipped: no project column anywhere.
+    first.exec(`
+      DROP TABLE usage_events;
+      CREATE TABLE usage_events (
+        id TEXT PRIMARY KEY, source TEXT NOT NULL, period TEXT NOT NULL,
+        timestamp TEXT NOT NULL, model TEXT NOT NULL, raw_model TEXT NOT NULL,
+        input INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0,
+        cache_read INTEGER NOT NULL DEFAULT 0, cache_write INTEGER NOT NULL DEFAULT 0,
+        session_id TEXT);
+      INSERT INTO usage_events VALUES
+        ('omp:s1:1', 'omp', 'event', '2026-09-02T08:31:31.505Z', 'claude-opus-5', 'claude-opus-5', 2, 105, 0, 0, 's1'),
+        ('cursor:cycle:x', 'cursor', 'cycle', '', 'default', 'default', 1, 1, 0, 0, NULL);
+      INSERT INTO omp_sync_state (path, mtime, offset) VALUES ('/w/api/a.jsonl', 1, 400);`);
+    first.close();
+
+    const second = openDatabase(path);
+    const columns = second
+      .prepare("SELECT name FROM pragma_table_info('usage_events')")
+      .all()
+      .map((row) => row["name"]);
+    expect(columns).toContain("project");
+    // Rows survive with a NULL project; only the sync state goes, so the next
+    // fetch re-reads the transcripts and backfills the `cwd` it finds there.
+    const rows = second.prepare("SELECT id, project FROM usage_events ORDER BY id").all();
+    expect(rows).toEqual([
+      { id: "cursor:cycle:x", project: null },
+      { id: "omp:s1:1", project: null },
+    ]);
+    expect(second.prepare("SELECT COUNT(*) AS n FROM omp_sync_state").get()?.["n"]).toBe(0);
+    second.close();
+
+    // Idempotent: a third open neither re-adds the column nor re-clears state.
+    const third = openDatabase(path);
+    third.exec(
+      `INSERT INTO usage_events (id, source, period, timestamp, model, raw_model, project)
+       VALUES ('omp:s2:1', 'omp', 'event', '2026-09-05T00:00:00Z', 'm', 'm', '/w/api')`,
+    );
+    third.close();
+    const fourth = openDatabase(path);
+    expect(
+      fourth.prepare("SELECT project FROM usage_events WHERE id = 'omp:s2:1'").get()?.["project"],
+    ).toBe("/w/api");
+    fourth.close();
+  });
 });

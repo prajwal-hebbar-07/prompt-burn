@@ -87,6 +87,8 @@ describe("syncOmpSessions", () => {
         cache_read: 37378,
         cache_write: 463,
         session_id: SESSION_ID,
+        // The session header's `cwd`, stored so the dashboard can filter on it.
+        project: "/Users/example/project",
       },
     ]);
   });
@@ -156,6 +158,23 @@ describe("syncOmpSessions", () => {
 
     expect(syncOmpSessions(db, sessions)).toMatchObject({ scannedFiles: 2, insertedEvents: 1 });
     expect(rows()).toHaveLength(1);
+  });
+
+  it("backfills the project of rows stored before attribution existed", () => {
+    writeTranscript("proj/a.jsonl", [HEADER, FIXTURE_LINE]);
+    syncOmpSessions(db, sessions);
+
+    // Exactly what the `project` migration leaves behind: the row, no project,
+    // and no sync state, so the next pass re-reads the transcript.
+    db.exec("UPDATE usage_events SET project = NULL; DELETE FROM omp_sync_state");
+
+    expect(syncOmpSessions(db, sessions)).toMatchObject({ scannedFiles: 1, insertedEvents: 1 });
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]?.["project"]).toBe("/Users/example/project");
+
+    // Already attributed: a third pass over the same lines writes nothing.
+    db.exec("DELETE FROM omp_sync_state");
+    expect(syncOmpSessions(db, sessions)).toMatchObject({ insertedEvents: 0 });
   });
 
   it("leaves a torn final line for the next sync", () => {

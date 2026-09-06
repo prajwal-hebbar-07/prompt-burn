@@ -10,8 +10,9 @@ harvester that only read the top of the folder would quietly undercount everythi
 This is the harvester. It walks that folder — every subfolder — and after each conversation
 turn where the assistant spoke, it reads four numbers off the page: fresh input, generated
 output, and the two cache numbers. It notes which model did the talking, when it happened,
-and which session it belonged to. That is all it takes. It is not interested in anything
-else the diary mentions — not what anyone said, not OMP's own guess at the dollar cost.
+which session it belonged to, and — off the diary's first page — which project folder that
+session was working in. That is all it takes. It is not interested in anything else the diary
+mentions — not what anyone said, not OMP's own guess at the dollar cost.
 The money is worked out later, from a price list, so that old entries can be re-priced if
 prices change. Storing OMP's own estimate would fight that.
 
@@ -37,7 +38,9 @@ left for next time, so nothing is lost or double-counted.
 Each entry gets a name built from the session it lives in plus its own id within that
 session — a name that comes out the same every time the same entry is read. The logbook
 refuses to write two entries with the same name. So if a file is re-read by accident, or
-two copies of it are found, the second attempt simply doesn't stick. A summary at the end
+two copies of it are found, the second attempt simply doesn't stick. The one exception is an
+entry logged before project folders existed: re-reading its diary fills the folder in, and
+nothing else about the entry is touched. A summary at the end
 tells you how many files were read, how many were skipped as unchanged, and how many new
 entries actually landed.
 

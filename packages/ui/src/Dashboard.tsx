@@ -28,8 +28,17 @@ import { UsageLimits } from "./UsageLimits.js";
 /** Product's exact sentence for a successful fetch with nothing in it. */
 const NO_USAGE = "No OMP or Cursor usage for this period";
 
+/** Same state inside a project view, where Cursor was never in scope. */
+const NO_PROJECT_USAGE = "No OMP usage for this project in this period";
+
 /** Before the first successful fetch there is nothing to be zero about. */
 const NOT_FETCHED = "No usage data yet";
+
+/**
+ * Cursor's cycle carries no working directory, so a project view leaves it out
+ * rather than showing a $0.00 that reads like Cursor did nothing.
+ */
+const CURSOR_NO_PROJECT = "Not per-project";
 
 /** What the priced rows add up to, and how many rows had no rate at all. */
 export interface PricedSubtotal {
@@ -81,7 +90,8 @@ export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
     snapshot.models.length > 0 ||
     tokens.some((t) => t.input + t.output + (t.cacheRead ?? 0) + (t.cacheWrite ?? 0) > 0);
   if (used) return null;
-  return snapshot.fetch.lastSuccessAt === null ? NOT_FETCHED : NO_USAGE;
+  if (snapshot.fetch.lastSuccessAt === null) return NOT_FETCHED;
+  return snapshot.project === null ? NO_USAGE : NO_PROJECT_USAGE;
 }
 
 /**
@@ -150,9 +160,12 @@ export interface DashboardProps {
 }
 
 export function Dashboard({ snapshot }: DashboardProps) {
-  const cursorLabel = snapshot.cursor.cycleLabel
-    ? `Cursor (${snapshot.cursor.cycleLabel.toLowerCase()})`
-    : "Cursor";
+  // The cycle footnote belongs to a Cursor total that is on screen; a project
+  // view has none, so the row is just "Cursor · Not per-project".
+  const cursorLabel =
+    snapshot.cursor.cycleLabel && snapshot.project === null
+      ? `Cursor (${snapshot.cursor.cycleLabel.toLowerCase()})`
+      : "Cursor";
   const empty = emptyStateMessage(snapshot);
 
   const combined = pricedSubtotal(snapshot.models);
@@ -232,7 +245,11 @@ export function Dashboard({ snapshot }: DashboardProps) {
             testId="cursor-subtotal"
             label={cursorLabel}
             dotClass="bg-source-cursor"
-            text={costText(snapshot.cursor.estimatedCents, cursorPriced)}
+            text={
+              snapshot.project === null
+                ? costText(snapshot.cursor.estimatedCents, cursorPriced)
+                : CURSOR_NO_PROJECT
+            }
           />
         </div>
 
