@@ -74,6 +74,50 @@ describe("Projects", () => {
     expect(screen.getByTestId("projects-note").textContent).toContain("Cursor reports none");
   });
 
+  it("renders a top-level Ring / Donut graph overview when multiple projects exist", () => {
+    render(
+      <Projects
+        snapshot={snapshot([
+          event("1", "claude-opus-5", "/w/api"),
+          event("2", "glm-5.3-flash", "/w/web"),
+        ])}
+      />,
+    );
+
+    const overview = screen.getByTestId("projects-overview");
+    expect(overview.textContent).toContain("2 projects");
+    expect(overview.textContent).toContain("Project Overview");
+    expect(overview.textContent).toContain("Total burn");
+
+    // The SVG Donut / Ring Chart
+    const ringSvg = screen.getByRole("img", { name: "Project spend distribution ring" });
+    expect(ringSvg).toBeTruthy();
+    // Circle elements for track + 2 project slices
+    expect(ringSvg.querySelectorAll("circle").length).toBe(3);
+  });
+
+  it("renders Gantt-style model lanes inside each project card", () => {
+    render(
+      <Projects
+        snapshot={snapshot([
+          event("1", "claude-opus-5", "/w/api"),
+          event("2", "glm-5.3-flash", "/w/api"),
+        ])}
+      />,
+    );
+
+    const api = screen.getByTestId("project-/w/api");
+    const ganttLane = api.querySelector('[role="img"]');
+    expect(ganttLane).toBeTruthy();
+    expect(ganttLane?.getAttribute("aria-label")).toContain("Model usage breakdown");
+  });
+
+  it("omits the overview bar when there is only one project", () => {
+    render(<Projects snapshot={snapshot([event("1", "claude-opus-5", "/w/api")])} />);
+
+    expect(screen.queryByTestId("projects-overview")).toBeNull();
+  });
+
   it("keeps usage from a headerless transcript in its own bucket", () => {
     render(<Projects snapshot={snapshot([event("1", "claude-opus-5")])} />);
 
