@@ -25,20 +25,10 @@ function cycleLabelOf(snapshot: DashboardSnapshot): string {
 /**
  * `Cursor shows cycle to date (Aug 26 – Sep 26, 2026) · period filters apply
  * to OMP only`. The window stays visible on all-time too, where the periods do
- * not clash — product keeps the cycle footnote up either way.
- *
- * A project view says something else entirely: Cursor reports no working
- * directory, so it is out of these numbers, and the screen has to say so or the
- * missing violet half of the meter reads as a bug.
+ * not clash — product keeps the cycle footnote up either way. The Projects
+ * route has no Cursor totals at all, and says so on its own screen.
  */
 export function CycleFootnote({ snapshot }: CycleProps) {
-  if (snapshot.project !== null) {
-    return (
-      <p data-testid="cycle-footnote" className={`${CALLOUT} text-small leading-small`}>
-        Cursor is excluded from a project view · its totals carry no working directory
-      </p>
-    );
-  }
   if (snapshot.cursor.mode !== "cycle_aggregate") return null;
 
   const window = formatCycleWindow(snapshot.cursor.cycleStart, snapshot.cursor.cycleEnd);

@@ -16,14 +16,13 @@ import type { DashboardSnapshot, PeriodFilter } from "@prompt-burn/core";
 import { Dashboard } from "./Dashboard.js";
 import { FetchErrorBanner } from "./FetchBanner.js";
 import { PeriodBar } from "./PeriodBar.js";
-import { ProjectBar } from "./ProjectBar.js";
+import { Projects } from "./Projects.js";
 import { Settings, type SettingsProps } from "./Settings.js";
 import { THEME_PREFERENCES, type ThemePreference, useTheme } from "./theme.js";
 
 /** Always visible, on every route — docs/product.md Trust. */
 const TRUST_LINE = "Local only · nothing leaves this device";
-
-const ROUTES = ["Dashboard", "Settings"] as const;
+const ROUTES = ["Dashboard", "Projects", "Settings"] as const;
 
 /** The theme switch reads as three states, not a mystery moon icon. */
 const THEME_LABELS: Record<ThemePreference, string> = {
@@ -76,13 +75,6 @@ export interface AppShellProps {
   period?: PeriodFilter;
   /** A new period was chosen. Loading its snapshot is not a fetch. */
   onPeriodChange?: (period: PeriodFilter) => void;
-  /**
-   * The project the host has selected, `null` for all of them. It leads
-   * `snapshot.project` exactly as `period` leads `snapshot.period`.
-   */
-  project?: string | null;
-  /** A new project was chosen. Loading its snapshot is not a fetch either. */
-  onProjectChange?: (project: string | null) => void;
   /** Clicking "Fetch data" — the host owns the actual fetch. */
   onFetch?: () => void;
   /** Injectable clock for the relative label; defaults to the wall clock. */
@@ -91,16 +83,7 @@ export interface AppShellProps {
   settings?: SettingsProps;
 }
 
-export function AppShell({
-  snapshot,
-  period,
-  onPeriodChange,
-  project,
-  onProjectChange,
-  onFetch,
-  now,
-  settings,
-}: AppShellProps) {
+export function AppShell({ snapshot, period, onPeriodChange, onFetch, now, settings }: AppShellProps) {
   const [route, setRoute] = useState<Route>("Dashboard");
   const { preference, setPreference } = useTheme();
   // The hook always runs; an injected clock only overrides what it reads.
@@ -180,25 +163,24 @@ export function AppShell({
       <main aria-label={`Prompt Burn ${route.toLowerCase()}`} className="mx-auto max-w-content px-6 py-8">
         {/* Chrome, not Dashboard body: a failed pass is visible on both routes. */}
         <FetchErrorBanner snapshot={snapshot} onRetry={onFetch} />
-        {route === "Dashboard" ? (
+        {route === "Settings" ? (
+          <Settings snapshot={snapshot} {...settings} />
+        ) : (
           <>
-            {/* Dashboard controls, not chrome: Settings filters nothing. */}
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            {/* The period bar scopes both data routes; Settings has no calendar. */}
+            <div className="mb-6">
               <PeriodBar
                 period={period ?? snapshot.period}
                 onPeriodChange={onPeriodChange}
                 now={now}
               />
-              <ProjectBar
-                projects={snapshot.projects}
-                project={project === undefined ? snapshot.project : project}
-                onProjectChange={onProjectChange}
-              />
             </div>
-            <Dashboard snapshot={snapshot} />
+            {route === "Dashboard" ? (
+              <Dashboard snapshot={snapshot} />
+            ) : (
+              <Projects snapshot={snapshot} />
+            )}
           </>
-        ) : (
-          <Settings snapshot={snapshot} {...settings} />
         )}
       </main>
     </div>

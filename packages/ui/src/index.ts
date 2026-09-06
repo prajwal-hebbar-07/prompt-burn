@@ -27,7 +27,7 @@ export {
 } from "./format.js";
 export { ModelTable, rankRows, type ModelTableProps } from "./ModelTable.js";
 export { PeriodBar, type PeriodBarProps, formatRangeLabel, periodLabel } from "./PeriodBar.js";
-export { ALL_PROJECTS, ProjectBar, projectLabel, type ProjectBarProps } from "./ProjectBar.js";
+export { Projects, UNATTRIBUTED, projectLabel, type ProjectsProps } from "./Projects.js";
 export {
   Settings,
   type NewPriceInput,

@@ -54,12 +54,9 @@ export function fetchUsage(): Promise<FetchOutcome> {
   return request<FetchOutcome>("fetch");
 }
 
-/** The dashboard view model for one period and project; the caller owns both. */
-export function getSnapshot(
-  period: PeriodFilter,
-  project?: string | null,
-): Promise<DashboardSnapshot> {
-  return request<DashboardSnapshot>("getSnapshot", { period, project: project ?? null });
+/** The dashboard view model for one period; the caller owns the filter. */
+export function getSnapshot(period: PeriodFilter): Promise<DashboardSnapshot> {
+  return request<DashboardSnapshot>("getSnapshot", { period });
 }
 
 /** The persisted source toggles and OMP path override. */

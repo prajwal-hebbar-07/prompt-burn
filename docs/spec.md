@@ -66,7 +66,7 @@ Never invent daily splits from cycle aggregates. Cursor cycle rows are stored wi
 
 ## Deferred
 
-Cursor Enterprise event ingest · schema migration runner · `model_aliases` table · Projects view ·
+Cursor Enterprise event ingest · schema migration runner · `model_aliases` table ·
 source dropdown · auto-refresh · other assistants (OpenCode, Claude Code, Copilot,
 OpenRouter) · CSV/JSON export · per-account OMP usage split · timezone setting · our own quota
 accounting (spend forecasts, prompts-left estimates).
