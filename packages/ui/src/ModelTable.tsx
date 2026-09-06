@@ -36,19 +36,25 @@ const RANKS = [
   "border-rank-bronze bg-rank-bronze/15 text-rank-bronze",
 ];
 
-const COLUMNS = ["#", "Model", "Source", "In", "Out", "Cache R", "Cache W", "Est. cost"];
+const COLUMNS = ["#", "Model", "Source", "In", "Out", "Cache R", "Cache W", "Total", "Est. cost"];
 
 /** Cursor omits cache keys when zero; a missing count is not an unknown price. */
 function tokenCell(count: number | undefined): string {
   return count === undefined ? UNKNOWN_COST : formatTokens(count);
 }
 
+/**
+ * The four kinds, then their sum. `Total` is what makes an Anthropic row read
+ * honestly: cached input is where the tokens and most of the money are, and
+ * without it a row showing `In 10.6K · $494.95` looks like a pricing bug.
+ */
 function numericCells(tokens: TokenCounts): string[] {
   return [
     formatTokens(tokens.input),
     formatTokens(tokens.output),
     tokenCell(tokens.cacheRead),
     tokenCell(tokens.cacheWrite),
+    formatTokens(tokenWeight(tokens)),
   ];
 }
 
