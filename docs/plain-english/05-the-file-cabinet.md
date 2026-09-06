@@ -19,9 +19,11 @@ looks in the same spot for it.
 Four folders:
 
 - **The spending log.** One entry per chunk of token usage: which model, how many tokens went
-  in, came out, were read from cache, written to cache. Two kinds of entries: timestamped ones
-  (a moment when tokens were burned) and billing-cycle summaries (totals for a stretch of
-  time, with no single moment — these are never given a made-up date).
+  in, came out, were read from cache, written to cache, and which project folder the work
+  happened in. Two kinds of entries: timestamped ones (a moment when tokens were burned) and
+  billing-cycle summaries (totals for a stretch of time, with no single moment — these are
+  never given a made-up date). Cursor's summaries name no folder, so they sit outside any
+  project.
 - **The price list.** What each model cost, per million tokens. Crucially, the price list is a
   history, not a single sticky note. When a vendor changes a price, a new line is added saying
   "this rate starts here" — the old line is closed off, not erased. So an old spending entry
@@ -51,13 +53,15 @@ there was no way to know what the rates were last month, so today's rates are us
 everything already on record. If a vendor changes a price later, the change becomes a new line
 in the list and history stays priced correctly.
 
-## Deleting the drawer resets everything
+## Changing the drawer's layout
 
-There is no upgrade machinery for the drawer's layout. If the layout changes in a future
-version, the way to pick it up is: delete the file, and the next run builds a fresh drawer
-from scratch — including a fresh copy of the starter price list. For now that's a feature,
-not a gap: one user, one machine, nothing worth migrating. The day a second person has an old
-drawer on disk, a real upgrade path becomes necessary.
+There is still no general upgrade machinery. One layout change has been made by hand: the
+project folder was added to the spending log after the first release, so opening an older
+drawer adds the new slot to every existing entry, leaves the entries themselves alone, and
+forgets the bookmark — the next sync re-reads the session logs and writes each entry's folder
+in as it goes. Nothing is thrown away; entries whose session logs are long gone simply stay
+without a folder. Any future change should look like that one, or the drawer finally earns
+the real upgrade machinery.
 
 ## The honest parts
 

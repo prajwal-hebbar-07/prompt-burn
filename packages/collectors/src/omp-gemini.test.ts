@@ -76,6 +76,7 @@ it("prices a Gemini OMP turn from the bundled rate, not from OMP's own cost", ()
     rawModel: "gemini-3.8-flash",
     tokens: { input: 4159, output: 155, cacheRead: 187535, cacheWrite: 0 },
     sessionId: SESSION_ID,
+    project: "/Users/example/project",
   });
 
   const db = openDatabase(databasePath(home));

@@ -53,6 +53,7 @@ User messages, `custom`, `title_change`, `service_tier_change`, `credential_pin`
 | `tokens.cacheRead` | `line.message.usage.cacheRead` | `37378` |
 | `tokens.cacheWrite` | `line.message.usage.cacheWrite` | `463` |
 | `sessionId` | `id` from the file's `type: "session"` line | `01a06111-…` |
+| `project` | `cwd` from the file's `type: "session"` line — the directory that owns the usage | `/Users/example/project` |
 
 Numbers are JSON numbers, always present on assistant messages (`0`, not absent, when unused).
 

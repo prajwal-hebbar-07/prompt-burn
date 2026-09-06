@@ -271,3 +271,56 @@ describe("buildDashboardSnapshot edge cases", () => {
     });
   });
 });
+
+describe("buildDashboardSnapshot scoped to one project", () => {
+  const inApi = { ...ompEvent("2026-09-02T09:00:00.000", "claude-opus-5", 5, 50), project: "/w/api" };
+  const inWeb = { ...ompEvent("2026-09-02T10:00:00.000", "glm-5.3-flash", 7, 70), project: "/w/web" };
+  // A headerless transcript: real usage, no directory to attribute it to.
+  const unattributed = ompEvent("2026-09-02T11:00:00.000", "claude-opus-5", 9, 90);
+  const events = [inApi, inWeb, unattributed];
+
+  it("offers every project in the period, sorted, and no undefined entry", () => {
+    const all = buildDashboardSnapshot({
+      period: { kind: "today" },
+      ompEvents: [inWeb, inApi, unattributed],
+      cursor: CURSOR_CYCLE,
+      now: NOW,
+    });
+
+    expect(all.projects).toEqual(["/w/api", "/w/web"]);
+    expect(all.project).toBeNull();
+  });
+
+  it("keeps only that project's rows and drops Cursor, which has none", () => {
+    const scoped = buildDashboardSnapshot({
+      period: { kind: "today" },
+      project: "/w/api",
+      ompEvents: events,
+      cursor: CURSOR_CYCLE,
+      now: NOW,
+    });
+
+    expect(scoped.project).toBe("/w/api");
+    // The other project's tokens and the unattributed ones are both out.
+    expect(scoped.omp.tokens).toEqual({ input: 5, output: 50, cacheRead: 100, cacheWrite: 10 });
+    expect(scoped.models.map((row) => [row.source, row.model])).toEqual([["omp", "claude-opus-5"]]);
+    expect(scoped.cursor.tokens).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+    // Nothing to mix: with Cursor out, only OMP's calendar period is on screen.
+    expect(scoped.mixedPeriod).toBe(false);
+    // The picker still lists both, or picking one would empty its own options.
+    expect(scoped.projects).toEqual(["/w/api", "/w/web"]);
+  });
+
+  it("still applies the period inside a project", () => {
+    const yesterday = { ...ompEvent("2026-09-01T09:00:00.000", "claude-opus-5", 3, 3), project: "/w/api" };
+    const scoped = buildDashboardSnapshot({
+      period: { kind: "today" },
+      project: "/w/api",
+      ompEvents: [...events, yesterday],
+      cursor: CURSOR_CYCLE,
+      now: NOW,
+    });
+
+    expect(scoped.omp.tokens.input).toBe(5);
+  });
+});

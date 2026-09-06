@@ -143,6 +143,9 @@ const CURSOR_SLICE: DashboardSnapshot["cursor"] = {
 
 const ALL_TIME: DashboardSnapshot = {
   period: { kind: "all_time" },
+  project: null,
+  // The transcript's `cwd`, the one project this fixture ran in.
+  projects: ["/Users/example/project"],
   // Cursor holds unpriced models, so the combined estimate is unknown — the UI
   // renders `—`, never `$0`, and never Cursor's own cents.
   estimatedCents: null,
@@ -162,6 +165,8 @@ const ALL_TIME: DashboardSnapshot = {
 
 const TODAY: DashboardSnapshot = {
   period: { kind: "today" },
+  project: null,
+  projects: ["/Users/example/project"],
   estimatedCents: null,
   // OMP filters to the Gemini turn; Cursor does not move.
   omp: {

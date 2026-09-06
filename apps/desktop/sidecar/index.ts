@@ -39,11 +39,12 @@ interface Request {
 const METHODS = {
   discover: () => reader.discover(),
   fetch: () => reader.fetch(),
-  getSnapshot: (request: { period?: unknown }) =>
+  getSnapshot: (request: { period?: unknown; project?: unknown }) =>
     reader.getSnapshot(
       typeof request.period === "object" && request.period !== null
         ? (request.period as Parameters<UsageReader["getSnapshot"]>[0])
         : { kind: "all_time" },
+      typeof request.project === "string" ? request.project : null,
     ),
   getSettings: () => reader.getSettings(),
   saveSettings: async (request: { settings?: unknown }) => {

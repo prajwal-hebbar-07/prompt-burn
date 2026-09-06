@@ -82,8 +82,10 @@ picked up until migrations exist.
   `period` CHECK `'event' | 'cycle'`; `timestamp` ISO 8601 UTC for `'event'`, **empty string**
   for `'cycle'` — never a fake time (`CHECK ((period = 'cycle') = (timestamp = ''))`), verified
   by a test that asserts a faked cycle timestamp throws. Stores `model` (canonical id) +
-  `raw_model`, token columns (`input`, `output`, `cache_read`, `cache_write`, default 0), and
-  nullable `session_id`. Indexes: `usage_events_timestamp`, `usage_events_source_model`.
+  `raw_model`, token columns (`input`, `output`, `cache_read`, `cache_write`, default 0),
+  nullable `session_id`, and nullable `project` — the OMP session header's `cwd`, NULL for
+  Cursor rows and headerless transcripts. Indexes: `usage_events_timestamp`,
+  `usage_events_source_model`, `usage_events_project`.
 - `price_entries` — rates in USD per million tokens, versioned by validity window. `id`
   INTEGER AUTOINCREMENT; `model`, `provider`, `effective_from` NOT NULL, `effective_until`
   nullable; the four rate columns, with cache columns nullable where the vendor publishes no
@@ -200,10 +202,12 @@ Vitest (`pnpm --filter @prompt-burn/db test`), two files, all against throwaway 
 - **Changing a rate:** never UPDATE the rate columns of an old row in production data; close
   it with `effective_until` and insert a new row with a new `effective_from`. That is the
   invariant retroactive pricing is built on.
-- **Changing the schema:** edit `SCHEMA_SQL` in `schema.ts` knowing it only applies to new files. Until a
-  migration runner exists, existing users pick it up only by deleting the file — and the
-  header comment in `schema.ts` asks for a runner the moment there is a second user with the
-  old schema on disk.
+- **Changing the schema:** edit `SCHEMA_SQL` in `schema.ts` knowing it only applies to new
+  files. There is still no migration runner; the one hand-written migration is
+  `addProjectColumn` in `index.ts`, which adds `usage_events.project` to an older file, keeps
+  every row, and clears `omp_sync_state` so the next fetch re-reads the transcripts and the
+  sync's upsert backfills the column. Follow that shape — additive column, no data loss, a
+  re-read to fill it — or write the runner the `schema.ts` header asks for.
 - **Keeping the divergence:** `node:sqlite` over `better-sqlite3` is deliberate; do not add
   the dependency "for features". If a `node:sqlite` limitation ever forces the change, it
   should be a visible decision, not a quiet one.

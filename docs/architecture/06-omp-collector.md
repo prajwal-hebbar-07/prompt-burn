@@ -61,10 +61,10 @@ flowchart TD
     F -- no --> H[scanOmpSessionFile path, knownOffset or 0]
     H --> I[read whole file as UTF-8]
     I --> J{line type session?}
-    J -- yes --> K[remember session uuid]
+    J -- yes --> K[remember session uuid + cwd]
     J -- no --> L{message / assistant / usage?}
     L -- yes --> M[toUsageEvent]
-    M --> N[INSERT OR IGNORE usage_events]
+    M --> N[upsert usage_events: insert, or backfill a NULL project]
     K --> N
     N --> O[upsert omp_sync_state: path, mtime, offset]
     G & O --> P{more files?}
@@ -79,7 +79,8 @@ events concatenated. It predates the sync and is the "read everything" path.
 
 **What an OMP transcript line carries** (cross-checked against
 [`docs/data-shapes.md`](../data-shapes.md) § OMP — the code agrees). The parser reads:
-`type` (a `type: "session"` header first-ish in the file carries `id`, the session uuid),
+`type` (a `type: "session"` header first-ish in the file carries `id`, the session uuid, and
+`cwd`, the project the usage belongs to),
 and `type: "message"` lines where `message.role === "assistant"` and `message.usage`
 exists. From a usage line: top-level `timestamp` (ISO 8601 UTC) and `message.model` (no
 provider prefix) must be strings, `message.usage.input` / `output` / `cacheRead` /
@@ -110,11 +111,14 @@ unparsable lines inside that range are skipped silently.
   This is what makes the second sync cheap.
 - A grown file resumes at its stored offset; a file that shrank was rewritten, not
   appended to, so it restarts from byte 0.
-- Rows go in with `INSERT OR IGNORE` on the stable id, so replays (rewritten file, torn
-  tail re-read, two files sharing an id) cannot duplicate. `OmpSyncResult.insertedEvents`
-  counts actual rows written; duplicates count zero.
-- `INSERT OR IGNORE` on `usage_events` with `period = 'event'`; `omp_sync_state` is upserted
-  after each file. A file deleted between `readdirSync` and `statSync` is skipped.
+- Rows go in with an upsert on the stable id, so replays (rewritten file, torn tail re-read,
+  two files sharing an id) cannot duplicate. The `ON CONFLICT` clause only fires where the
+  stored row's `project` is NULL and the parsed one is not — the backfill path after the
+  `project` migration cleared `omp_sync_state`. Everything else is left alone, so
+  `OmpSyncResult.insertedEvents` still counts rows actually written and a plain re-read
+  counts zero.
+- Rows land with `period = 'event'`; `omp_sync_state` is upserted after each file. A file
+  deleted between `readdirSync` and `statSync` is skipped.
 
 **Missing directory is not an error** for either entry point: OMP simply has not run on
 this machine, and both return empty results.

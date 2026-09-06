@@ -137,18 +137,22 @@ Usage rows store **tokens and timestamps, not cost.** Cost is computed at displa
 
 ## Screens
 
-Two routes. **No Projects view. No onboarding.** Open → Dashboard.
+Two routes. **No Projects view. No onboarding.** Open → Dashboard. Projects are a filter on
+the Dashboard, not a screen of their own.
 
 ### Dashboard
 
 1. **Chrome:** Prompt Burn · Dashboard / Settings · Fetch data · fetch status · trust line *Local only · nothing leaves this device*
 2. **Period bar:** Today · This month · All time · Date range
-3. **Mixed-scope footnote** when Cursor is Pro (violet-leaning callout): cycle dates + “period filters apply to OMP only”
-4. **Hero:** combined estimated cost, OMP subtotal, Cursor subtotal (with cycle label if Pro), token breakdown
-5. **By-model table:** Model, Source (OMP / Cursor), tokens, estimated cost
-6. **Usage limits:** provider clocks — Claude 5-hour / 7-day per account, Ollama Cloud session / weekly, Cursor's included pools against its cycle. Captioned *Provider clocks · not estimated cost · not period-filtered*
+3. **Project filter:** All projects, or one OMP working directory (the session header's `cwd`).
+   Hidden while there is only one project. Cursor reports no directory, so picking a project
+   drops Cursor's rows and the callout says so — never a $0 that reads like Cursor idled.
+4. **Mixed-scope footnote** when Cursor is Pro (violet-leaning callout): cycle dates + “period filters apply to OMP only”
+5. **Hero:** combined estimated cost, OMP subtotal, Cursor subtotal (with cycle label if Pro), token breakdown
+6. **By-model table:** Model, Source (OMP / Cursor), tokens, estimated cost
+7. **Usage limits:** provider clocks — Claude 5-hour / 7-day per account, Ollama Cloud session / weekly, Cursor's included pools against its cycle. Captioned *Provider clocks · not estimated cost · not period-filtered*
 
-The cycle window, its tokens and its cost all live in items 3–5 already, so there is no
+The cycle window, its tokens and its cost all live in items 4–6 already, so there is no
 separate Cursor cycle card at the bottom of the screen.
 
 ### Settings
