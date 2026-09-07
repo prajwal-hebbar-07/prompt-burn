@@ -81,6 +81,8 @@ type CursorSnapshot =
       mode: "cycle_aggregate";
       cycleStart: string;
       cycleEnd: string;
+      // Present when the rows were narrowed to a period rather than the cycle
+      window?: { start: string; end: string };
       models: ModelAggregate[];
     }
   // Enterprise path, unimplemented
@@ -98,8 +100,10 @@ interface DashboardSnapshot {
   omp: SourceTotals;
   cursor: SourceTotals & {
     mode: CursorSnapshot["mode"];
-    /** e.g. "Cycle to date". */
+    /** e.g. "Cycle to date" — only while the rows are the whole cycle. */
     cycleLabel?: string;
+    /** The window Cursor answered for, when the period was askable. */
+    window?: { start: string; end: string };
   };
   /** Rows keyed (source, model); same model twice is expected. */
   models: Array<
@@ -108,7 +112,8 @@ interface DashboardSnapshot {
       estimatedCents: number | null;
     }
   >;
-  /** Cursor is cycle-only while the period is not all-time-equivalent. */
+  /** A Cursor cycle is standing against a narrower period — and is excluded
+   *  from `estimatedCents` while it is. */
   mixedPeriod: boolean;
   fetch: {
     lastSuccessAt: string | null;
@@ -185,7 +190,9 @@ Three steps, all inside the package:
 3. **Aggregation** (`aggregate.ts`). `buildDashboardSnapshot` filters OMP events by period,
    rolls each source into per-model rows and a subtotal via `rollup`, and assembles the
    snapshot. `cycle_aggregate` Cursor data is used exactly as fetched — no timestamps, so never
-   filtered; `events` mode takes the same filter as OMP.
+   filtered here; the collector is what narrowed it, and `window` says whether it did. Rows that
+   are still cycle-wide against a narrower period set `mixedPeriod` and drop out of
+   `estimatedCents`. `events` mode takes the same filter as OMP.
 
 Costs are never computed here: every `estimatedCents` in a snapshot is `null` at this commit
 (the price DB lives in `packages/db` and is wired later); the UI renders `null` as `—`, never
@@ -211,9 +218,12 @@ Date(y, m, d)` on the local wall clock. In IST, local midnight 1 Jan is 18:30 UT
   (Auto) stay as rows — an unpriceable model must remain visible, not vanish.
 - **Sources are never deduped in totals.** Combined usage is the plain sum of the two
   subtotals.
-- **Cursor cycle scope never shrinks.** `cycle_aggregate` numbers are identical under every
-  period; the snapshot flags the mismatch with `mixedPeriod = true` for every period except
-  `all_time`, and always footnotes it with `cycleLabel: "Cycle to date"`.
+- **Cursor scope is the collector's, never trimmed here.** `cycle_aggregate` rows are used as
+  fetched: `window` present means they already cover the period, so `mixedPeriod` is false and
+  they count in the combined total. `window` absent means they are cycle-wide, so every period
+  except `all_time` sets `mixedPeriod = true`, footnotes `cycleLabel: "Cycle to date"`, and the
+  combined `estimatedCents` is OMP's alone — a cycle total is not part of a day's cost, and its
+  unpriced rows cannot blank a number they are outside of.
 - **Cursor cache keys are optional.** `TokenCounts.cacheRead/cacheWrite` may be absent (Cursor
   omits them when zero); aggregation treats absent as 0.
 - **Aggregation never invents fetch state.** `fetch` defaults to `{ lastSuccessAt: null,
@@ -267,13 +277,14 @@ configuration exist and both are about _tests_, not runtime:
   stays); OMP ids and unknown strings pass through; a bare suffix is kept verbatim; idempotence
   over representative inputs.
 - **`aggregate.test.ts`** — with a fixed injected `now` (2 Sep 2026, 18:00 IST): OMP filtered
-  by the period while the Cursor cycle is identical under today and all-time; combined totals
+  by the period while a cycle-wide Cursor is identical under today and all-time; combined totals
   are the plain sum without dedupe; `mixedPeriod` true for today/this_month/range and false
-  only for all-time, with the cycle label always set; rows keyed `(source, model)` so
-  `claude-opus-5` appears twice; every cost `null`; fetch defaults to idle. Edge cases: empty
-  inputs give zero totals, no rows, and still `mixedPeriod: true`; Cursor `events` mode is
-  filtered like OMP with no cycle label and `mixedPeriod: false`; an explicit `fetch` object
-  passes through untouched.
+  only for all-time, with the cycle label set only while the rows are cycle-wide; rows keyed
+  `(source, model)` so `claude-opus-5` appears twice; every cost `null`; fetch defaults to idle.
+  Edge cases: empty inputs give zero totals, no rows, and still `mixedPeriod: true`; Cursor
+  `events` mode is filtered like OMP with no cycle label and `mixedPeriod: false`; a windowed
+  Cursor counts in the total, carries `window`, and has no cycle label; an unpriced cycle row
+  cannot blank a total it is excluded from; an explicit `fetch` object passes through untouched.
 
 **Not covered:** `this_month` in a DST-transitioning timezone (IST has none, so the DST-rolling
 claim is untested); unparsable-timestamp events under bounded periods (the "survive only
@@ -301,9 +312,9 @@ claim is untested); unparsable-timestamp events under bounded periods (the "surv
 - **Cursor `events` mode is a contract placeholder.** The Enterprise path (`crsr_` admin key)
   is unimplemented; the union arm exists so adding it later is not a breaking change. It is
   tested only with synthetic events.
-- **`CursorSnapshot.cycleStart/cycleEnd` are stored but unused by aggregation** — the cycle
-  window does not bound the Cursor rollup by design (the cycle never shrinks). A future change
-  that tries to intersect the cycle with the period would break the `mixedPeriod` contract.
+- **`CursorSnapshot.cycleStart/cycleEnd` are labels, not bounds** — aggregation never intersects
+  them with the period. Narrowing is the collector's job and arrives as `window`; anything that
+  tries to trim rows here instead would break the `mixedPeriod` contract in both directions.
 
 ## 10. Change guide
 

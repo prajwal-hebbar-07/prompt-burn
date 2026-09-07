@@ -18,6 +18,7 @@
  *   claude-opus-5 (OMP)     2·$5 + 105·$25 + 37378·$0.50 + 463·$6.25 = 2.421775¢
  *   gemini-3.8-flash (OMP)  4159·$0.75 + 155·$3.75 + 187535·$0.075   = 1.7765625¢
  *   claude-opus-5 (Cursor)  164·$5 + 82300·$25 + 7.35M·$0.50 + 778k·$6.25 = 1059.582¢
+ *   grok-4.6-high (window)  675956·$2 + 45332·$6 + 6.02816M·$0.50    = 463.7984¢
  *
  * Gemini's `reasoningTokens: 110` is not a fifth billed kind — output already
  * includes thinking — so it never appears in a token total here.
@@ -40,6 +41,7 @@ const OMP_LINES = [fixture("omp-session-line.json"), fixture("omp-gemini-session
 );
 const SUMMARY = fixture("cursor-usage-summary.json");
 const AGGREGATES = fixture("cursor-cycle-aggregates.json");
+const WINDOW_AGGREGATES = fixture("cursor-window-aggregates.json");
 
 const SESSION_HEADER = JSON.stringify({
   type: "session",
@@ -170,6 +172,20 @@ const ALL_TIME: DashboardSnapshot = {
   fetch: { lastSuccessAt: null, status: "idle" },
 };
 
+/** The one row Cursor answers with for today's window, priced at xAI's rates. */
+const CURSOR_WINDOW_ROW: DashboardSnapshot["models"][number] = {
+  source: "cursor",
+  model: "cursor-grok-4.6-high",
+  tokens: { input: 675_956, output: 45_332, cacheRead: 6_028_160 },
+  estimatedCents: 463.7984,
+};
+
+/**
+ * Today, with Cursor answering for the same day: the rows are the window's,
+ * the cycle label is gone because they are not the cycle, the cycle dates
+ * survive for the footnote, and the combined estimate is a real sum of two
+ * numbers that describe one day.
+ */
 const TODAY: DashboardSnapshot = {
   period: { kind: "today" },
   // Today keeps only the Gemini turn, so the project shrinks with it.
@@ -181,17 +197,39 @@ const TODAY: DashboardSnapshot = {
       models: [OMP_GEMINI],
     },
   ],
-  estimatedCents: null,
-  // OMP filters to the Gemini turn; Cursor does not move.
+  estimatedCents: 465.5749625,
   omp: {
     estimatedCents: 1.7765625,
     tokens: { input: 4159, output: 155, cacheRead: 187_535, cacheWrite: 0 },
   },
+  cursor: {
+    estimatedCents: 463.7984,
+    tokens: { input: 675_956, output: 45_332, cacheRead: 6_028_160, cacheWrite: 0 },
+    mode: "cycle_aggregate",
+    cycleStart: "2026-08-26T07:25:29.000Z",
+    cycleEnd: "2026-09-26T07:25:29.000Z",
+    // Local midnight to `NOW`, in IST: the period's own bounds, clamped to the
+    // present rather than run out to the period's future midnight.
+    window: { start: "2026-09-03T18:30:00.000Z", end: NOW.toISOString() },
+    included: { autoPercentUsed: 19.575555555555553, apiPercentUsed: 32.74074074074074 },
+  },
+  models: [OMP_GEMINI, CURSOR_WINDOW_ROW],
+  mixedPeriod: false,
+  limits: [],
+  fetch: { lastSuccessAt: null, status: "idle" },
+};
+
+/**
+ * The same day when Cursor refuses the window: the cycle comes back, labelled
+ * as the cycle, and the hero total is OMP's alone — a 30-day figure is not part
+ * of one day, and its unpriced rows no longer blank the number either.
+ */
+const TODAY_CYCLE_ONLY: DashboardSnapshot = {
+  ...TODAY,
+  estimatedCents: 1.7765625,
   cursor: CURSOR_SLICE,
   models: [OMP_GEMINI, ...CURSOR_ROWS],
   mixedPeriod: true,
-  limits: [],
-  fetch: { lastSuccessAt: null, status: "idle" },
 };
 
 let root: string;
@@ -239,15 +277,23 @@ function rounded(snapshot: DashboardSnapshot): DashboardSnapshot {
   };
 }
 
-async function snapshots(): Promise<Record<"allTime" | "today", DashboardSnapshot>> {
+async function snapshots(
+  windowStatus = 200,
+): Promise<Record<"allTime" | "today", DashboardSnapshot>> {
   const reader = createUsageReader(db, {
     ompDirectory: sessions,
     cursorStatePath: statePath,
-    // Cycle aggregates carry no timestamp and price at "now"; the bundled rates
-    // are open-ended from 1970, so this is the rate in force.
+    // Cursor aggregates carry no timestamp and price at "now"; the bundled
+    // rates are open-ended from 1970, so this is the rate in force.
     now: () => NOW,
-    fetchImpl: (async (url: string | URL | Request) =>
-      new Response(String(url).endsWith("/api/usage-summary") ? SUMMARY : AGGREGATES)) as unknown as typeof fetch,
+    // The aggregate endpoint is two answers in one, exactly as cursor.com
+    // behaves: `{}` is the cycle, a body carrying `startDate` is the window.
+    fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/api/usage-summary")) return new Response(SUMMARY);
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (body.startDate === undefined) return new Response(AGGREGATES);
+      return new Response(WINDOW_AGGREGATES, { status: windowStatus });
+    }) as unknown as typeof fetch,
   });
 
   const pass = await reader.fetch();
@@ -266,11 +312,18 @@ it("locks the all-time snapshot for both OMP lines plus the Cursor cycle", async
   expect(rounded(allTime)).toEqual(ALL_TIME);
 });
 
-it("filters OMP by the calendar day while the Cursor cycle stays whole", async () => {
+it("filters both sources to the calendar day when Cursor answers for it", async () => {
   const { allTime, today } = await snapshots();
 
   expect(rounded(today)).toEqual(TODAY);
-  // The same cycle totals, byte for byte, under a different period: cycle
-  // aggregates are never shrunk to the window, and never split into days.
-  expect(today.cursor).toEqual(allTime.cursor);
+  // All-time still gets the whole cycle: Cursor refuses an unbounded window,
+  // so that period is the one place a cycle total stands in for everything.
+  expect(allTime.cursor.window).toBeUndefined();
+  expect(allTime.cursor.tokens.input).toBe(13_006_167);
+});
+
+it("falls back to the whole cycle, out of the total, when the window fails", async () => {
+  const { today } = await snapshots(503);
+
+  expect(rounded(today)).toEqual(TODAY_CYCLE_ONLY);
 });

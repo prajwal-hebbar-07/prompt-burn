@@ -13,7 +13,7 @@ Product decisions live in [product.md](product.md). This file is the build seque
 | Sources | OMP + Cursor only |
 | Metric | Estimated PAYG cost from tokens × our price DB. Not subscription invoices. |
 | OMP accounts | Do not split Claude Pro / Ollama Cloud by account. Model-level breakdown is enough. |
-| Cursor Pro | Cycle-to-date per-model aggregates. Calendar filters do **not** apply. Label **“Cycle to date”**. |
+| Cursor Pro | Per-model aggregates, never events. Calendar filters **do** apply — `startDate` / `endDate` narrow them server-side. All time cannot be asked and shows the billing cycle, label **“Cycle to date”**. |
 | Cursor Enterprise | Optional `crsr_` admin key unlocks per-event timestamps and calendar filters. **Not in this plan** — leave the type union open; implement when a key exists. |
 | Filters | Today, This month (calendar month, not rolling 30 days), All time, Date range (single day = same start and end). Device timezone. Inclusive end day in UI; exclusive next-day 00:00 in code. |
 | Combined total | Always shown. Per-source subtotals always shown. No dedupe across OMP + Cursor. |
@@ -25,19 +25,26 @@ Product decisions live in [product.md](product.md). This file is the build seque
 | VS Code | Opens as an **editor tab** (full width), not a sidebar. |
 | Trust | Local only. Never persist Cursor auth tokens in our DB. |
 
-> **Spike finding (2026-09-02):** the Cursor Pro row is wrong — the dashboard API accepts
-> `startDate` / `endDate` and serves pre-cycle windows too (still aggregates, not events).
-> See [data-shapes.md](data-shapes.md#finding-cursor-pro-does-accept-date-windows). Not acted on;
-> cycle-aggregate mode remains the correct subset either way.
+> **Spike finding (2026-09-02), acted on (2026-09-07):** the Cursor Pro row used to say calendar
+> filters do not apply. The dashboard API accepts `startDate` / `endDate` and serves pre-cycle
+> windows too (still aggregates, not events).
+> See [data-shapes.md](data-shapes.md#finding-cursor-pro-does-accept-date-windows). Landed as
+> commit 40; all-time still sends `{}`, because an unbounded window is refused.
 
 ### Combined total when periods differ
 
-Cursor Pro is always cycle-to-date. When the user picks Today / This month / Date range:
+Today / This month / Date range each ask Cursor for their own window, so both sources describe
+the same days and the grand total is their sum.
+
+When Cursor cannot answer for the window — signed out, HTTP failure, a refused window — the
+billing cycle is all that is on hand:
 
 - OMP total = filtered
-- Cursor total = cycle-to-date (unchanged)
-- Grand total = OMP(filtered) + Cursor(cycle)
-- Hero subtitle must say so, e.g. `OMP: Today · Cursor: cycle to date`
+- Cursor total = cycle-to-date (unchanged), on its own row
+- Grand total = OMP(filtered) **only**; the cycle is excluded, not added
+- Hero subtitle must say so, e.g. `OMP: Today · Cursor: cycle to date (not in total)`
+
+All time counts the cycle: the scopes do not clash there.
 
 Never invent daily splits from cycle aggregates.
 
@@ -282,6 +289,12 @@ One version, one button. Everything here is repo plumbing: no product behaviour 
 | 38 | `feat(ui): add the usage limits panel` | Provider clocks: Claude's 5-hour / 7-day per account out of OMP's `usage_history`, Cursor's included pools off `/api/usage-summary`, Ollama Cloud's honest blank. `DashboardSnapshot.limits`, never priced, never period-filtered. | Percentages can never read as cost; an ended window shows `—`, not a stale number |
 | 39 | `feat(collectors): fetch Ollama Cloud session and weekly clocks` | Undocumented `GET ollama.com/api/usage` with the `ollama login` key from OMP's `auth_credentials`; replaces commit 38's written "unavailable" card with the real fractions. Fixture `docs/fixtures/ollama-usage.json`. | Key never stored or logged; a failure loses one card, not the pass |
 
+### Phase 12 — Cursor follows the calendar
+
+| # | Commit | What lands | Review focus |
+|---|--------|------------|--------------|
+| 40 | `feat(reader): fetch Cursor per period and scope the total` | `fetchCursorWindowAggregate` sends the period's own `startDate` / `endDate`; `createUsageReader` resolves one window per period (memoised, cleared on every fetch) and falls back to the cycle; `CursorSnapshot.window` drives `mixedPeriod`, which now also keeps a cycle total out of `estimatedCents`. Fixture `docs/fixtures/cursor-window-aggregates.json`. | A day's total may never contain a cycle; a failed window degrades to the cycle instead of failing the snapshot; all-time still sends `{}` |
+
 ---
 
 ## PR grouping
@@ -297,6 +310,7 @@ One version, one button. Everything here is repo plumbing: no product behaviour 
 | 7 Polish | 28–30 | Settings writes, errors, goldens |
 | 8 Release | 31–37 | One version source, CI checks, published desktop + VS Code artifacts |
 | 9 Limits | 38–39 | Provider usage clocks |
+| 10 Cursor periods | 40 | Cursor answers for the period; scoped totals |
 
 ---
 

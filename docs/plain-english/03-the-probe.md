@@ -44,7 +44,7 @@ rather than as numbers, with the cache entries simply missing when they are zero
 The headline: both wells hold what the design assumed. The dashboard is viable. That was the
 one question the probe existed to answer, and the answer was yes.
 
-## But one reading contradicts the plan
+## One reading contradicted the plan — and the plan lost
 
 The plan had locked in a decision: for Cursor, only whole billing cycles can be shown — no
 date ranges. The probe tested that and found it wrong, at least on this account: the spending
@@ -52,10 +52,13 @@ report happily accepts a start and end date and returns the narrowed numbers. On
 range may not cross either of two specific dates in Cursor's history, so an all-time view
 would need up to three separate requests stitched together.
 
-Flagged, not fixed. Changing the plan is a product decision — it affects labels, banners, and
-which buttons make sense — so the finding was written down and pointed to from the planning
-documents, and for now the dashboard will be built cycle-only anyway. The narrow version is
-correct whether or not the wider one ever ships.
+Flagged first, then fixed. Changing the plan was a product decision — it affects labels,
+banners, and which buttons make sense — so the finding sat written down and pointed at from the
+planning documents until that decision was made. It was made on 7 September 2026, after the
+reading was re-taken and still held: the dashboard now asks Cursor for the days you picked.
+All-time still shows the billing cycle, because that is the one request Cursor refuses, and the
+three-requests-stitched-together workaround leans on two dates that only exist inside an error
+message — not something worth writing into the code.
 
 ## The honest parts
 

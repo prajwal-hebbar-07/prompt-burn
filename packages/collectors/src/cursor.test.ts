@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { CursorToken } from "./index.js";
-import { fetchCursorCycle } from "./index.js";
+import { fetchCursorCycle, fetchCursorWindowAggregate } from "./index.js";
 
 const SUMMARY = readFileSync(
   new URL("../../../docs/fixtures/cursor-usage-summary.json", import.meta.url),
@@ -171,5 +171,56 @@ describe("fetchCursorCycle", () => {
       "https://cursor.com/api/dashboard/get-aggregated-usage-events": "{}",
     });
     await expect(fetchCursorCycle(SESSION, impl)).rejects.toThrow("aggregations");
+  });
+});
+
+describe("fetchCursorWindowAggregate", () => {
+  const START = Date.UTC(2026, 8, 2, 0, 0, 0);
+  const END = Date.UTC(2026, 8, 2, 18, 0, 0);
+
+  it("asks Cursor for one window and maps the rows it answers with", async () => {
+    const { impl, calls } = stubFetch({
+      "https://cursor.com/api/dashboard/get-aggregated-usage-events": JSON.stringify({
+        aggregations: [
+          {
+            modelIntent: "cursor-grok-4.6-high-fast",
+            inputTokens: "680000",
+            outputTokens: "50000",
+            cacheReadTokens: "6030000",
+            totalCents: 462.21,
+          },
+        ],
+      }),
+    });
+
+    const aggregate = await fetchCursorWindowAggregate(SESSION, { start: START, end: END }, impl);
+
+    // One call: cycle dates and plan percentages do not move with the period.
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://cursor.com/api/dashboard/get-aggregated-usage-events",
+    ]);
+    // Epoch milliseconds as strings, and the individual account.
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      teamId: 0,
+      startDate: String(START),
+      endDate: String(END),
+    });
+    expect(aggregate).toEqual({
+      window: { start: "2026-09-02T00:00:00.000Z", end: "2026-09-02T18:00:00.000Z" },
+      // Canonicalized exactly as the cycle rows are: `-high-fast` collapses.
+      models: [
+        {
+          model: "cursor-grok-4.6-high",
+          tokens: { input: 680_000, output: 50_000, cacheRead: 6_030_000 },
+        },
+      ],
+    });
+  });
+
+  it("throws when Cursor refuses the window, so the caller can fall back", async () => {
+    const { impl } = stubFetch({}, 400);
+    await expect(
+      fetchCursorWindowAggregate(SESSION, { start: START, end: END }, impl),
+    ).rejects.toThrow("400");
   });
 });

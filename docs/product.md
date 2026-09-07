@@ -36,7 +36,7 @@ Two sources only.
 | Source | What we read | Time grain | Cost |
 |--------|----------------|------------|------|
 | **OMP** (Oh My Pi) | Session logs under `~/.omp/agent/sessions/` | Per-event timestamps | Tokens × our price DB |
-| **Cursor (Pro, default)** | Dashboard API cycle aggregates (`GetAggregatedUsageEvents`), auth from local `state.vscdb` | **Billing cycle only** — labeled **“Cycle to date”** | Same price DB |
+| **Cursor (Pro, default)** | Dashboard API per-model aggregates (`GetAggregatedUsageEvents`), auth from local `state.vscdb` | **Any window we ask for** — `startDate` / `endDate` narrow it, so calendar filters apply; all-time falls back to the cycle, labeled **“Cycle to date”** | Same price DB |
 | **Cursor (Enterprise, optional)** | Admin API usage events with a `crsr_` key | Per-event timestamps → calendar filters work | Same price DB |
 
 OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split usage or cost by account.** Model-level breakdown is enough. Provider *limits* are the exception, because a 5-hour window belongs to one subscription and not to a model — those are shown per account, named by the email OMP recorded for it, because the reason to read the panel is to decide which account to pin next. An account with no email on record falls back to `Account A` / `Account B`.
@@ -57,7 +57,7 @@ Cursor **subscription remaining and included-pool percentages are quoted on the 
 
 Never treat Cursor dashboard cents as the product’s source of truth unless we later choose them as a cross-check. Provider limit percentages live on their own panel and may never appear inside a cost number.
 
-**Combined total:** OMP (filtered) + Cursor (cycle or filtered). **No dedupe** across sources. Same work in both tools can inflate the grand total; that is accepted.
+**Combined total:** OMP (filtered) + Cursor (the same window, when Cursor could answer for it). When all Cursor has is its billing cycle against a narrower period, the cycle is **excluded** from the combined total and shown on its own row instead — adding a month to a day is not a cost. **No dedupe** across sources. Same work in both tools can inflate the grand total; that is accepted.
 
 **By-model table:** rows keyed by `(source, model)`. Same model on OMP and Cursor = two rows.
 
@@ -76,24 +76,29 @@ Device **local timezone**. No timezone setting.
 
 ### Cursor vs calendar filters
 
-| Cursor mode | Today / This month / Date range / All time |
-|-------------|--------------------------------------------|
-| **Pro (no admin key)** | **Do not apply.** Cursor stays **cycle to date**. Period filters apply to **OMP only**. |
-| **Enterprise + `crsr_` key** | Cursor events participate in the same period as OMP. |
+| Cursor mode | Today / This month / Date range | All time |
+|-------------|---------------------------------|----------|
+| **Pro (no admin key)** | **Apply.** The window goes to `get-aggregated-usage-events` as `startDate` / `endDate`, and Cursor answers for those days. | Cannot be asked — Cursor refuses a window spanning its own backend boundaries — so it stays **cycle to date**. |
+| **Pro, window unavailable** (signed out, HTTP failure, refused window) | Cursor falls back to the cycle, period filters apply to **OMP only**, and the cycle is **not in the total**. | Same as above. |
+| **Enterprise + `crsr_` key** | Cursor events participate in the same period as OMP. | Every stored event. |
 
-> **Spike finding (2026-09-02):** the Pro row above is factually wrong for the API as it exists
-> today — `get-aggregated-usage-events` accepts `startDate` / `endDate` and returns narrowed
-> per-model aggregates, including windows before the current cycle. Still aggregates, never
-> events. See [data-shapes.md](data-shapes.md#finding-cursor-pro-does-accept-date-windows).
-> Behaviour is unchanged until this is decided.
+> **Acted on (2026-09-07):** the Pro row above used to say calendar filters do not apply. The
+> spike disproved it — `get-aggregated-usage-events` accepts `startDate` / `endDate` and returns
+> narrowed per-model aggregates, including windows before the current cycle. Still aggregates,
+> never events. See [data-shapes.md](data-shapes.md#finding-cursor-pro-does-accept-date-windows).
 
-When scopes differ, the hero **must** say so, e.g.:
+When Cursor answers for the period, one scope is on screen and the hero names it:
 
-`Estimated total · OMP: Today · Cursor: cycle to date`
+`Estimated total · Today`
+
+When it could not, the hero **must** name both scopes and say which one the number is:
+
+`Estimated total · OMP: Today · Cursor: cycle to date (not in total)`
 
 Never invent daily splits from cycle aggregates. Store cycle rows with `period = 'cycle'` and no fake timestamps.
 
-**All time (Pro):** OMP = every stored event. Cursor = current billing cycle only. Label that, or keep the cycle footnote visible.
+**All time (Pro):** OMP = every stored event. Cursor = current billing cycle only, counted in the
+total there because the scopes do not clash. Keep the cycle footnote visible.
 
 ---
 
@@ -143,7 +148,7 @@ Three routes. **No onboarding.** Open → Dashboard.
 
 1. **Chrome:** Prompt Burn · Dashboard / Projects / Settings · Fetch data · fetch status · trust line *Local only · nothing leaves this device*
 2. **Period bar:** Today · This month · All time · Date range
-3. **Mixed-scope footnote** when Cursor is Pro (violet-leaning callout): cycle dates + “period filters apply to OMP only”
+3. **Cursor footnote** (violet-leaning callout): the billing cycle dates, plus either “Cursor follows the period filter” or, when only the cycle is on hand, “period filters apply to OMP only · Cursor is not in the total”
 4. **Hero:** combined estimated cost, OMP subtotal, Cursor subtotal (with cycle label if Pro), token breakdown
 5. **By-model table:** Model, Source (OMP / Cursor), tokens, estimated cost
 6. **Usage limits:** provider clocks — Claude 5-hour / 7-day per account, Ollama Cloud session / weekly, Cursor's included pools against its cycle. Captioned *Provider clocks · not estimated cost · not period-filtered*
@@ -230,7 +235,7 @@ Until explicitly asked:
 | Partial failure | Banner naming which source failed; remaining data stays |
 | Unknown model price | `—` in cost cell; Settings lists the model |
 | Cursor not installed / no token | Cursor section degraded; OMP still works |
-| Mixed period (Pro + Today) | Hero subtitle names both scopes; Cursor numbers do not shrink to “today” |
+| Cursor window unavailable (Pro + Today) | Hero subtitle names both scopes and says the cycle is not in the total; the cycle number stays on its own row |
 | Provider limit window already reset | `—` and “window ended”, never the finished window's percentage |
 | OMP has not refreshed a provider clock in 30 min | The account line admits it: `you@example.com · as of 09:12` |
 | Provider never answered (no key, dead endpoint) | No card for it at all — never a comfortable `0%`. An Ollama failure does not fail the fetch |
@@ -243,6 +248,6 @@ The product is doing its job when, on one machine:
 
 1. Opening the desktop app or the VS Code tab fetches once and shows estimated cost plus tokens.
 2. Clicking Fetch updates numbers without the screen going blank.
-3. Today / this month / date range change **OMP** correctly in local timezone; Cursor Pro stays cycle-to-date and is labeled as such.
+3. Today / this month / date range change **OMP** correctly in local timezone, and Cursor either answers for the same window or falls back to the cycle, labeled as such and left out of the total.
 4. Adding a missing model price in Settings changes historical estimated cost on the next snapshot.
 5. Reinstalling the app or extension still uses `~/.prompt-burn/db.sqlite`.

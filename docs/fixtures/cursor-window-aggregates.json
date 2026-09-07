@@ -1,0 +1,16 @@
+{
+  "aggregations": [
+    {
+      "modelIntent": "cursor-grok-4.6-high",
+      "inputTokens": "675956",
+      "outputTokens": "45332",
+      "cacheReadTokens": "6028160",
+      "totalCents": 462.2105,
+      "tier": 2
+    }
+  ],
+  "totalInputTokens": "675956",
+  "totalOutputTokens": "45332",
+  "totalCacheReadTokens": "6028160",
+  "totalCostCents": 462.2105
+}

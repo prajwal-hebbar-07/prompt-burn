@@ -3,10 +3,11 @@
  * the UI renders.
  *
  * Two scopes meet here. OMP events are timestamped and obey the calendar
- * period; Cursor Pro returns cycle-to-date aggregates with no timestamps, so
- * they are passed through untouched — never filtered, never split into days.
- * When those scopes differ the snapshot says so via `mixedPeriod`, and the hero
- * copy names both.
+ * period; Cursor aggregates are timestamp-free, so they are used exactly as
+ * the collector fetched them — narrowed to the period when it asked Cursor for
+ * that window, cycle-wide when it could not. Cycle-wide rows against a
+ * narrower period are flagged `mixedPeriod` and kept out of `estimatedCents`:
+ * a 30-day cycle total added to one day of OMP spend is not a day's cost.
  *
  * Costs are derived, never stored: the host injects `priceCents`, which resolves
  * one part's rate out of `price_entries` and returns cents, or `null` when the
@@ -197,22 +198,36 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
       : cursor.models.map(({ model, tokens }) => ({ model, tokens, timestamp: "" }));
   const cursorRollup = rollup("cursor", cursorParts, priceCents);
 
+  // Cursor's rows are cycle-wide unless the collector narrowed them to a
+  // window. While they are cycle-wide and the period is not all-time, the two
+  // scopes genuinely differ — and a cycle total is then excluded from the
+  // combined figure rather than added to a day's OMP spend.
+  const cursorWindow = cursor.mode === "cycle_aggregate" ? cursor.window : undefined;
+  const cycleWide = cursor.mode === "cycle_aggregate" && cursorWindow === undefined;
+  const mixedPeriod = cycleWide && period.kind !== "all_time";
+
   return {
     period,
     // Same calendar scope as everything else on the screen: the projects are
     // rolled from the period-filtered events, never from the whole history.
     projects: rollupProjects(inPeriod, priceCents),
-    estimatedCents: addCents(omp.totals.estimatedCents, cursorRollup.totals.estimatedCents),
+    // Only what the period covers. Cursor out of scope means OMP alone here;
+    // its own subtotal still carries the cycle number.
+    estimatedCents: mixedPeriod
+      ? omp.totals.estimatedCents
+      : addCents(omp.totals.estimatedCents, cursorRollup.totals.estimatedCents),
     omp: omp.totals,
     cursor: {
       ...cursorRollup.totals,
       mode: cursor.mode,
-      // The window is carried for labelling only; it never bounds the rollup.
+      // The cycle window is carried for labelling either way; the cycle
+      // *label* claims the rows are cycle-wide, so it goes when they are not.
       ...(cursor.mode === "cycle_aggregate"
         ? {
-            cycleLabel: CURSOR_CYCLE_LABEL,
+            ...(cycleWide ? { cycleLabel: CURSOR_CYCLE_LABEL } : {}),
             cycleStart: cursor.cycleStart,
             cycleEnd: cursor.cycleEnd,
+            ...(cursorWindow ? { window: cursorWindow } : {}),
             // Cursor's own plan percentages. Present only when Cursor sent
             // them, so the limits panel can omit the rows rather than show 0%.
             ...(cursor.included ? { included: cursor.included } : {}),
@@ -220,9 +235,7 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
         : {}),
     },
     models: [...omp.rows, ...cursorRollup.rows],
-    // All-time is the one period a cycle-to-date Cursor total does not clash
-    // with; the cycle is still footnoted through `cycleLabel`.
-    mixedPeriod: cursor.mode === "cycle_aggregate" && period.kind !== "all_time",
+    mixedPeriod,
     // Provider clocks are not calendar data: they never move with `period`.
     limits: [...(input.limits ?? [])],
     fetch: input.fetch ?? { lastSuccessAt: null, status: "idle" },

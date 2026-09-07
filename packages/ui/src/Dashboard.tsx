@@ -3,9 +3,10 @@
  * the by-model board.
  *
  * Combined estimate, then both source subtotals — always both, never deduped,
- * never re-derived here. Cursor Pro is cycle-to-date whatever the period is, so
- * when `mixedPeriod` is set the subtitle names both scopes; the cycle's own
- * dates are the cycle banner's job, not this card's.
+ * never re-derived here. Cursor answers for the period itself when it can; when
+ * all it has is a whole billing cycle (`mixedPeriod`) its cost stays on its own
+ * row, out of the hero number, and both the subtitle and that row say so. The
+ * cycle's own dates are the cycle banner's job, not this card's.
  *
  * One unpriced model used to blank the whole number: `estimatedCents` is null
  * when any included row has no rate, and the hero showed `—` even with dollars
@@ -37,7 +38,12 @@ export interface PricedSubtotal {
   unpriced: number;
 }
 
-/** Adds up the rows that price, optionally for one source only. */
+/**
+ * Adds up the rows that price, optionally for one source only.
+ *
+ * This is the fallback the hero falls back *to*, so it takes the same scope as
+ * the hero: pass `"omp"` while Cursor's cycle is out of the period.
+ */
 export function pricedSubtotal(
   rows: DashboardSnapshot["models"],
   source?: Source,
@@ -64,7 +70,12 @@ function costText(exact: number | null, fallback: PricedSubtotal): string {
 
 /** The combined total: exact, approximate from priced rows, or the em dash. */
 export function formatEstimatedTotal(snapshot: DashboardSnapshot): string {
-  return costText(snapshot.estimatedCents, pricedSubtotal(snapshot.models));
+  // Same scope as the number it stands in for: OMP alone while Cursor's cycle
+  // is out of the period.
+  return costText(
+    snapshot.estimatedCents,
+    pricedSubtotal(snapshot.models, snapshot.mixedPeriod ? "omp" : undefined),
+  );
 }
 
 /**
@@ -84,15 +95,16 @@ export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
 }
 
 /**
- * `Estimated total · OMP: Today · Cursor: cycle to date` while the scopes
- * differ, otherwise `Estimated total · This month`. Locked in product.md and
- * spec.md — every mixed period names both scopes, not just Today.
+ * `Estimated total · Today` when Cursor answered for the period too, and
+ * `Estimated total · OMP: Today · Cursor: cycle to date (not in total)` when
+ * all Cursor had was its billing cycle. Locked in product.md and spec.md —
+ * every mixed period names both scopes, and says which one the number is.
  */
 export function heroSubtitle(snapshot: DashboardSnapshot): string {
   const period = periodLabel(snapshot.period);
   if (!snapshot.mixedPeriod) return `Estimated total · ${period}`;
   const cycle = (snapshot.cursor.cycleLabel ?? CURSOR_CYCLE_LABEL).toLowerCase();
-  return `Estimated total · OMP: ${period} · Cursor: ${cycle}`;
+  return `Estimated total · OMP: ${period} · Cursor: ${cycle} (not in total)`;
 }
 
 /** Total tokens for a source, used only to split the meter when nothing prices. */
@@ -104,6 +116,9 @@ function tokenWeight(tokens: DashboardSnapshot["omp"]["tokens"]): number {
  * How wide each half of the split meter is. Spend decides it; with no priced
  * row anywhere the meter falls back to token volume so the bar still says which
  * source did the work.
+ *
+ * A Cursor cycle that is out of the period is out of the meter too — it is not
+ * part of the number the meter divides.
  */
 export function sourceShares(
   snapshot: DashboardSnapshot,
@@ -115,9 +130,12 @@ export function sourceShares(
     if (total <= 0) return { omp: 0, cursor: 0 };
     return { omp: (a / total) * 100, cursor: (b / total) * 100 };
   };
-  const spend = split(Math.max(omp ?? 0, 0), Math.max(cursor ?? 0, 0));
+  const spend = split(Math.max(omp ?? 0, 0), snapshot.mixedPeriod ? 0 : Math.max(cursor ?? 0, 0));
   if (spend.omp + spend.cursor > 0) return spend;
-  return split(tokenWeight(snapshot.omp.tokens), tokenWeight(snapshot.cursor.tokens));
+  return split(
+    tokenWeight(snapshot.omp.tokens),
+    snapshot.mixedPeriod ? 0 : tokenWeight(snapshot.cursor.tokens),
+  );
 }
 
 interface SubtotalRowProps {
@@ -149,12 +167,16 @@ export interface DashboardProps {
 }
 
 export function Dashboard({ snapshot }: DashboardProps) {
+  // The cycle label is set only while Cursor's rows really are cycle-wide, and
+  // a cycle-wide row against a narrower period is not in the hero number.
   const cursorLabel = snapshot.cursor.cycleLabel
-    ? `Cursor (${snapshot.cursor.cycleLabel.toLowerCase()})`
+    ? `Cursor (${snapshot.cursor.cycleLabel.toLowerCase()}${snapshot.mixedPeriod ? " · not in total" : ""})`
     : "Cursor";
   const empty = emptyStateMessage(snapshot);
 
-  const combined = pricedSubtotal(snapshot.models);
+  // Same scope as the hero: an unpriced Cursor row cannot make a number it is
+  // not part of a floor.
+  const combined = pricedSubtotal(snapshot.models, snapshot.mixedPeriod ? "omp" : undefined);
   const ompPriced = pricedSubtotal(snapshot.models, "omp");
   const cursorPriced = pricedSubtotal(snapshot.models, "cursor");
   const shares = sourceShares(

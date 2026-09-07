@@ -25,6 +25,7 @@ documents.
 | `docs/data-shapes.md`                        | Document       | Findings: field mappings, dedupe key, the date-window finding |
 | `docs/fixtures/omp-session-line.json`        | Fixture        | One OMP assistant line, redacted                              |
 | `docs/fixtures/cursor-cycle-aggregates.json` | Fixture        | Per-model aggregate response, one cycle                       |
+| `docs/fixtures/cursor-window-aggregates.json` | Fixture       | Per-model aggregate for one day's window (2026-09-07)        |
 | `docs/fixtures/cursor-usage-summary.json`    | Fixture        | Cycle dates + membership type + quotas                        |
 | `out/`                                       | Runtime output | Gitignored; UNREDACTED dumps when the script gets a directory |
 
@@ -76,8 +77,7 @@ flowchart TD
 
 Both requests to `cursor.com` always send `Origin: https://cursor.com`; without it the server
 returns 403 "Invalid origin for state-changing request". The aggregate call with body `{}` is
-the current cycle; the date-window variant exists in the API but is deliberately not used
-(§9).
+the current cycle; the date-window variant is what a calendar filter now sends (§9).
 
 ## 5. Contracts and invariants
 
@@ -157,12 +157,11 @@ machine-checked record, and even they are a single sample, not a corpus.
 - **`default` is the first guaranteed unknown-price row.** It has real tokens (3.2 M input on
   this account) and no public rate, so `estimatedCents: null` is a normal state, not an edge
   case. The dashboard must render it, not drop it.
-- **The date-window finding is recorded, not acted on.** The API accepts
-  `startDate`/`endDate`, contradicting the locked "Pro = cycle only" decision — but a window
-  may not span both 2025-08-01 and 2026-05-14 (backend constraint), so all-time needs up to
-  three merged calls. This changes product behaviour (mixed-period labelling, cycle banner,
-  whether "Today" applies to Cursor) and is deliberately deferred; the product and
-  implementation-plan docs carry a pointer.
+- **The date-window finding is acted on (2026-09-07).** The API accepts `startDate`/`endDate`,
+  disproving the old "Pro = cycle only" decision, and Today / This month / Date range now send
+  their own bounds. The backend constraint survives: a window may not span both 2025-08-01 and
+  2026-05-14, so all-time cannot be asked for and still shows the cycle. The three-call
+  workaround is deliberately not built.
 - **The `modelIntent` → canonical alias map is unverified.** Only 6 values were seen, on one
   account. Suffix collapsing and `cursor-` prefix handling are guesses waiting for more data.
 - **The token is read at runtime by design.** The script pulls the access token straight from
@@ -182,5 +181,6 @@ machine-checked record, and even they are a single sample, not a corpus.
   §Cursor are the source of truth for field names; the spike script itself is throwaway and
   may be deleted or kept as a manual probe — either is fine, but `docs/data-shapes.md`
   survives it.
-- **Acting on the date-window finding:** requires a product decision first; see the pointer
-  in `docs/product.md` and `docs/implementation-plan.md`.
+- **Re-checking the date-window finding:** it was re-confirmed on 2026-09-07 (per-day, per-month
+  and one whole past day all answered; unbounded refused). `docs/data-shapes.md` § Finding holds
+  the table, dated per row.

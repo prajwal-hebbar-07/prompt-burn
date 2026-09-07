@@ -248,7 +248,7 @@ Request — `POST https://cursor.com/api/dashboard/get-aggregated-usage-events`:
 
 - `Cookie: WorkosCursorSessionToken=<urlencoded sub>%3A%3A<jwt>`
 - `Origin: https://cursor.com` — **required**. Without it: `403 {"error":"Invalid origin for state-changing request"}`.
-- Body `{}` → current billing cycle. `Authorization: Bearer` and `api2.cursor.sh` both fail (404 / no route).
+- Body `{}` → current billing cycle. `{ "teamId": 0, "startDate": "<epoch ms>", "endDate": "<epoch ms>" }` → that window only, which is what a calendar filter sends. `Authorization: Bearer` and `api2.cursor.sh` both fail (404 / no route).
 
 Response (rounded fixture, structure verbatim):
 
@@ -266,6 +266,10 @@ Response (rounded fixture, structure verbatim):
 
 ### `CursorSnapshot` (`mode: "cycle_aggregate"`) mapping
 
+The same `aggregations` mapping serves both bodies. A windowed call reuses the cycle metadata
+the last `{}` call returned and only replaces `models`, plus a `window` recording what was
+asked for — that field is how the aggregator knows the rows match the period.
+
 | Our field | Cursor source | Notes |
 |-----------|---------------|-------|
 | `cycleStart` | `billingCycleStart` from `POST /api/usage-summary` | **Not in the aggregate response** — second call required |
@@ -275,6 +279,7 @@ Response (rounded fixture, structure verbatim):
 | `models[].tokens.output` | `outputTokens` | string |
 | `models[].tokens.cacheRead` | `cacheReadTokens` | string; **key absent** when zero |
 | `models[].tokens.cacheWrite` | `cacheWriteTokens` | string; **key absent** when zero |
+| `window.start` / `window.end` | the `startDate` / `endDate` sent, as ISO | Absent on a `{}` call: the rows are then the whole cycle |
 
 `modelIntent` is the only model field — there is no separate `model` / display name, so commit 6's
 map is `modelIntent → canonical id`. Values seen: `cursor-grok-4.6-high`,
@@ -302,16 +307,21 @@ Everything else in that block — `used` / `limit` / `breakdown.bonus` credits, 
 
 ## Finding: Cursor Pro *does* accept date windows
 
-The locked decision says calendar filters cannot apply to Cursor Pro. That is **wrong on this
-account**. `get-aggregated-usage-events` accepts `{ "teamId": 0, "startDate": "<epoch ms>",
+The locked decision used to say calendar filters cannot apply to Cursor Pro. That is **wrong on
+this account**. `get-aggregated-usage-events` accepts `{ "teamId": 0, "startDate": "<epoch ms>",
 "endDate": "<epoch ms>" }` (numbers as strings) and returns a narrowed aggregate:
 
-| Window | rows | totalCostCents |
-|--------|------|----------------|
-| `{}` (default) | 6 | 9914.55 |
-| explicit cycle start → now | 6 | 9914.55 (identical, confirms the default) |
-| today 00:00 UTC → now | 5 | 1820.87 |
-| 30 days **before** cycle start | 1 | 9.38 |
+| Window | rows | totalCostCents | Checked |
+|--------|------|----------------|---------|
+| `{}` (default) | 6 | 9914.55 | 2026-09-02 |
+| explicit cycle start → now | 6 | 9914.55 (identical, confirms the default) | 2026-09-02 |
+| today 00:00 UTC → now | 5 | 1820.87 | 2026-09-02 |
+| 30 days **before** cycle start | 1 | 9.38 | 2026-09-02 |
+| `{}` (default) | 9 | 14423.37 | 2026-09-07 |
+| today 00:00 local → now | 1 | 462.21 | 2026-09-07 |
+| this month 1st 00:00 local → now | 8 | 6329.69 | 2026-09-07 |
+| yesterday, one whole local day | 1 | 222.70 | 2026-09-07 |
+| epoch → now (all time) | — | `ERROR_BAD_REQUEST` | 2026-09-07 |
 
 So per-day and pre-cycle windows both work, and the response is still per-model aggregates — never
 events, so per-event timestamps still need an Enterprise `crsr_` key.
@@ -321,11 +331,15 @@ boundary returns `ERROR_BAD_REQUEST` — *"spans both before … and after …, 
 can serve. Split the query at one of those dates"*. All-time therefore needs up to three calls,
 merged client-side.
 
-**Not acting on this in this commit.** It changes product behaviour (mixed-period labelling, the
-cycle banner, whether "Today" applies to Cursor), so it is a decision, not a spike output.
-`docs/product.md` and `docs/implementation-plan.md` now carry a pointer here. Until that decision
-is made, build cycle-aggregate mode: it is the correct subset either way, and `CursorSnapshot`
-already keeps the union open.
+**Acted on 2026-09-07.** Today / This month / Date range now send their own bounds and Cursor
+answers for them: `fetchCursorWindowAggregate` in `packages/collectors`, resolved per period by
+`createUsageReader`, with `CursorSnapshot.window` telling the aggregator the rows match the
+period. All-time still sends `{}` — an unbounded window is exactly the refusal above, and the
+three-call split needed to work around it turns on two account-specific dates lifted from an
+error message, which is not worth hard-coding. When the windowed call fails for any reason the
+cycle comes back, labelled as the cycle and excluded from the combined total.
+Fixture: [`fixtures/cursor-window-aggregates.json`](fixtures/cursor-window-aggregates.json) —
+one real today-window response from this account, structure verbatim.
 
 ---
 
