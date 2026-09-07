@@ -55,7 +55,8 @@ restated in `docs/spec.md` (§ Locked decisions):
 - **OMP accounts** — no per-account split of usage or cost (two Claude Pro subscriptions + one
   Ollama Cloud key in this household); model-level breakdown is enough. Provider *limits* are the
   exception: a subscription window belongs to an account, so the Usage limits panel shows one
-  block per account, labelled `Account A` / `B` with no email attached.
+  block per account, named by the email OMP recorded in `usage_history` so the right
+  subscription can be pinned; `Account A` / `B` remains the fallback when there is no email.
 - **Cursor Pro** — cycle-to-date per-model aggregates, labeled "Cycle to date". Calendar filters
   do **not** apply.
 - **Cursor Enterprise** — an optional `crsr_` admin key would unlock per-event timestamps and

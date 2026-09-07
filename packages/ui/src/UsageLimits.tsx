@@ -10,9 +10,10 @@
  *
  * A limit belongs to an account, so this is the one surface that splits by
  * account: two Claude subscriptions are two rows of clocks under one card.
- * They stay anonymous — `Account A` / `Account B` in snapshot order — since
- * which mailbox pays is not what the panel is for, and an email on screen is
- * an email in every screenshot.
+ * Each is named by the email OMP recorded for it, because the reason to look
+ * at this panel is to decide which account to pin next — and `Account A` does
+ * not answer that. A provider with no per-account identity (an Ollama Cloud
+ * API key) keeps the anonymous `Account A` / `B` in snapshot order.
  *
  * Every card is data: a provider that has not answered has no card, and none
  * of them is hardcoded here.
@@ -178,11 +179,13 @@ function windowEnded(limit: UsageLimit, now: Date): boolean {
 }
 
 /**
- * `Account A`, plus whatever the card must admit about it: that a clock is
- * nearly out, and that OMP has not refreshed these numbers in a while.
+ * Who the clocks belong to, plus whatever the card must admit about them: that
+ * a clock is nearly out, and that OMP has not refreshed these numbers in a
+ * while. The account's own email when OMP recorded one, `Account A` when it
+ * did not.
  */
 function accountLine(group: ProviderLimits, letter: string, now: Date, nearCap: boolean): string {
-  const parts = [`Account ${letter}`];
+  const parts = [group.account ?? `Account ${letter}`];
   if (nearCap) parts.push("near cap");
   const observed = Date.parse(group.observedAt);
   if (Number.isFinite(observed) && observed < now.getTime() - STALE_MS) {
@@ -218,7 +221,10 @@ function ProviderCard({ provider, accounts, now }: ProviderCardProps) {
         return (
           <div key={`${provider}:${index}`} className="flex flex-col gap-2">
             {showAccount ? (
-              <p className={`text-small leading-small font-medium ${nearCap ? "text-warning" : ""}`}>
+              <p
+                title={group.account}
+                className={`truncate text-small leading-small font-medium ${nearCap ? "text-warning" : ""}`}
+              >
                 {account}
               </p>
             ) : null}

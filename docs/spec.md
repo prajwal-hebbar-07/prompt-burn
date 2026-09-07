@@ -17,7 +17,7 @@ This page is the short version to keep open while coding. It duplicates no reaso
 |----------|----------------|
 | Sources | OMP + Cursor only. Gemini through Antigravity arrives **inside** OMP — `message.provider`, not a third source. |
 | Metric | Estimated PAYG cost from tokens × our price DB. Not subscription invoices. |
-| OMP accounts | Do not split Claude Pro / Ollama Cloud by account **for usage or cost** — model-level breakdown is enough. Provider *limits* are per account, because a limit belongs to one subscription; the panel labels them `Account A` / `B` and carries no email. |
+| OMP accounts | Do not split Claude Pro / Ollama Cloud by account **for usage or cost** — model-level breakdown is enough. Provider *limits* are per account, because a limit belongs to one subscription; the panel names each by the email OMP recorded, so the account to pin next is readable off the card. No email recorded (an API key) falls back to `Account A` / `B`. |
 | Cursor Pro | Cycle-to-date per-model aggregates. Calendar filters do **not** apply. Label **"Cycle to date"**. |
 | Cursor Enterprise | Optional `crsr_` admin key unlocks per-event timestamps and calendar filters. Not implemented — leave the type union open. |
 | Filters | Today, This month (calendar month, not rolling 30 days), All time, Date range (single day = same start and end). Device timezone. Inclusive end day in UI; exclusive next-day 00:00 in code. |

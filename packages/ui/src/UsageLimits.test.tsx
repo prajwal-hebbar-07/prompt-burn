@@ -3,8 +3,8 @@
  *
  * The rules that matter here are honesty rules: a percentage is only shown for
  * a window that is still running, an amber row must also say "near cap" in
- * words, accounts stay anonymous, and Ollama Cloud says it has nothing rather
- * than showing a comfortable zero.
+ * words, each account is named by the mailbox OMP recorded so it can be pinned,
+ * and Ollama Cloud says it has nothing rather than showing a comfortable zero.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -27,10 +27,11 @@ const CURSOR: CursorSnapshot = {
   included: { autoPercentUsed: 19.575555555555553, apiPercentUsed: 32.74074074074074 },
 };
 
-/** Two Claude subscriptions, as OMP reports them: the second one near its cap. */
+/** Two named Claude subscriptions, as OMP reports them: the second near its cap. */
 const CLAUDE: ProviderLimits[] = [
   {
     provider: "anthropic",
+    account: "first@example.com",
     observedAt: "2026-09-05T11:59:00.000Z",
     limits: [
       {
@@ -51,6 +52,7 @@ const CLAUDE: ProviderLimits[] = [
   },
   {
     provider: "anthropic",
+    account: "second@example.com",
     observedAt: "2026-09-05T11:59:00.000Z",
     limits: [
       {
@@ -106,10 +108,9 @@ describe("the usage limits panel", () => {
     expect(screen.getByTestId("limit-row-anthropic:7d").textContent).toBe(
       `7-day19%resets ${at("2026-09-09T08:00:00.000Z")}`,
     );
-    // Two subscriptions, no mailbox on screen.
-    expect(card.textContent).toContain("Account A");
-    expect(card.textContent).toContain("Account B");
-    expect(card.textContent).not.toContain("@");
+    // Which subscription owns which clock, by the name OMP pins it under.
+    expect(card.textContent).toContain("first@example.com");
+    expect(card.textContent).toContain("second@example.com");
     expect(card.className).toContain("provider-claude");
   });
 
@@ -117,8 +118,8 @@ describe("the usage limits panel", () => {
     render(<UsageLimits snapshot={snapshot()} now={now} />);
 
     const card = screen.getByTestId("limit-card-anthropic");
-    expect(card.textContent).toContain("Account B · near cap");
-    expect(card.textContent).not.toContain("Account A · near cap");
+    expect(card.textContent).toContain("second@example.com · near cap");
+    expect(card.textContent).not.toContain("first@example.com · near cap");
   });
 
   it("refuses to report a percentage for a window that has already rolled over", () => {
@@ -156,7 +157,7 @@ describe("the usage limits panel", () => {
     render(<UsageLimits snapshot={snapshot(old)} now={now} />);
 
     expect(screen.getByTestId("limit-card-anthropic").textContent).toContain(
-      `Account A · as of ${at("2026-09-05T09:30:00.000Z")}`,
+      `first@example.com · as of ${at("2026-09-05T09:30:00.000Z")}`,
     );
   });
 

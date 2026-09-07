@@ -9,11 +9,12 @@
  * recomputed: the fraction is the provider's own answer about its own window,
  * and it has no relationship to our token counts or estimated cost.
  *
- * Two things are deliberately not read. `usage_history.email` and
- * `account_id` stay in OMP's database — a card labelled `Account A` needs
- * neither — and rows older than the longest window a provider reports (7 days)
- * are dropped, because a stale observation describes a window that has already
- * rolled over, and a deleted credential's rows never disappear from the table.
+ * `usage_history.email` is read and carried: the panel names the account so it
+ * can be pinned in OMP by the same string OMP knows it by. `account_id` stays
+ * behind — a UUID identifies nothing to a human — and rows older than the
+ * longest window a provider reports (7 days) are dropped, because a stale
+ * observation describes a window that has already rolled over, and a deleted
+ * credential's rows never disappear from the table.
  *
  * Read-only, and every failure is emptiness: OMP may never have run here, or
  * may predate the table. The database is live — OMP writes it while this reads
@@ -43,7 +44,7 @@ const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
  * maximum, so this is the latest observation per limit and not a mix of rows.
  */
 const LATEST_PER_LIMIT = `
-  SELECT provider, account_key, limit_id, label, window_label, used_fraction, resets_at,
+  SELECT provider, account_key, email, limit_id, label, window_label, used_fraction, resets_at,
          MAX(recorded_at) AS recorded_at
     FROM usage_history
    GROUP BY provider, account_key, limit_id
@@ -87,11 +88,18 @@ export function readOmpLimits(
     if (!provider || !id) continue;
 
     // The account key holds an email and an org id; it is a grouping key here
-    // and never leaves this function.
+    // and never leaves this function. `email` is the human-readable half, and
+    // it is the one that reaches the UI.
     const key = `${provider}\u0000${text(row["account_key"])}`;
     let group = groups.get(key);
     if (!group) {
-      group = { provider, observedAt: new Date(recordedAt).toISOString(), limits: [] };
+      const account = text(row["email"]);
+      group = {
+        provider,
+        ...(account ? { account } : {}),
+        observedAt: new Date(recordedAt).toISOString(),
+        limits: [],
+      };
       groups.set(key, group);
     } else if (recordedAt > Date.parse(group.observedAt)) {
       group.observedAt = new Date(recordedAt).toISOString();

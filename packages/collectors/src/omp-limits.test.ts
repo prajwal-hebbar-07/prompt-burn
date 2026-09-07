@@ -60,13 +60,16 @@ function agentDatabase(rows: Row[]): string {
     `INSERT INTO usage_history
        (recorded_at, provider, account_key, email, account_id, limit_id, label,
         window_label, used_fraction, status, resets_at)
-     VALUES (?, ?, ?, 'a@example.com', 'aaa', ?, ?, ?, ?, 'ok', ?)`,
+     VALUES (?, ?, ?, ?, 'aaa', ?, ?, ?, ?, 'ok', ?)`,
   );
   for (const row of rows) {
+    const accountKey = row.account ?? ACCOUNT_A;
     insert.run(
       (row.at ?? NOW).getTime(),
       row.provider ?? "anthropic",
-      row.account ?? ACCOUNT_A,
+      accountKey,
+      // OMP records the mailbox in its own column; the key carries it too.
+      /email:([^|]+)/.exec(accountKey)?.[1] ?? null,
       row.id,
       row.label,
       row.window === undefined ? "5 Hour" : row.window,
@@ -127,6 +130,7 @@ describe("readOmpLimits", () => {
     expect(readOmpLimits(file, NOW)).toEqual([
       {
         provider: "anthropic",
+        account: "a@example.com",
         observedAt: "2026-09-05T11:57:43.838Z",
         limits: [
           {
@@ -141,7 +145,7 @@ describe("readOmpLimits", () => {
     ]);
   });
 
-  it("keeps two subscriptions apart and carries no account identity", () => {
+  it("keeps two subscriptions apart and names each by its own mailbox", () => {
     const file = agentDatabase([
       { id: "anthropic:5h", label: "Claude 5 Hour", used: 0.38 },
       { id: "anthropic:7d", label: "Claude 7 Day", window: "7 Day", used: 0.19 },
@@ -151,12 +155,12 @@ describe("readOmpLimits", () => {
 
     const groups = readOmpLimits(file, NOW);
 
+    expect(groups.map((group) => group.account)).toEqual(["a@example.com", "b@example.com"]);
     expect(groups.map((group) => group.limits.map((limit) => limit.usedFraction))).toEqual([
       [0.38, 0.19],
       [0.82, 0.41],
     ]);
-    // The email and the account id stay in OMP's database.
-    expect(JSON.stringify(groups)).not.toContain("example.com");
+    // The account uuid stays in OMP's database: it names nothing to a human.
     expect(JSON.stringify(groups)).not.toContain("aaa");
   });
 
