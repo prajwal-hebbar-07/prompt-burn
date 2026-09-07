@@ -51,14 +51,23 @@ rather than vanishing into the wrong row.
 The aggregation takes three inputs — OMP's timestamped records, whatever Cursor reports, and
 the calendar page you're viewing — and produces the one shape the dashboard renders.
 
-The subtle part is that the two sources live on different clocks. OMP gives each record a
-timestamp, so its entries obey the calendar page strictly. Cursor's Pro plan only reports
-cycle-to-date totals — a single running total per model, with no timestamps at all. Those
-totals cannot be filtered, and the ledger doesn't pretend otherwise: it passes them through
-untouched, and the snapshot openly flags the mismatch. Whenever you're looking at a date range
-but the Cursor column shows the whole cycle, the dashboard is told so and can label the
-footnote; only the "all time" view makes the two scopes genuinely equivalent, so only there
-does the flag go quiet.
+The subtle part is that the two sources keep time differently. OMP gives each record a
+timestamp, so its entries obey the calendar page strictly. Cursor reports running totals per
+model with no timestamps at all — but it will happily total up whichever stretch of days you
+ask it about, so for Today, This month and a date range the collector asks for exactly those
+days and both columns end up describing the same time.
+
+"All time" is the one page it refuses: the request has to name a start and an end, and a span
+reaching back to the beginning crosses a line Cursor's own storage won't cross. There the
+Cursor column falls back to the current billing cycle, and since a billing cycle is a superset
+of nothing in particular, the two scopes are treated as equivalent and both are counted.
+
+The same fallback happens on any page if the request fails — no signed-in Cursor, a network
+error, a refusal. Then the Cursor column is a whole billing cycle sitting next to one day of
+OMP work, and the ledger does two things about it: it flags the mismatch so the dashboard can
+say so in words, and it leaves the Cursor figure out of the headline total entirely. Adding a
+month to a day would produce a number that is true of no period at all. The cycle figure stays
+visible on its own line, clearly labelled — it just isn't added in.
 
 Two other honest habits. The same model appearing from both sources is deliberately two rows —
 the row key is the pair of source _and_ model, so nothing from OMP is ever blended into a

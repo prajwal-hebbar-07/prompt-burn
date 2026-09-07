@@ -2,10 +2,11 @@
  * The wireframe edge states: the Cursor cycle footnote and the two empty
  * bodies.
  *
- * Cursor Pro is cycle-to-date, so the footnote has to name the window and say
- * period filters apply to OMP only — and it may never invent a window the
- * collector has not fetched yet. Never-fetched and fetched-but-empty are
- * separate states, and a fetch in flight never blanks what is on screen.
+ * Cursor's rows are cycle-wide until it answers for the period itself, so the
+ * footnote has to name the window and say both what the period filters reach
+ * and that a cycle total is not in the hero number — and it may never invent a
+ * window the collector has not fetched yet. Never-fetched and fetched-but-empty
+ * are separate states, and a fetch in flight never blanks what is on screen.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -22,6 +23,11 @@ const CYCLE: CursorSnapshot = {
   cycleStart: "2026-08-26T07:25:29Z",
   cycleEnd: "2026-09-26T07:25:29Z",
   models: [{ model: "claude-opus-5", tokens: { input: 420_000, output: 1_100_000 } }],
+};
+/** The same cycle, narrowed by Cursor to the period the user picked. */
+const WINDOWED: CursorSnapshot = {
+  ...CYCLE,
+  window: { start: "2026-09-01T18:30:00.000Z", end: "2026-09-02T12:00:00.000Z" },
 };
 
 /** What the sidecar still ships today: an OMP-only slice, no window. */
@@ -81,11 +87,19 @@ describe("formatCycleWindow", () => {
 });
 
 describe("the cycle footnote", () => {
-  it("names the window and says filters apply to OMP only when scopes differ", () => {
+  it("names the window, the filter scope and the excluded total when scopes differ", () => {
     render(<Dashboard snapshot={snapshot({ period: { kind: "today" } })} />);
 
     expect(screen.getByTestId("cycle-footnote").textContent).toBe(
-      "Cursor shows cycle to date (Aug 26 – Sep 26, 2026) · period filters apply to OMP only",
+      "Cursor shows cycle to date (Aug 26 – Sep 26, 2026) · period filters apply to OMP only · Cursor is not in the total",
+    );
+  });
+
+  it("says Cursor follows the filter once it has answered for the period", () => {
+    render(<Dashboard snapshot={snapshot({ cursor: WINDOWED })} />);
+
+    expect(screen.getByTestId("cycle-footnote").textContent).toBe(
+      "Cursor billing cycle Aug 26 – Sep 26, 2026 · Cursor follows the period filter",
     );
   });
 
@@ -101,7 +115,7 @@ describe("the cycle footnote", () => {
     render(<Dashboard snapshot={snapshot({ cursor: NO_WINDOW })} />);
 
     expect(screen.getByTestId("cycle-footnote").textContent).toBe(
-      "Cursor shows cycle to date · period filters apply to OMP only",
+      "Cursor shows cycle to date · period filters apply to OMP only · Cursor is not in the total",
     );
   });
 

@@ -27,7 +27,25 @@ const SUMMARY = readFileSync(
 const AGGREGATES = readFileSync(
   new URL("../../../docs/fixtures/cursor-cycle-aggregates.json", import.meta.url),
   "utf8",
-);
+).replace(/\s+/g, " ");
+/**
+ * What Cursor answers for a narrowed window: one model, a fraction of the
+ * cycle. 0.68M in @ $2 + 0.05M out @ $6 + 6.03M cached @ $0.50 = 467.5 cents.
+ */
+const WINDOW_AGGREGATES = JSON.stringify({
+  aggregations: [
+    {
+      modelIntent: "cursor-grok-4.6-high",
+      inputTokens: "680000",
+      outputTokens: "50000",
+      cacheReadTokens: "6030000",
+      totalCents: 462.21,
+      tier: 2,
+    },
+  ],
+});
+const WINDOW_INPUT = 680_000;
+const WINDOW_CENTS = 467.5;
 
 const HEADER = JSON.stringify({
   type: "session",
@@ -49,6 +67,8 @@ const FAKE_JWT = [
 const NOW = new Date("2026-09-02T10:00:00.000Z");
 /** Every fixture `inputTokens` added up, cycle-wide. */
 const CYCLE_INPUT = 13_006_167;
+/** The fixture OMP line, priced at the seeded Opus rates. */
+const OMP_CENTS = 2.421775;
 
 let root: string;
 let sessions: string;
@@ -56,22 +76,35 @@ let statePath: string;
 let db: DatabaseSync;
 /** Flipped by a test to make the Cursor call fail mid-session. */
 let status: number;
+/** Flipped on its own, so a window can fail while the cycle still answers. */
+let windowStatus: number;
+/** Every windowed aggregate body Cursor was asked for, in order. */
+let windowCalls: Array<{ startDate?: string; endDate?: string; teamId?: number }>;
 
-/** A reader whose Cursor HTTP answers from the fixtures with `status`. */
+/**
+ * A reader whose Cursor HTTP answers from the fixtures. The aggregate call is
+ * two endpoints in one: `{}` is the cycle, a body carrying `startDate` is the
+ * narrowed window, exactly as cursor.com behaves.
+ */
 function reader(cursorStatePath = statePath) {
   return createUsageReader(db, {
     ompDirectory: sessions,
     cursorStatePath,
-    fetchImpl: (async (url: string | URL | Request) =>
-      new Response(String(url).endsWith("/api/usage-summary") ? SUMMARY : AGGREGATES, {
-        status,
-      })) as unknown as typeof fetch,
+    fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/api/usage-summary")) return new Response(SUMMARY, { status });
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (body.startDate === undefined) return new Response(AGGREGATES, { status });
+      windowCalls.push(body);
+      return new Response(WINDOW_AGGREGATES, { status: windowStatus });
+    }) as unknown as typeof fetch,
     now: () => NOW,
   });
 }
 
 beforeEach(() => {
   status = 200;
+  windowStatus = 200;
+  windowCalls = [];
   root = mkdtempSync(join(tmpdir(), "prompt-burn-reader-sources-"));
   sessions = join(root, "omp-sessions");
   mkdirSync(join(sessions, "proj"), { recursive: true });
@@ -121,12 +154,73 @@ it("aggregates both sources after a dual-success fetch", async () => {
   expect(sources).toContain("cursor");
 });
 
-it("marks a calendar period mixed once Cursor data is in the snapshot", async () => {
+it("asks Cursor for the period's own window and counts it in the total", async () => {
   const host = reader();
   await host.fetch();
 
-  expect((await host.getSnapshot({ kind: "this_month" })).mixedPeriod).toBe(true);
-  expect((await host.getSnapshot({ kind: "all_time" })).mixedPeriod).toBe(false);
+  const today = await host.getSnapshot({ kind: "today" });
+
+  // Cursor answered for the period, so the scopes no longer differ: the rows
+  // are the window's, there is no cycle label to footnote, and the combined
+  // total is a real sum of two numbers that describe the same day.
+  expect(today.cursor.tokens.input).toBe(WINDOW_INPUT);
+  expect(today.cursor.window).toEqual({
+    start: new Date(Number(windowCalls[0]?.startDate)).toISOString(),
+    end: NOW.toISOString(),
+  });
+  expect(today.cursor.cycleLabel).toBeUndefined();
+  // The cycle dates survive the narrowing: they label the window, not the rows.
+  expect(today.cursor.cycleStart).toBe("2026-08-26T07:25:29.000Z");
+  expect(today.mixedPeriod).toBe(false);
+  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS + WINDOW_CENTS, 6);
+
+  // Asked as far as the present, never to the period's future midnight.
+  expect(windowCalls).toHaveLength(1);
+  expect(windowCalls[0]?.endDate).toBe(String(NOW.getTime()));
+  expect(Number(windowCalls[0]?.startDate)).toBeLessThan(NOW.getTime());
+
+  // One window is worth one round trip, not one per render.
+  await host.getSnapshot({ kind: "today" });
+  expect(windowCalls).toHaveLength(1);
+  // A different period is a different window.
+  await host.getSnapshot({ kind: "this_month" });
+  expect(windowCalls).toHaveLength(2);
+
+  // All-time never asks: Cursor refuses a window spanning its own boundaries.
+  const allTime = await host.getSnapshot({ kind: "all_time" });
+  expect(windowCalls).toHaveLength(2);
+  expect(allTime.cursor.tokens.input).toBe(CYCLE_INPUT);
+  expect(allTime.mixedPeriod).toBe(false);
+  expect(allTime.cursor.cycleLabel).toBe("Cycle to date");
+});
+
+it("re-asks for the window after a refresh, since today has grown", async () => {
+  const host = reader();
+  await host.fetch();
+  await host.getSnapshot({ kind: "today" });
+  expect(windowCalls).toHaveLength(1);
+
+  await host.fetch();
+  await host.getSnapshot({ kind: "today" });
+  expect(windowCalls).toHaveLength(2);
+});
+
+it("keeps the cycle out of the total when Cursor cannot answer for the period", async () => {
+  const host = reader();
+  await host.fetch();
+
+  windowStatus = 503;
+  const today = await host.getSnapshot({ kind: "today" });
+
+  // The cycle is still worth showing — on its own row, labelled as the cycle.
+  expect(today.cursor.tokens.input).toBe(CYCLE_INPUT);
+  expect(today.cursor.cycleLabel).toBe("Cycle to date");
+  expect(today.cursor.window).toBeUndefined();
+  expect(today.mixedPeriod).toBe(true);
+  // And out of the combined figure: a 30-day cycle is not part of one day. The
+  // cycle holds unpriced models, so summing it would also blank the total.
+  expect(today.cursor.estimatedCents).toBeNull();
+  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS, 6);
 });
 
 it("keeps the last Cursor cycle when a later fetch fails", async () => {

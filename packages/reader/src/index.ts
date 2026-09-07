@@ -5,9 +5,11 @@
  * `@prompt-burn/db` + `@prompt-burn/collectors` calls behind both dashboards.
  *
  * Both sources land here: `fetch()` runs the parallel collector pass, and
- * `getSnapshot()` aggregates stored OMP rows together with the last Cursor
- * cycle. Partial success is normal — a failed source keeps its previous data
- * while the other's new data is applied.
+ * `getSnapshot()` aggregates stored OMP rows together with Cursor's numbers for
+ * that same period — asking Cursor for the period's own window when the period
+ * is bounded, and falling back to the cached cycle when it cannot answer.
+ * Partial success is normal — a failed source keeps its previous data while the
+ * other's new data is applied.
  *
  * Host-side only. The UI package never imports this, or anything under it.
  */
@@ -16,6 +18,7 @@ import { existsSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import {
   buildDashboardSnapshot,
+  periodBounds,
   type CursorSnapshot,
   type DashboardSnapshot,
   type PeriodFilter,
@@ -35,9 +38,11 @@ import {
   collectAllSources,
   defaultCursorStatePath,
   defaultSessionsDirectory,
+  fetchCursorWindowAggregate,
   ompAgentDatabase,
   readCursorAuth,
   readOmpLimits,
+  type CursorWindowAggregate,
 } from "@prompt-burn/collectors";
 
 export type { AppSettings, DashboardSnapshot, NewPriceEntry, PeriodFilter };
@@ -128,6 +133,10 @@ export function createUsageReader(
   // Ollama's clocks, same deal: fetched over the network, so unlike the OMP
   // clocks in `usage_history` they cannot be re-read per snapshot.
   let ollamaLimits: ProviderLimits | undefined;
+  // Per-period aggregates Cursor has already answered for, keyed by the
+  // period's own bounds. A window is worth one round trip, not one per render;
+  // `fetch()` clears the map so "today" keeps growing as the day does.
+  const cursorWindows = new Map<string, CursorWindowAggregate>();
 
   /**
    * The effective source configuration, re-read on every call: the other shell
@@ -139,6 +148,47 @@ export function createUsageReader(
     // A stored override wins, then the constructor injection (tests only),
     // then the collector's own default location.
     return { ...stored, ompPath: stored.ompPath || ompDirectory || defaultSessionsDirectory() };
+  }
+
+  /**
+   * Cursor's numbers for `period`: its own window when the period is bounded
+   * and Cursor can answer, the cached cycle otherwise.
+   *
+   * The fallback is deliberate rather than an error — a cycle total is still
+   * worth showing on its own row, and `buildDashboardSnapshot` keeps it out of
+   * the combined estimate while it is the wrong scope. All-time never asks:
+   * Cursor rejects a window spanning its two backend boundaries.
+   */
+  async function cursorForPeriod(period: PeriodFilter): Promise<CursorSnapshot> {
+    const cycle = cursorCycle ?? EMPTY_CURSOR_CYCLE;
+    // Nothing fetched yet, or the Enterprise event path: nothing to narrow.
+    if (cycle.mode !== "cycle_aggregate" || cycle.cycleStart === "") return cycle;
+    if (!sources().cursorEnabled) return cycle;
+
+    const { start, end } = periodBounds(period, now());
+    if (start === null || end === null) return cycle;
+    // A period runs to the next local midnight; Cursor is asked only as far as
+    // the present, and a period that has not started yet is not asked at all.
+    const until = Math.min(end, now().getTime());
+    if (until <= start) return cycle;
+
+    const key = `${start}|${end}`;
+    let windowed = cursorWindows.get(key);
+    if (!windowed) {
+      const auth = readCursorAuth(cursorStatePath ?? defaultCursorStatePath());
+      if (!auth.ok) return cycle;
+      try {
+        windowed = await fetchCursorWindowAggregate(auth, { start, end: until }, fetchImpl);
+      } catch {
+        // Transport, HTTP or shape failure. The cycle still renders; the
+        // snapshot marks it out of scope rather than inventing a day's number.
+        return cycle;
+      }
+      cursorWindows.set(key, windowed);
+    }
+    // Cycle dates and plan percentages do not move with the period, so they
+    // come from the cycle fetch; only the rows and their scope change.
+    return { ...cycle, window: windowed.window, models: windowed.models };
   }
 
   return {
@@ -177,6 +227,9 @@ export function createUsageReader(
       const cycle = result.cursor.cycle;
       if (cycle) cursorCycle = cycle;
       if (result.ollama.limits) ollamaLimits = result.ollama.limits;
+      // Every window Cursor answered for is now stale — "today" has grown, and
+      // a manual refresh is the user asking for current numbers.
+      cursorWindows.clear();
 
       const cursorFailed = !result.cursor.ok && !CURSOR_DEGRADED.has(result.cursor.reason ?? "");
       const errors: string[] = [];
@@ -212,7 +265,7 @@ export function createUsageReader(
       return buildDashboardSnapshot({
         period,
         ompEvents: loadUsageEvents(db, "omp"),
-        cursor: cursorCycle ?? EMPTY_CURSOR_CYCLE,
+        cursor: await cursorForPeriod(period),
         now: now(),
         // Provider clocks. The OMP ones are re-read out of OMP's own agent
         // database on every snapshot — OMP refreshes them while it works, and
@@ -224,9 +277,9 @@ export function createUsageReader(
           : [],
         // Cost is a join, never a stored column, so every snapshot re-reads
         // `price_entries`: a rate added in Settings prices old events on the
-        // very next call, with no rewrite of `usage_events`. Cycle aggregates
+        // very next call, with no rewrite of `usage_events`. Cursor aggregates
         // have no timestamp of their own and price at the rate in force now —
-        // the only honest window for a cycle-to-date total.
+        // the only honest window for a total that carries no per-request time.
         // ponytail: one prepared lookup per row. Cache by (model, window) if a
         // snapshot over tens of thousands of events ever feels slow.
         priceCents: (model, tokens, timestamp) =>

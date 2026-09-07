@@ -82,7 +82,7 @@ describe("buildDashboardSnapshot with Cursor Pro cycle aggregates", () => {
     expect(today.omp.tokens.input + today.cursor.tokens.input).toBe(3200179);
   });
 
-  it("flags mixed periods everywhere except all-time, and always labels the cycle", () => {
+  it("flags a cycle-wide Cursor everywhere except all-time, and labels the cycle", () => {
     expect(today.mixedPeriod).toBe(true);
     expect(allTime.mixedPeriod).toBe(false);
     expect(today.cursor.cycleLabel).toBe(CURSOR_CYCLE_LABEL);
@@ -177,10 +177,25 @@ describe("buildDashboardSnapshot with an injected pricer", () => {
     });
 
     expect(opusOnly.omp.estimatedCents).toBe(12);
-    // The Cursor cycle models have no rate here, so the combined total cannot
-    // be known — the OMP subtotal still is.
+    // The Cursor cycle models have no rate here, and the cycle is the wrong
+    // scope for "today" anyway: it is out of the combined figure, so its
+    // unknown price no longer blanks a number it is not part of.
     expect(opusOnly.cursor.estimatedCents).toBeNull();
-    expect(opusOnly.estimatedCents).toBeNull();
+    expect(opusOnly.estimatedCents).toBe(12);
+  });
+
+  it("still lets an unpriced row inside the period blank the total", () => {
+    const allTime = buildDashboardSnapshot({
+      period: { kind: "all_time" },
+      ompEvents: OMP_EVENTS.filter((event) => event.model === "claude-opus-5"),
+      cursor: CURSOR_CYCLE,
+      now: NOW,
+      priceCents,
+    });
+
+    // All-time counts the cycle, so the cycle's unpriced rows count too.
+    expect(allTime.mixedPeriod).toBe(false);
+    expect(allTime.estimatedCents).toBeNull();
   });
 
   it("reports zero, not unknown, for a period with no usage at all", () => {
@@ -193,6 +208,42 @@ describe("buildDashboardSnapshot with an injected pricer", () => {
     });
 
     expect(empty.estimatedCents).toBe(0);
+  });
+});
+
+describe("buildDashboardSnapshot with a Cursor window", () => {
+  /** A cent per input token for `claude-opus-5`, whatever the timestamp. */
+  const priceCents = (model: string, tokens: { input: number }) =>
+    model === "claude-opus-5" ? tokens.input : null;
+
+  /** What Cursor answers when asked for today rather than the cycle. */
+  const WINDOW = { start: ist("2026-09-02T00:00:00.000"), end: ist("2026-09-02T18:00:00.000") };
+  const windowed = buildDashboardSnapshot({
+    period: { kind: "today" },
+    ompEvents: OMP_EVENTS.filter((event) => event.model === "claude-opus-5"),
+    cursor: {
+      ...CURSOR_CYCLE,
+      window: WINDOW,
+      models: [{ model: "claude-opus-5", tokens: { input: 20, output: 5 } }],
+    },
+    now: NOW,
+    priceCents,
+  });
+
+  it("counts Cursor in the total once its rows cover the period", () => {
+    expect(windowed.mixedPeriod).toBe(false);
+    expect(windowed.cursor.window).toEqual(WINDOW);
+    // Today's two opus events (5 + 7) plus Cursor's 20 for the same day.
+    expect(windowed.omp.estimatedCents).toBe(12);
+    expect(windowed.cursor.estimatedCents).toBe(20);
+    expect(windowed.estimatedCents).toBe(32);
+  });
+
+  it("drops the cycle label, since the rows are no longer the cycle", () => {
+    expect(windowed.cursor.cycleLabel).toBeUndefined();
+    // The cycle window still travels, for the footnote that names it.
+    expect(windowed.cursor.cycleStart).toBe("2026-08-26T07:25:29Z");
+    expect(windowed.cursor.cycleEnd).toBe("2026-09-26T07:25:29Z");
   });
 });
 

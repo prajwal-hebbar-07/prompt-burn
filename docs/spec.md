@@ -18,7 +18,7 @@ This page is the short version to keep open while coding. It duplicates no reaso
 | Sources | OMP + Cursor only. Gemini through Antigravity arrives **inside** OMP — `message.provider`, not a third source. |
 | Metric | Estimated PAYG cost from tokens × our price DB. Not subscription invoices. |
 | OMP accounts | Do not split Claude Pro / Ollama Cloud by account **for usage or cost** — model-level breakdown is enough. Provider *limits* are per account, because a limit belongs to one subscription; the panel names each by the email OMP recorded, so the account to pin next is readable off the card. No email recorded (an API key) falls back to `Account A` / `B`. |
-| Cursor Pro | Cycle-to-date per-model aggregates. Calendar filters do **not** apply. Label **"Cycle to date"**. |
+| Cursor Pro | Per-model aggregates, never events. Calendar filters **do** apply: the dashboard API narrows them with `startDate` / `endDate`, so Today / This month / Date range ask Cursor for that window. All time cannot be asked (Cursor refuses a window spanning its own backend boundaries) and shows the billing cycle, labelled **"Cycle to date"**. |
 | Cursor Enterprise | Optional `crsr_` admin key unlocks per-event timestamps and calendar filters. Not implemented — leave the type union open. |
 | Filters | Today, This month (calendar month, not rolling 30 days), All time, Date range (single day = same start and end). Device timezone. Inclusive end day in UI; exclusive next-day 00:00 in code. |
 | Combined total | Always shown. Per-source subtotals always shown. No dedupe across OMP + Cursor. |
@@ -31,9 +31,8 @@ This page is the short version to keep open while coding. It duplicates no reaso
 | VS Code | Opens as an **editor tab** (full width), not a sidebar. |
 | Trust | Local only. Never persist Cursor auth tokens in our DB. |
 
-> The Cursor Pro row is contradicted by the spike: the dashboard API **does** accept date windows.
+> The Cursor Pro row acts on the spike: the dashboard API **does** accept date windows.
 > See [data-shapes.md § Cursor Pro *does* accept date windows](data-shapes.md#finding-cursor-pro-does-accept-date-windows).
-> Unchanged until that product decision is made.
 
 > Gemini/Antigravity is an OMP provider value, not an origin: `gemini-3.8-flash` /
 > `google-antigravity` / `google-gemini-cli` on ordinary OMP assistant lines, `source: "omp"`.
@@ -44,12 +43,24 @@ This page is the short version to keep open while coding. It duplicates no reaso
 
 ## Mixed periods
 
-Cursor Pro is always cycle-to-date. When the period is Today / This month / Date range:
+A period Cursor can answer for is not a mixed period at all: Today / This month / Date range
+each fetch their own window, both sources describe the same days, and the grand total is their
+sum with `mixedPeriod: false`.
+
+`mixedPeriod: true` is the fallback — Cursor refused, failed, or is signed out, so all that is
+on hand is the billing cycle. Then:
 
 - OMP total = filtered
 - Cursor total = cycle-to-date, **unchanged** — never shrunk to the period
-- Grand total = OMP(filtered) + Cursor(cycle), with `mixedPeriod: true`
-- The hero **must** name both scopes, e.g. `OMP: Today · Cursor: cycle to date`
+- Grand total = OMP(filtered) **only**. A 30-day cycle is not part of one day's cost, so it is
+  excluded rather than added, and its unpriced rows cannot blank the number either
+- Cursor's cycle figure stays on its own subtotal row, labelled `Cursor (cycle to date · not in
+  total)`
+- The hero **must** name both scopes and say which one the number is, e.g.
+  `OMP: Today · Cursor: cycle to date (not in total)`
+
+All time is the one period where a cycle total is counted: the scopes do not clash there, so
+`mixedPeriod` is false and Cursor is in the sum.
 
 Never invent daily splits from cycle aggregates. Cursor cycle rows are stored with
 `period = 'cycle'` and no fake timestamps.

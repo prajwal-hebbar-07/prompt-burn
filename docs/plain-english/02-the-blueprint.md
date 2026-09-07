@@ -51,8 +51,12 @@ wrong later:
   The one exception is the "Usage limits" panel, where a five-hour window belongs to one
   subscription and nothing else: there each account is named by its email, so you can see which
   one to pin next.
-- **Cursor Pro reports per billing cycle only.** It gives one set of totals for the current
-  cycle, so it gets a "Cycle to date" label and calendar filters don't touch it.
+- **Cursor answers for whichever days you ask about.** Pick Today, This month or a date range
+  and Cursor is asked for exactly those days, so both columns describe the same time. "All
+  time" is the exception — that request is refused, so Cursor shows its current billing cycle
+  with a "Cycle to date" label. If the request fails on any page, Cursor falls back to the same
+  cycle figure, and that figure is then left out of the headline total instead of being added
+  to a single day's worth of OMP work.
 - **Optional enterprise key.** If an Enterprise admin key is ever provided, Cursor could report
   event-by-event times and calendar filters would work for it too. Nobody has that key, so the
   design just leaves a door open.

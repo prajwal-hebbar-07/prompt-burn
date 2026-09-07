@@ -146,13 +146,22 @@ export interface ProviderLimits {
   limits: UsageLimit[];
 }
 
+/** The half-open window a set of Cursor aggregates covers, both ISO instants. */
+export interface CursorWindow {
+  start: string;
+  end: string;
+}
+
 /**
  * What a Cursor collector can return.
  *
- * `cycle_aggregate` is the Cursor Pro path: cycle-to-date per-model totals with
- * no timestamps, stored with `period = 'cycle'` and no synthesized timestamps.
- * `events` is the unimplemented Enterprise path (`crsr_` admin key), kept in the
- * union so adding it later is not a breaking change.
+ * `cycle_aggregate` is the Cursor Pro path: per-model totals with no
+ * timestamps. The rows cover the whole billing cycle unless `window` says
+ * otherwise — `get-aggregated-usage-events` accepts `startDate` / `endDate`
+ * and narrows the aggregate server-side, which is how a calendar period gets
+ * real Cursor numbers instead of a cycle total standing in for a day.
+ * `events` is the unimplemented Enterprise path (`crsr_` admin key), kept in
+ * the union so adding it later is not a breaking change.
  */
 export type CursorSnapshot =
   | {
@@ -161,6 +170,11 @@ export type CursorSnapshot =
       cycleStart: string;
       /** ISO, from `/api/usage-summary` `billingCycleEnd`. */
       cycleEnd: string;
+      /**
+       * The window `models` actually covers. Absent means the whole cycle —
+       * the only case where Cursor's scope can differ from the period.
+       */
+      window?: CursorWindow;
       models: ModelAggregate[];
       /**
        * Plan percentages from the same `/api/usage-summary` call. Absent when
@@ -188,12 +202,21 @@ export interface DashboardSnapshot {
    * Projects route is this list; nothing on the Dashboard filters by it.
    */
   projects: ProjectUsage[];
-  /** Combined estimate; `null` if any included row has an unknown price. */
+  /**
+   * Combined estimate for everything the period actually covers: OMP plus
+   * Cursor, or OMP alone when Cursor could only answer for its whole billing
+   * cycle (`mixedPeriod`) — a 30-day cycle total has no business inside a
+   * one-day figure. `null` if any included row has an unknown price.
+   */
   estimatedCents: number | null;
   omp: SourceTotals;
   cursor: SourceTotals & {
     mode: CursorSnapshot["mode"];
-    /** e.g. "Cycle to date". */
+    /**
+     * e.g. "Cycle to date" — set only while the rows really are cycle-wide.
+     * A windowed fetch narrows them to the period, and then there is no cycle
+     * label to footnote.
+     */
     cycleLabel?: string;
     /**
      * The Pro cycle window, passed straight through from `CursorSnapshot` so
@@ -202,12 +225,22 @@ export interface DashboardSnapshot {
      */
     cycleStart?: string;
     cycleEnd?: string;
+    /**
+     * The window Cursor actually answered for, when the period was narrow
+     * enough to ask. Absent means the rows are the whole cycle.
+     */
+    window?: CursorWindow;
     /** Cursor's own included-pool percentages, for the limits panel only. */
     included?: CursorIncludedUsage;
   };
   /** By-model rows keyed by `(source, model)`; same model twice is expected. */
   models: Array<ModelAggregate & { source: Source; estimatedCents: number | null }>;
-  /** Cursor is cycle-only while the period is not all-time-equivalent. */
+  /**
+   * Cursor could only answer for its billing cycle while the period is
+   * narrower, so its cost is shown on its own row and is **not** in
+   * `estimatedCents`. False once a windowed fetch matches the period, and on
+   * all-time, where the cycle does not clash.
+   */
   mixedPeriod: boolean;
   /**
    * Provider usage clocks, one entry per (provider, account). Never filtered by

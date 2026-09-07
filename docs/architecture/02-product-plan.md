@@ -57,14 +57,18 @@ restated in `docs/spec.md` (§ Locked decisions):
   exception: a subscription window belongs to an account, so the Usage limits panel shows one
   block per account, named by the email OMP recorded in `usage_history` so the right
   subscription can be pinned; `Account A` / `B` remains the fallback when there is no email.
-- **Cursor Pro** — cycle-to-date per-model aggregates, labeled "Cycle to date". Calendar filters
-  do **not** apply.
+- **Cursor Pro** — per-model aggregates, never events. Calendar filters **do** apply: the
+  dashboard API narrows the aggregate with `startDate` / `endDate`, so Today / This month / Date
+  range each fetch their own window. All time cannot be asked (an unbounded window is refused)
+  and shows the billing cycle, labeled "Cycle to date".
 - **Cursor Enterprise** — an optional `crsr_` admin key would unlock per-event timestamps and
   calendar filters. Not in this plan; the type union stays open.
 - **Filters** — Today, This month (calendar month, not rolling 30 days), All time, Date range.
   Device timezone. Inclusive end day in the UI; exclusive next-midnight in code.
-- **Combined total** — always shown, with per-source subtotals. No dedupe across OMP + Cursor;
-  same work in both tools may inflate the total — accepted.
+- **Combined total** — always shown, with per-source subtotals. It covers only what the period
+  covers: a Cursor billing cycle standing against a narrower period is excluded from it and
+  shown on its own row. No dedupe across OMP + Cursor; same work in both tools may inflate the
+  total — accepted.
 - **By-model table** — rows keyed by `(source, model)`; the same model on both sources is
   two rows.
 - **Fetch** — on open + manual button only. Keep previous data while fetching and on error
@@ -85,9 +89,12 @@ restated in `docs/spec.md` (§ Locked decisions):
   period-filtered, never summed. A provider that has not answered gets no card, and a failed
   Ollama call never fails the fetch pass.
 
-The mixed-period consequence is part of the same contract: when the period is not all-time and
-Cursor is Pro, the grand total is OMP(filtered) + Cursor(cycle) and the hero must label both
-scopes (e.g. `OMP: Today · Cursor: cycle to date`). Never invent daily splits from cycle
+The mixed-period consequence is part of the same contract, and it is now the *fallback* rather
+than the norm: when Cursor answered for the period, both sources share one scope and the grand
+total is their sum. When it could not — signed out, HTTP failure, refused window — the grand
+total is OMP(filtered) alone, the cycle keeps its own row, and the hero must label both scopes
+and say which one the number is (e.g. `OMP: Today · Cursor: cycle to date (not in total)`).
+All-time is the one period that counts a cycle total. Never invent daily splits from cycle
 aggregates; cycle rows are stored with `period = 'cycle'` and no fake timestamps.
 
 ### Build-sequence status as of 325b156
@@ -143,15 +150,16 @@ locked table stays unchanged until a product decision is made.
   in sync; `product.md` is the tiebreaker. There is no mechanism enforcing this — three human-
   readable copies of the same truth.
 - `product.md` wins on conflict with any other doc, including the plan's own locked table.
-- The spike finding is a standing contradiction, not an edit: `docs/data-shapes.md`
+- The spike finding is no longer a standing contradiction: `docs/data-shapes.md`
   ([§ Finding](../../docs/data-shapes.md#finding-cursor-pro-does-accept-date-windows)) proved the
-  Cursor Pro API **does** accept `startDate` / `endDate` windows, contradicting the locked
-  "Pro = cycle only" row. All three planning docs carry a deliberate not-acting pointer
-  (`product.md` line ~81, `implementation-plan.md` line ~28, `spec.md` line ~33). Cycle-aggregate
-  mode remains the correct subset either way and `CursorSnapshot` keeps the union open — the
-  shipped `packages/core` types realize exactly that.
-- Mixed-period is now a code contract as well as a UI one: `DashboardSnapshot.mixedPeriod` and
-  the hero-label obligation are in the shipped snapshot type; the UI that renders it is not.
+  Cursor Pro API **does** accept `startDate` / `endDate` windows, and as of 2026-09-07 the
+  product does that — the three locked-table copies say filters apply, and the plan carries it as
+  commit 40. What survives of the old subset rule is all-time, where an unbounded window is
+  refused and the cycle stands in.
+- Mixed-period is a code contract as well as a UI one, and it now decides arithmetic rather than
+  only copy: `DashboardSnapshot.mixedPeriod` marks a Cursor cycle standing against a narrower
+  period, and `estimatedCents` excludes Cursor whenever it is set. `CursorSnapshot.window` is
+  what clears it.
 - Cost display: unknown price → `—`, never `$0`. Cursor's own cents are informational only. The
   db package's `estimateCents` returns `null` for unknown prices, matching the rule.
 - Never commit Cursor access tokens, `crsr_` keys, raw session files, real home paths, `.env`;
@@ -211,28 +219,29 @@ The locked decisions are prose, but the code that landed against them now carrie
 
 ## 9. Debt and traps
 
-- **The locked table contains a factually wrong row, on purpose.** "Cursor Pro calendar filters
-  do not apply" was disproved by the spike: the API accepts `startDate` / `endDate` windows,
-  including pre-cycle windows. All three planning docs still build as if it were true, with
-  pointer notes saying so. This is the right call (it is a product decision, not a bug fix) but
-  it means every reader must know the table is knowingly stale in one row.
+- **The locked table no longer contradicts the spike.** "Cursor Pro calendar filters do not
+  apply" was disproved by the spike and the product now follows the API: Today / This month /
+  Date range send `startDate` / `endDate`. What is left of the old rule is all-time, which
+  cannot be asked for. The three planning copies were updated together on 2026-09-07; a reader
+  who remembers the old pointer notes should expect them gone.
 - **The plan's db text is stale in one place.** The `better-sqlite3` mentions in the
   architecture sketch and sidecar rationale describe a library the code does not use; §7 records
   the divergence. If anyone re-reads the plan without this doc, they will think a dependency is
   coming that never will be. Fixing the plan text is a docs-sweep decision, not a drive-by.
-- **The mixed-period consequence is a permanent UI obligation.** While Pro stays cycle-only,
-  the hero must label both scopes and never invent daily splits from cycle aggregates. The
-  snapshot type already carries `mixedPeriod`; any future change that applies date windows to
-  Cursor must revisit this contract, the cycle banner, and the mixed-period subtitle at once.
+- **The mixed-period consequence is a permanent UI obligation, and now an arithmetic one.**
+  Whenever only a cycle total is on hand for a narrower period, the hero must label both scopes,
+  say the cycle is not in the total, and actually leave it out — `estimatedCents` drops Cursor
+  while `mixedPeriod` is set. Any change to windowed fetching must revisit that flag, the cycle
+  banner, the hero subtitle and the subtotal label at once.
 - **Three copies of the locked table will drift.** `implementation-plan.md` and `spec.md` both
   restate it verbatim with no sync check. A one-row edit must land in both plus be validated
   against `product.md`.
 - **`spec.md` is an orphan link-wise.** Nothing links to it; it is discoverable only by habit.
   `README.md` links only product + plan.
-- **Date-window constraint discovered but unused.** A window may not span both 2025-08-01 and
-  2026-05-14 (backend constraint; all-time would need up to three merged calls). Relevant the
-  moment the not-acting decision is revisited; easy to re-forget because no doc outside the
-  spike records it.
+- **The all-time window is still unaskable.** A window may not span both 2025-08-01 and
+  2026-05-14 (backend constraint), so all-time keeps sending `{}` and shows the cycle. Working
+  around it means up to three merged calls keyed on two account-specific dates that exist only
+  in an error message — deliberately not hard-coded.
 - **`default` (Auto) model has real tokens and no public rate** — the unknown-price `—` path is
   a guaranteed first-class state, and the shipped `estimateCents` null path is its code half.
 - **The spike script can write unredacted dumps** when given an output dir; the safety depends
@@ -247,9 +256,10 @@ The locked decisions are prose, but the code that landed against them now carrie
   mirror the row in `docs/implementation-plan.md` § Locked product decisions and `docs/spec.md`
   § Locked decisions in the same commit. If a data-shape assumption is involved, re-run the
   spike before locking.
-- Resolving the Cursor Pro date-window question: decide in `product.md`, update all three
-  locked-table copies, update or remove the three spike pointers, and revise the mixed-period
-  contract + UI edge-case table together. All-time fetching gains the split-window constraint.
+- Changing how Cursor follows the calendar: the window comes from `periodBounds` in
+  `packages/core`, is fetched by `fetchCursorWindowAggregate`, and is resolved per period in
+  `createUsageReader`. A change there must move `mixedPeriod`, the hero subtitle, the cycle
+  footnote, the subtotal label and the golden snapshots together — they encode one contract.
 - Adding a deferred feature (source dropdown, auto-refresh, migration runner,
   CSV export, other assistants, timezone setting, per-account OMP usage split, Enterprise
   ingest): remove it from the deferred list in both `product.md` and `implementation-plan.md`
