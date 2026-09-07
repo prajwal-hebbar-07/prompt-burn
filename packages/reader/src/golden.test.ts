@@ -176,7 +176,7 @@ const ALL_TIME: DashboardSnapshot = {
 const CURSOR_WINDOW_ROW: DashboardSnapshot["models"][number] = {
   source: "cursor",
   model: "cursor-grok-4.6-high",
-  tokens: { input: 675_956, output: 45_332, cacheRead: 6_028_160 },
+  tokens: { input: 675_956, output: 45_332, cacheRead: 6_028_160, cacheWrite: 0 },
   estimatedCents: 463.7984,
 };
 
