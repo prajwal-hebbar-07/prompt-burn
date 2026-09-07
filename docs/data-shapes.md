@@ -147,6 +147,7 @@ CREATE TABLE usage_history (
 | Our field | `usage_history` column | Example |
 |-----------|------------------------|---------|
 | grouping key (never exposed) | `provider` + `account_key` | `anthropic` + `oauth\|account:…\|email:…\|org:…` |
+| `ProviderLimits.account` | `email` — absent when the column is `NULL` | `you@example.com` |
 | `UsageLimit.id` | `limit_id` | `anthropic:5h`, `google-antigravity:google:default:gemini-weekly` |
 | `UsageLimit.label` | `label` | `Claude 5 Hour`, `Usage (Google)` |
 | `UsageLimit.windowLabel` | `window_label` | `5 Hour`, `7 Day`, `Weekly`, `extra` |
@@ -165,8 +166,10 @@ Reading notes, all of them load-bearing:
 
 - The table is a **series**, one row per limit per refresh (371 rows here). Only the newest row
   per `(provider, account_key, limit_id)` is current.
-- `email` and `account_id` are right there and are deliberately **not read** — the panel labels
-  accounts `Account A` / `B`, and an email on screen is an email in every screenshot.
+- `email` **is** read and shown: the panel names each account so the right subscription can be
+  pinned in OMP without guessing which of `Account A` / `B` it was. `account_id` is still not
+  read — a UUID names nothing to a human. A provider whose rows carry no email (an API key
+  rather than an OAuth account) keeps the `Account A` / `B` fallback.
 - Rows for a **removed** credential are never deleted, so observations older than 7 days (the
   longest window a provider reports) are dropped rather than shown as current.
 - `anthropic:extra` is dollars, not a clock: `used_fraction` is the fraction of the extra-usage

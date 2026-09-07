@@ -39,7 +39,7 @@ Two sources only.
 | **Cursor (Pro, default)** | Dashboard API cycle aggregates (`GetAggregatedUsageEvents`), auth from local `state.vscdb` | **Billing cycle only** — labeled **“Cycle to date”** | Same price DB |
 | **Cursor (Enterprise, optional)** | Admin API usage events with a `crsr_` key | Per-event timestamps → calendar filters work | Same price DB |
 
-OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split usage or cost by account.** Model-level breakdown is enough. Provider *limits* are the exception, because a 5-hour window belongs to one subscription and not to a model — those are shown per account, anonymously (`Account A` / `Account B`, never an email).
+OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split usage or cost by account.** Model-level breakdown is enough. Provider *limits* are the exception, because a 5-hour window belongs to one subscription and not to a model — those are shown per account, named by the email OMP recorded for it, because the reason to read the panel is to decide which account to pin next. An account with no email on record falls back to `Account A` / `Account B`.
 
 Gemini is **not a third source.** It reaches OMP through Antigravity, so its turns are ordinary OMP session-log lines (`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage. Its public Gemini API rates are bundled, so those turns price like any other model.
 
@@ -232,7 +232,7 @@ Until explicitly asked:
 | Cursor not installed / no token | Cursor section degraded; OMP still works |
 | Mixed period (Pro + Today) | Hero subtitle names both scopes; Cursor numbers do not shrink to “today” |
 | Provider limit window already reset | `—` and “window ended”, never the finished window's percentage |
-| OMP has not refreshed a provider clock in 30 min | The account line admits it: `Account A · as of 09:12` |
+| OMP has not refreshed a provider clock in 30 min | The account line admits it: `you@example.com · as of 09:12` |
 | Provider never answered (no key, dead endpoint) | No card for it at all — never a comfortable `0%`. An Ollama failure does not fail the fetch |
 
 ---

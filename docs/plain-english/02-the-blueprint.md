@@ -48,6 +48,9 @@ wrong later:
   table of public pay-as-you-go prices kept on this machine. What Cursor itself says you owe is
   ignored for this number.
 - **No per-account splitting.** OMP usage shows up per model, not per subscription or API key.
+  The one exception is the "Usage limits" panel, where a five-hour window belongs to one
+  subscription and nothing else: there each account is named by its email, so you can see which
+  one to pin next.
 - **Cursor Pro reports per billing cycle only.** It gives one set of totals for the current
   cycle, so it gets a "Cycle to date" label and calendar filters don't touch it.
 - **Optional enterprise key.** If an Enterprise admin key is ever provided, Cursor could report

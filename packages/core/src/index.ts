@@ -128,14 +128,16 @@ export interface UsageLimit {
  * Every limit one account holds with one provider. Two Claude subscriptions are
  * two entries with the same `provider` — the only place this app splits by
  * account, because a limit belongs to an account and to nothing else.
- *
- * Deliberately anonymous: OMP stores the email and account id next to these
- * rows and neither is carried here. The UI labels accounts `Account A` / `B` in
- * array order.
  */
 export interface ProviderLimits {
   /** OMP's provider id, e.g. `anthropic`, `google-antigravity`. */
   provider: string;
+  /**
+   * Who the subscription belongs to, as OMP recorded it — an email. Absent
+   * when the provider has no per-account identity (an Ollama Cloud API key),
+   * and then the UI falls back to `Account A` / `B` in array order.
+   */
+  account?: string;
   /**
    * ISO of the newest observation in this group. These are provider answers
    * OMP cached while it worked, not something this app fetched.
