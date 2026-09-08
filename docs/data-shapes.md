@@ -341,6 +341,13 @@ cycle comes back, labelled as the cycle and excluded from the combined total.
 Fixture: [`fixtures/cursor-window-aggregates.json`](fixtures/cursor-window-aggregates.json) —
 one real today-window response from this account, structure verbatim.
 
+**Empty windows answer `200 {}`, checked 2026-09-08.** A window Cursor recorded no usage in
+comes back as a bare `{}` — no `aggregations` key, no totals — while the neighbouring days on the
+same account returned rows (Sep 1 → 5 rows, Sep 2 → 6, Sep 3 → 1, … Sep 8 → `{}`). That is zero
+usage, not a broken payload, so `aggregateModels` maps a missing `aggregations` to no rows and
+throws only when the key is present with the wrong type. Treating `{}` as a failure is what made
+an idle Cursor day fall back to the whole billing cycle and drop out of the day's total.
+
 ---
 
 ## Confirmed on this machine

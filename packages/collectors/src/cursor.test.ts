@@ -166,11 +166,20 @@ describe("fetchCursorCycle", () => {
     expect(snapshot.included).toBeUndefined();
   });
 
-  it("throws when the aggregate response has no aggregations", async () => {
+  it("reads a bare {} as no usage, and a wrong-typed aggregations as a failure", async () => {
     const { impl } = stubFetch({
       "https://cursor.com/api/dashboard/get-aggregated-usage-events": "{}",
     });
-    await expect(fetchCursorCycle(SESSION, impl)).rejects.toThrow("aggregations");
+    const snapshot = await fetchCursorCycle(SESSION, impl);
+    if (snapshot.mode !== "cycle_aggregate") throw new Error("expected cycle mode");
+    expect(snapshot.models).toEqual([]);
+
+    const broken = stubFetch({
+      "https://cursor.com/api/dashboard/get-aggregated-usage-events": JSON.stringify({
+        aggregations: { "cursor-grok-4.6-high": 1 },
+      }),
+    });
+    await expect(fetchCursorCycle(SESSION, broken.impl)).rejects.toThrow("aggregations");
   });
 });
 
@@ -214,6 +223,20 @@ describe("fetchCursorWindowAggregate", () => {
           tokens: { input: 680_000, output: 50_000, cacheRead: 6_030_000 },
         },
       ],
+    });
+  });
+
+  it("answers an idle window with zero rows, still scoped to the window", async () => {
+    // Cursor's own answer for a day with no usage: `200 {}`. The window must
+    // survive, or the caller falls back to the cycle and the day's total
+    // silently turns into a month's.
+    const { impl } = stubFetch({
+      "https://cursor.com/api/dashboard/get-aggregated-usage-events": "{}",
+    });
+
+    expect(await fetchCursorWindowAggregate(SESSION, { start: START, end: END }, impl)).toEqual({
+      window: { start: "2026-09-02T00:00:00.000Z", end: "2026-09-02T18:00:00.000Z" },
+      models: [],
     });
   });
 
