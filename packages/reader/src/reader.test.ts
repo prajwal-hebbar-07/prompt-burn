@@ -78,6 +78,8 @@ let db: DatabaseSync;
 let status: number;
 /** Flipped on its own, so a window can fail while the cycle still answers. */
 let windowStatus: number;
+/** What the windowed call answers with. `{}` is Cursor's "no usage" answer. */
+let windowBody: string;
 /** Every windowed aggregate body Cursor was asked for, in order. */
 let windowCalls: Array<{ startDate?: string; endDate?: string; teamId?: number }>;
 
@@ -95,7 +97,7 @@ function reader(cursorStatePath = statePath) {
       const body = JSON.parse(String(init?.body ?? "{}"));
       if (body.startDate === undefined) return new Response(AGGREGATES, { status });
       windowCalls.push(body);
-      return new Response(WINDOW_AGGREGATES, { status: windowStatus });
+      return new Response(windowBody, { status: windowStatus });
     }) as unknown as typeof fetch,
     now: () => NOW,
   });
@@ -104,6 +106,7 @@ function reader(cursorStatePath = statePath) {
 beforeEach(() => {
   status = 200;
   windowStatus = 200;
+  windowBody = WINDOW_AGGREGATES;
   windowCalls = [];
   root = mkdtempSync(join(tmpdir(), "prompt-burn-reader-sources-"));
   sessions = join(root, "omp-sessions");
@@ -221,6 +224,25 @@ it("keeps the cycle out of the total when Cursor cannot answer for the period", 
   // cycle holds unpriced models, so summing it would also blank the total.
   expect(today.cursor.estimatedCents).toBeNull();
   expect(today.estimatedCents).toBeCloseTo(OMP_CENTS, 6);
+});
+
+it("counts an idle Cursor day as zero, not as the whole cycle", async () => {
+  const host = reader();
+  await host.fetch();
+
+  // Cursor's real answer for a day it recorded nothing in: `200 {}`, with no
+  // `aggregations` key at all. That is zero usage, so the day stays a day.
+  windowBody = "{}";
+  const today = await host.getSnapshot({ kind: "today" });
+
+  expect(today.cursor.tokens).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  expect(today.cursor.window?.end).toBe(NOW.toISOString());
+  expect(today.cursor.cycleLabel).toBeUndefined();
+  expect(today.mixedPeriod).toBe(false);
+  // Zero Cursor spend, not a $132 cycle bolted onto one day's OMP number.
+  expect(today.cursor.estimatedCents).toBe(0);
+  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS, 6);
+  expect(today.models.map((row) => row.source)).toEqual(["omp"]);
 });
 
 it("keeps the last Cursor cycle when a later fetch fails", async () => {
