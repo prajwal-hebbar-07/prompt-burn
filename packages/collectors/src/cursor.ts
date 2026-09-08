@@ -131,10 +131,17 @@ export async function fetchCursorWindowAggregate(
  * no public rate, and must surface as an unknown-price row rather than vanish.
  * Two intents can canonicalize to the same id (`…-high-fast` collapses onto
  * `…-high`); the core rollup merges those.
+ *
+ * A window Cursor has no events for answers `200 {}` — no `aggregations` key
+ * at all. That is zero usage, not a broken payload: verified against the live
+ * endpoint on 2026-09-08, where a day with no Cursor work returned `{}` while
+ * the surrounding days returned rows. Only a present-but-not-array
+ * `aggregations` is a shape failure worth throwing over.
  */
 function aggregateModels(response: CursorAggregateResponse): ModelAggregate[] {
+  if (response.aggregations === undefined) return [];
   if (!Array.isArray(response.aggregations)) {
-    throw new Error(`POST ${AGGREGATE_PATH} returned no aggregations array`);
+    throw new Error(`POST ${AGGREGATE_PATH} returned a non-array aggregations field`);
   }
   const rows: CursorAggregation[] = response.aggregations;
   return rows.map((row) => ({
