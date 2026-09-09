@@ -10,6 +10,13 @@ export {
   fetchCursorWindowAggregate,
   type CursorWindowAggregate,
 } from "./cursor.js";
+export {
+  collectClaudeEvents,
+  defaultClaudeDirectory,
+  parseClaudeSessionFile,
+  scanClaudeSessionFile,
+  type ClaudeFileScan,
+} from "./claude-code.js";
 export { collectAllSources, type CollectOptions, type CollectResult } from "./collect.js";
 export {
   collectOmpEvents,
@@ -20,4 +27,4 @@ export {
 } from "./omp.js";
 export { fetchOllamaLimits, readOllamaKey } from "./ollama.js";
 export { ompAgentDatabase, readOmpLimits } from "./omp-limits.js";
-export { syncOmpSessions, type OmpSyncResult } from "./sync.js";
+export { syncClaudeSessions, syncOmpSessions, type OmpSyncResult } from "./sync.js";

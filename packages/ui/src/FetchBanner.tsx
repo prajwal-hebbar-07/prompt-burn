@@ -18,20 +18,22 @@
 import type { DashboardSnapshot } from "@prompt-burn/core";
 
 /** Source labels in banner order, as the reader also writes them. */
-const LABELS = ["OMP", "Cursor"] as const;
+const LABELS = ["OMP", "Claude Code", "Cursor"] as const;
 
 /** Shown when a host set `status: "error"` without a message of its own. */
 const FALLBACK = "Fetch failed";
 
 /**
- * One fetch pass, as both shells receive it. `omp` / `cursor` are absent when
- * the call itself threw and no source ever reported.
+ * One fetch pass, as both shells receive it. `omp` / `claudeCode` / `cursor`
+ * are absent when the call itself threw and no source ever reported.
  */
 export interface FetchPass {
   omp?: { ok: boolean };
+  claudeCode?: { ok: boolean };
   cursor?: { ok: boolean };
   /**
-   * The reader's own text: ` · `-joined `OMP failed: …` / `Cursor failed: …`
+   * The reader's own text: ` · `-joined `OMP failed: …` /
+   * `Claude Code failed: …` / `Cursor failed: …`
    * lines, or a thrown message. Only a real failure is named there, which is
    * what keeps a degraded Cursor out of this copy.
    */
@@ -50,6 +52,7 @@ export function fetchErrorMessage(pass: FetchPass): string {
   const detail = pass.error?.trim() ?? "";
   const succeeded: Record<(typeof LABELS)[number], boolean | undefined> = {
     OMP: pass.omp?.ok,
+    "Claude Code": pass.claudeCode?.ok,
     Cursor: pass.cursor?.ok,
   };
 
@@ -67,7 +70,7 @@ export function fetchErrorMessage(pass: FetchPass): string {
   // The headline already names the sources; the detail keeps only the reasons.
   const reasons = detail
     .split(" · ")
-    .map((line) => line.replace(/^(?:OMP|Cursor) failed: /, ""))
+    .map((line) => line.replace(/^(?:OMP|Claude Code|Cursor) failed: /, ""))
     .filter((line) => line !== "")
     .join(" · ");
 

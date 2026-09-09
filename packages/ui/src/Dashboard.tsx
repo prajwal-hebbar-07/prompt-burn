@@ -2,11 +2,12 @@
  * The Dashboard route body: the hero score panel, then provider clocks, then
  * the by-model board.
  *
- * Combined estimate, then both source subtotals — always both, never deduped,
- * never re-derived here. Cursor answers for the period itself when it can; when
- * all it has is a whole billing cycle (`mixedPeriod`) its cost stays on its own
- * row, out of the hero number, and both the subtitle and that row say so. The
- * cycle's own dates are the cycle banner's job, not this card's.
+ * Combined estimate, then all three source subtotals — always all three, never
+ * deduped, never re-derived here. Cursor answers for the period itself when it
+ * can; when all it has is a whole billing cycle (`mixedPeriod`) its cost stays
+ * on its own row, out of the hero number, and both the subtitle and that row
+ * say so. OMP and Claude Code are timestamped, so they are never out of scope
+ * that way. The cycle's own dates are the cycle banner's job, not this card's.
  *
  * One unpriced model used to blank the whole number: `estimatedCents` is null
  * when any included row has no rate, and the hero showed `—` even with dollars
@@ -27,7 +28,7 @@ import { periodLabel } from "./PeriodBar.js";
 import { UsageLimits } from "./UsageLimits.js";
 
 /** Product's exact sentence for a successful fetch with nothing in it. */
-const NO_USAGE = "No OMP or Cursor usage for this period";
+const NO_USAGE = "No OMP, Claude Code or Cursor usage for this period";
 
 /** Before the first successful fetch there is nothing to be zero about. */
 const NOT_FETCHED = "No usage data yet";
@@ -39,19 +40,27 @@ export interface PricedSubtotal {
 }
 
 /**
- * Adds up the rows that price, optionally for one source only.
+ * The sources whose events carry timestamps, so they always obey the selected
+ * period and are always inside the hero number. Cursor is the odd one out: a
+ * whole-cycle answer can sit outside the period entirely.
+ */
+const TIMESTAMPED: readonly Source[] = ["omp", "claude-code"];
+
+/**
+ * Adds up the rows that price, optionally for one source or a set of them.
  *
  * This is the fallback the hero falls back *to*, so it takes the same scope as
- * the hero: pass `"omp"` while Cursor's cycle is out of the period.
+ * the hero: pass `TIMESTAMPED` while Cursor's cycle is out of the period.
  */
 export function pricedSubtotal(
   rows: DashboardSnapshot["models"],
-  source?: Source,
+  source?: Source | readonly Source[],
 ): PricedSubtotal {
+  const scope = typeof source === "string" ? [source] : source;
   let cents: number | null = null;
   let unpriced = 0;
   for (const row of rows) {
-    if (source !== undefined && row.source !== source) continue;
+    if (scope !== undefined && !scope.includes(row.source)) continue;
     if (row.estimatedCents === null) unpriced += 1;
     else cents = (cents ?? 0) + row.estimatedCents;
   }
@@ -70,11 +79,11 @@ function costText(exact: number | null, fallback: PricedSubtotal): string {
 
 /** The combined total: exact, approximate from priced rows, or the em dash. */
 export function formatEstimatedTotal(snapshot: DashboardSnapshot): string {
-  // Same scope as the number it stands in for: OMP alone while Cursor's cycle
-  // is out of the period.
+  // Same scope as the number it stands in for: the timestamped sources alone
+  // while Cursor's cycle is out of the period.
   return costText(
     snapshot.estimatedCents,
-    pricedSubtotal(snapshot.models, snapshot.mixedPeriod ? "omp" : undefined),
+    pricedSubtotal(snapshot.models, snapshot.mixedPeriod ? TIMESTAMPED : undefined),
   );
 }
 
@@ -86,7 +95,7 @@ export function formatEstimatedTotal(snapshot: DashboardSnapshot): string {
  * whatever the previous snapshot had — this only decides the empty body.
  */
 export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
-  const tokens = [snapshot.omp.tokens, snapshot.cursor.tokens];
+  const tokens = [snapshot.omp.tokens, snapshot.claudeCode.tokens, snapshot.cursor.tokens];
   const used =
     snapshot.models.length > 0 ||
     tokens.some((t) => t.input + t.output + (t.cacheRead ?? 0) + (t.cacheWrite ?? 0) > 0);
@@ -96,15 +105,26 @@ export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
 
 /**
  * `Estimated total · Today` when Cursor answered for the period too, and
- * `Estimated total · OMP: Today · Cursor: cycle to date (not in total)` when
- * all Cursor had was its billing cycle. Locked in product.md and spec.md —
- * every mixed period names both scopes, and says which one the number is.
+ * `Estimated total · OMP + Claude Code: Today · Cursor: cycle to date (not in
+ * total)` when all Cursor had was its billing cycle. Locked in product.md and
+ * spec.md — every mixed period names both scopes, and says which one the
+ * number is. OMP and Claude Code share the first scope because both are
+ * timestamped and both are in the number.
  */
 export function heroSubtitle(snapshot: DashboardSnapshot): string {
   const period = periodLabel(snapshot.period);
   if (!snapshot.mixedPeriod) return `Estimated total · ${period}`;
   const cycle = (snapshot.cursor.cycleLabel ?? CURSOR_CYCLE_LABEL).toLowerCase();
-  return `Estimated total · OMP: ${period} · Cursor: ${cycle} (not in total)`;
+  // Only the sources actually on screen are named; a switched-off one has no
+  // scope to declare.
+  const scope = [
+    snapshot.enabled.omp ? "OMP" : null,
+    snapshot.enabled["claude-code"] ? "Claude Code" : null,
+  ]
+    .filter((label) => label !== null)
+    .join(" + ");
+  if (scope === "") return `Estimated total · Cursor: ${cycle} (not in total)`;
+  return `Estimated total · ${scope}: ${period} · Cursor: ${cycle} (not in total)`;
 }
 
 /** Total tokens for a source, used only to split the meter when nothing prices. */
@@ -113,27 +133,34 @@ function tokenWeight(tokens: DashboardSnapshot["omp"]["tokens"]): number {
 }
 
 /**
- * How wide each half of the split meter is. Spend decides it; with no priced
+ * How wide each segment of the split meter is. Spend decides it; with no priced
  * row anywhere the meter falls back to token volume so the bar still says which
  * source did the work.
  *
  * A Cursor cycle that is out of the period is out of the meter too — it is not
- * part of the number the meter divides.
+ * part of the number the meter divides. Claude Code is timestamped, so it is
+ * never excluded that way.
  */
 export function sourceShares(
   snapshot: DashboardSnapshot,
   omp: number | null,
+  claudeCode: number | null,
   cursor: number | null,
-): { omp: number; cursor: number } {
-  const split = (a: number, b: number) => {
-    const total = a + b;
-    if (total <= 0) return { omp: 0, cursor: 0 };
-    return { omp: (a / total) * 100, cursor: (b / total) * 100 };
+): { omp: number; claudeCode: number; cursor: number } {
+  const split = (a: number, b: number, c: number) => {
+    const total = a + b + c;
+    if (total <= 0) return { omp: 0, claudeCode: 0, cursor: 0 };
+    return { omp: (a / total) * 100, claudeCode: (b / total) * 100, cursor: (c / total) * 100 };
   };
-  const spend = split(Math.max(omp ?? 0, 0), snapshot.mixedPeriod ? 0 : Math.max(cursor ?? 0, 0));
-  if (spend.omp + spend.cursor > 0) return spend;
+  const spend = split(
+    Math.max(omp ?? 0, 0),
+    Math.max(claudeCode ?? 0, 0),
+    snapshot.mixedPeriod ? 0 : Math.max(cursor ?? 0, 0),
+  );
+  if (spend.omp + spend.claudeCode + spend.cursor > 0) return spend;
   return split(
     tokenWeight(snapshot.omp.tokens),
+    tokenWeight(snapshot.claudeCode.tokens),
     snapshot.mixedPeriod ? 0 : tokenWeight(snapshot.cursor.tokens),
   );
 }
@@ -176,12 +203,14 @@ export function Dashboard({ snapshot }: DashboardProps) {
 
   // Same scope as the hero: an unpriced Cursor row cannot make a number it is
   // not part of a floor.
-  const combined = pricedSubtotal(snapshot.models, snapshot.mixedPeriod ? "omp" : undefined);
+  const combined = pricedSubtotal(snapshot.models, snapshot.mixedPeriod ? TIMESTAMPED : undefined);
   const ompPriced = pricedSubtotal(snapshot.models, "omp");
+  const claudePriced = pricedSubtotal(snapshot.models, "claude-code");
   const cursorPriced = pricedSubtotal(snapshot.models, "cursor");
   const shares = sourceShares(
     snapshot,
     snapshot.omp.estimatedCents ?? ompPriced.cents,
+    snapshot.claudeCode.estimatedCents ?? claudePriced.cents,
     snapshot.cursor.estimatedCents ?? cursorPriced.cents,
   );
   const approximate = snapshot.estimatedCents === null && combined.cents !== null;
@@ -227,41 +256,65 @@ export function Dashboard({ snapshot }: DashboardProps) {
           ) : null}
         </div>
 
-        {/* Who burned it: OMP versus Cursor, by spend, tokens as the fallback. */}
+        {/* Who burned it: every switched-on source, by spend, tokens as the
+            fallback. A source that is off is not a zero segment here — it is
+            simply not on this screen. */}
         <div
           aria-hidden="true"
           className="relative mt-5 flex h-2.5 gap-1 overflow-hidden rounded-full bg-surface-subtle"
         >
-          <span
-            className="animate-bar h-full origin-left rounded-full bg-source-omp"
-            style={{ width: `${shares.omp}%` }}
-          />
-          <span
-            className="animate-bar h-full origin-left rounded-full bg-source-cursor"
-            style={{ width: `${shares.cursor}%` }}
-          />
+          {snapshot.enabled.omp ? (
+            <span
+              className="animate-bar h-full origin-left rounded-full bg-source-omp"
+              style={{ width: `${shares.omp}%` }}
+            />
+          ) : null}
+          {snapshot.enabled["claude-code"] ? (
+            <span
+              className="animate-bar h-full origin-left rounded-full bg-provider-claude"
+              style={{ width: `${shares.claudeCode}%` }}
+            />
+          ) : null}
+          {snapshot.enabled.cursor ? (
+            <span
+              className="animate-bar h-full origin-left rounded-full bg-source-cursor"
+              style={{ width: `${shares.cursor}%` }}
+            />
+          ) : null}
         </div>
 
         <div className="relative mt-4 border-t border-border pt-2">
-          <SubtotalRow
-            testId="omp-subtotal"
-            label="OMP"
-            dotClass="bg-source-omp"
-            text={costText(snapshot.omp.estimatedCents, ompPriced)}
-          />
-          <SubtotalRow
-            testId="cursor-subtotal"
-            label={cursorLabel}
-            dotClass="bg-source-cursor"
-            text={costText(snapshot.cursor.estimatedCents, cursorPriced)}
-          />
+          {snapshot.enabled.omp ? (
+            <SubtotalRow
+              testId="omp-subtotal"
+              label="OMP"
+              dotClass="bg-source-omp"
+              text={costText(snapshot.omp.estimatedCents, ompPriced)}
+            />
+          ) : null}
+          {snapshot.enabled["claude-code"] ? (
+            <SubtotalRow
+              testId="claude-code-subtotal"
+              label="Claude Code"
+              dotClass="bg-provider-claude"
+              text={costText(snapshot.claudeCode.estimatedCents, claudePriced)}
+            />
+          ) : null}
+          {snapshot.enabled.cursor ? (
+            <SubtotalRow
+              testId="cursor-subtotal"
+              label={cursorLabel}
+              dotClass="bg-source-cursor"
+              text={costText(snapshot.cursor.estimatedCents, cursorPriced)}
+            />
+          ) : null}
         </div>
 
         <p
           data-testid="token-breakdown"
           className="relative mt-3 font-mono text-small leading-small text-foreground-muted"
         >
-          {tokenLine(snapshot.omp.tokens, snapshot.cursor.tokens)}
+          {tokenLine(snapshot.omp.tokens, snapshot.claudeCode.tokens, snapshot.cursor.tokens)}
         </p>
       </section>
       {/* Subscription windows sit under the score and above the by-model board.

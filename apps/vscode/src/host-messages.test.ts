@@ -15,6 +15,8 @@ const STORED: AppSettings = {
   ompEnabled: true,
   ompPath: "/tmp/omp-sessions",
   cursorEnabled: false,
+  claudeEnabled: true,
+  claudePath: "/tmp/claude-projects",
 };
 
 function stubReader() {

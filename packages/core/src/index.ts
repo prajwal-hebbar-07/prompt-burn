@@ -10,8 +10,11 @@ export { filterEventsByPeriod, periodBounds } from "./period.js";
 export { canonicalModelId } from "./model.js";
 export { buildDashboardSnapshot, CURSOR_CYCLE_LABEL, type SnapshotInput } from "./aggregate.js";
 
-/** Usage origin. OMP and Cursor only; rows are never deduped across sources. */
-export type Source = "omp" | "cursor";
+/**
+ * Usage origin. Rows are never deduped across sources: OMP, Cursor and Claude
+ * Code keep separate transcripts, so the same model on two of them is two rows.
+ */
+export type Source = "omp" | "cursor" | "claude-code";
 
 /**
  * Token counts for one event or aggregate. Cache keys are optional because the
@@ -203,13 +206,28 @@ export interface DashboardSnapshot {
    */
   projects: ProjectUsage[];
   /**
-   * Combined estimate for everything the period actually covers: OMP plus
-   * Cursor, or OMP alone when Cursor could only answer for its whole billing
-   * cycle (`mixedPeriod`) — a 30-day cycle total has no business inside a
-   * one-day figure. `null` if any included row has an unknown price.
+   * Combined estimate for everything the period actually covers: the
+   * timestamped sources (OMP, Claude Code) plus Cursor, or those two alone
+   * when Cursor could only answer for its whole billing cycle (`mixedPeriod`)
+   * — a 30-day cycle total has no business inside a one-day figure. `null` if
+   * any included row has an unknown price.
    */
   estimatedCents: number | null;
+  /**
+   * Which sources the Settings toggles have switched on. A source that is off
+   * contributes nothing — no events, no cost, no subtotal row on the
+   * dashboard: it is not part of this screen at all, rather than a zero on it.
+   * Its stored rows are untouched and return when it is switched back on.
+   */
+  enabled: Record<Source, boolean>;
   omp: SourceTotals;
+  /**
+   * Claude Code's own transcripts (`~/.claude/projects`), the CLI the VS Code
+   * extension drives. Its own subtotal because it is its own tool: the tokens
+   * are separate from OMP's, even when both bill the same Claude subscription.
+   * Zeroed, and off the screen, while `enabled["claude-code"]` is false.
+   */
+  claudeCode: SourceTotals;
   cursor: SourceTotals & {
     mode: CursorSnapshot["mode"];
     /**

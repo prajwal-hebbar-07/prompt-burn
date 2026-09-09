@@ -48,22 +48,26 @@ export function databasePath(home: string = homedir()): string {
 
 /**
  * Opens the database, creating the directory, the file and the schema on first
- * run, topping up the bundled prices, and adding `usage_events.project` to a
- * database created before it existed.
+ * run, topping up the bundled prices, and running the two additive migrations
+ * an older file needs: `usage_events.project`, and a `source` CHECK that
+ * admits `'claude-code'`.
  *
- * That column is the one migration there is (there is still no runner). Stored
- * rows keep their tokens and gain a NULL project; clearing `omp_sync_state`
- * makes the next fetch re-read every transcript, and the sync's upsert fills
- * the column in from each session header's `cwd`. Nothing is deleted, so a
- * project whose transcripts have since been pruned keeps its history — it just
- * stays unattributed.
+ * There is still no migration runner. Both migrations are idempotent and
+ * lossless: the column one keeps every row and gains a NULL project, and
+ * clearing `omp_sync_state` makes the next fetch re-read every transcript so
+ * the sync's upsert fills the column in from each session header's `cwd`.
+ * Nothing is deleted, so a project whose transcripts have since been pruned
+ * keeps its history — it just stays unattributed.
  */
 export function openDatabase(path: string = databasePath()): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const isNew = !existsSync(path);
   const db = new DatabaseSync(path);
   if (isNew) db.exec(SCHEMA_SQL);
-  else addProjectColumn(db);
+  else {
+    addProjectColumn(db);
+    widenSourceCheck(db);
+  }
   seedBundledPrices(db);
   return db;
 }
@@ -78,6 +82,52 @@ function addProjectColumn(db: DatabaseSync): void {
     ALTER TABLE usage_events ADD COLUMN project TEXT;
     CREATE INDEX IF NOT EXISTS usage_events_project ON usage_events (project);
     DELETE FROM omp_sync_state;`);
+}
+
+/**
+ * Lets a database created before Claude Code was a source store its rows.
+ *
+ * SQLite cannot alter a CHECK constraint, so this is the documented rebuild:
+ * new table, copy, drop, rename, indexes back — in one transaction, with
+ * foreign keys off (there are none, but the rebuild recipe requires it). No-op
+ * once the stored DDL already names `claude-code`, so it costs one
+ * `sqlite_schema` read per open after the first.
+ */
+function widenSourceCheck(db: DatabaseSync): void {
+  const ddl = db
+    .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'usage_events'")
+    .get() as { sql?: string } | undefined;
+  if (ddl?.sql === undefined || ddl.sql.includes("claude-code")) return;
+
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    CREATE TABLE usage_events_new (
+      id          TEXT PRIMARY KEY,
+      source      TEXT NOT NULL CHECK (source IN ('omp', 'cursor', 'claude-code')),
+      period      TEXT NOT NULL CHECK (period IN ('event', 'cycle')),
+      timestamp   TEXT NOT NULL,
+      model       TEXT NOT NULL,
+      raw_model   TEXT NOT NULL,
+      input       INTEGER NOT NULL DEFAULT 0,
+      output      INTEGER NOT NULL DEFAULT 0,
+      cache_read  INTEGER NOT NULL DEFAULT 0,
+      cache_write INTEGER NOT NULL DEFAULT 0,
+      session_id  TEXT,
+      project     TEXT,
+      CHECK ((period = 'cycle') = (timestamp = ''))
+    );
+    INSERT INTO usage_events_new
+      SELECT id, source, period, timestamp, model, raw_model,
+             input, output, cache_read, cache_write, session_id, project
+      FROM usage_events;
+    DROP TABLE usage_events;
+    ALTER TABLE usage_events_new RENAME TO usage_events;
+    CREATE INDEX usage_events_timestamp ON usage_events (timestamp);
+    CREATE INDEX usage_events_source_model ON usage_events (source, model);
+    CREATE INDEX usage_events_project ON usage_events (project);
+    COMMIT;
+    PRAGMA foreign_keys = ON;`);
 }
 
 /**

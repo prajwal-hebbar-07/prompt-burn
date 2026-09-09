@@ -1,8 +1,9 @@
 /**
  * The sidecar's stdin/stdout protocol, exercised against the real Node
  * process: a fake HOME, a fake OMP sessions directory, and a synthetic
- * transcript built from the spike fixture. Neither a real `~/.prompt-burn` nor
- * a real `~/.omp` is touched.
+ * transcript built from the spike fixture. Neither a real `~/.prompt-burn`,
+ * `~/.omp` nor `~/.claude` is touched — `CLAUDE_CONFIG_DIR` is cleared for the
+ * child so an inherited one cannot point it at the developer's own history.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -107,7 +108,7 @@ let current: Sidecar | undefined;
 /** Boots the sidecar against a throwaway home; the caller closes it. */
 async function boot(home: string): Promise<Sidecar> {
   const child = spawn(process.execPath, ["--import", RESOLVE_HOOK, SIDECAR], {
-    env: { ...process.env, HOME: home },
+    env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: "" },
     stdio: ["pipe", "pipe", "inherit"],
   });
   if (!child.stdin || !child.stdout) throw new Error("stdio was piped");
@@ -139,7 +140,7 @@ async function withSidecar(test: (sidecar: Sidecar, home: string) => Promise<voi
   }
 }
 
-it("reports OMP health and the missing local Cursor session via discover", async () => {
+it("reports transcript health and the missing local Cursor session via discover", async () => {
   await withSidecar(async (sidecar, home) => {
     const sessions = fakeOmpSessions(home);
 
@@ -148,6 +149,11 @@ it("reports OMP health and the missing local Cursor session via discover", async
     // The temp home has no Cursor user data, so the auth read says so itself.
     expect(response["result"]).toEqual([
       { source: "omp", available: true, detail: sessions },
+      {
+        source: "claude-code",
+        available: false,
+        detail: join(home, ".claude", "projects"),
+      },
       {
         source: "cursor",
         available: false,
@@ -167,6 +173,8 @@ it("fetch syncs OMP transcripts incrementally", async () => {
       at: expect.any(String),
       ok: true,
       omp: { ok: true, scannedFiles: 1, skippedFiles: 0, insertedEvents: 2 },
+      // Claude Code has never run under this temp home: clean and empty.
+      claudeCode: { ok: true, scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 },
       cursor: { ok: false, reason: "not_installed", error: expect.any(String), models: 0 },
       // No `ollama login` under the temp HOME, so there is no key to try.
       ollama: { ok: false, reason: "signed_out", error: expect.any(String) },

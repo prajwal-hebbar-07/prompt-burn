@@ -51,7 +51,7 @@ export function App() {
         const result = await fetchUsage();
         // Every source failed: nothing new is stored, so keep what is on screen
         // rather than re-reading the same rows, and banner why.
-        if (!result.omp.ok && !result.cursor.ok) {
+        if (!result.omp.ok && !result.claudeCode.ok && !result.cursor.ok) {
           failed(fetchErrorMessage(result));
           console.error("prompt-burn: fetch failed", result.error);
           return;

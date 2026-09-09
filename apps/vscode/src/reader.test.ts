@@ -33,12 +33,16 @@ const HEADER = JSON.stringify({
 let root: string;
 let home: string;
 let sessions: string;
+let claudeProjects: string;
 
 /** A host reader whose Cursor side has nothing to read. */
 function hostReader() {
   return createHostReader({
     home,
     ompDirectory: sessions,
+    // Injected, and deliberately empty: the machine's own `~/.claude` is not
+    // this test's business.
+    claudeDirectory: claudeProjects,
     cursorStatePath: join(root, "absent", "state.vscdb"),
   });
 }
@@ -49,6 +53,8 @@ beforeEach(() => {
   sessions = join(root, "sessions");
   mkdirSync(sessions, { recursive: true });
   writeFileSync(join(sessions, "session.jsonl"), `${HEADER}\n${FIXTURE_LINE}\n`);
+  claudeProjects = join(root, "claude-projects");
+  mkdirSync(claudeProjects, { recursive: true });
 });
 
 afterEach(() => {
@@ -82,6 +88,11 @@ it("reports where each source lives, never a token, from discover", async () => 
     source: "omp",
     available: true,
     detail: sessions,
+  });
+  expect(health.find((entry) => entry.source === "claude-code")).toEqual({
+    source: "claude-code",
+    available: true,
+    detail: claudeProjects,
   });
   const cursor = health.find((entry) => entry.source === "cursor");
   expect(cursor?.available).toBe(false);

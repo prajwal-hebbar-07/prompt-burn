@@ -23,6 +23,7 @@ export interface FetchOutcome {
   ok: boolean;
   error?: string;
   omp: { ok: boolean };
+  claudeCode: { ok: boolean };
   cursor: { ok: boolean };
 }
 
@@ -49,7 +50,7 @@ function request<T>(method: string, extra: Record<string, unknown> = {}): Promis
   });
 }
 
-/** Runs both collectors. A missing source is degraded, not fatal. */
+/** Runs every collector. A missing source is degraded, not fatal. */
 export function fetchUsage(): Promise<FetchOutcome> {
   return request<FetchOutcome>("fetch");
 }
@@ -59,7 +60,7 @@ export function getSnapshot(period: PeriodFilter): Promise<DashboardSnapshot> {
   return request<DashboardSnapshot>("getSnapshot", { period });
 }
 
-/** The persisted source toggles and OMP path override. */
+/** The persisted source toggles and the transcript path overrides. */
 export function getSettings(): Promise<SourceSettings> {
   return request<SourceSettings>("getSettings");
 }

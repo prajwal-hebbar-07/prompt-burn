@@ -1,13 +1,13 @@
 /**
- * Rolls OMP events and a Cursor snapshot into the `DashboardSnapshot` fields
- * the UI renders.
+ * Rolls transcript events (OMP, Claude Code) and a Cursor snapshot into the
+ * `DashboardSnapshot` fields the UI renders.
  *
- * Two scopes meet here. OMP events are timestamped and obey the calendar
+ * Two scopes meet here. Transcript events are timestamped and obey the calendar
  * period; Cursor aggregates are timestamp-free, so they are used exactly as
  * the collector fetched them — narrowed to the period when it asked Cursor for
  * that window, cycle-wide when it could not. Cycle-wide rows against a
  * narrower period are flagged `mixedPeriod` and kept out of `estimatedCents`:
- * a 30-day cycle total added to one day of OMP spend is not a day's cost.
+ * a 30-day cycle total added to one day of local spend is not a day's cost.
  *
  * Costs are derived, never stored: the host injects `priceCents`, which resolves
  * one part's rate out of `price_entries` and returns cents, or `null` when the
@@ -37,7 +37,19 @@ export interface SnapshotInput {
   period: PeriodFilter;
   /** OMP usage events; `model` is already canonical. Filtered by `period`. */
   ompEvents: readonly UsageEvent[];
+  /**
+   * Claude Code transcript events (`~/.claude/projects`), same shape and same
+   * calendar filtering as OMP's. Omitted — or empty, when Settings has the
+   * source switched off — leaves its subtotal at zero.
+   */
+  claudeEvents?: readonly UsageEvent[];
   cursor: CursorSnapshot;
+  /**
+   * The Settings toggles, as the host read them. Anything unnamed defaults to
+   * on. A source switched off is expected to arrive empty too — this only
+   * tells the UI to leave it off the screen instead of showing a zero row.
+   */
+  enabled?: Partial<Record<Source, boolean>>;
   /**
    * Provider usage clocks, straight from the host. Passed through untouched:
    * they carry no timestamps this package could filter and no tokens it could
@@ -63,12 +75,32 @@ function addTokens(total: Required<TokenCounts>, part: TokenCounts): void {
   total.cacheWrite += part.cacheWrite ?? 0;
 }
 
-/** One rollup input: tokens plus the instant its rate is resolved at. */
+/** One rollup input: its origin, tokens, and the instant its rate resolves at. */
 interface PricedPart {
+  source: Source;
   model: string;
   tokens: TokenCounts;
   /** Empty for Cursor cycle aggregates — the pricer decides what to do with that. */
   timestamp: string;
+}
+
+/** A part that came from a transcript, so it may name the directory it ran in. */
+interface EventPart extends PricedPart {
+  project?: string;
+}
+
+/**
+ * Timestamped events of one source as rollup parts. The working directory
+ * rides along so the project breakdown can group on it; `rollup` ignores it.
+ */
+function partsOf(source: Source, events: readonly UsageEvent[]): EventPart[] {
+  return events.map(({ model, tokens, timestamp, project }) => ({
+    source,
+    model,
+    tokens,
+    timestamp,
+    ...(project === undefined ? {} : { project }),
+  }));
 }
 
 /** `null` poisons: one unknown rate makes every total containing it unknown. */
@@ -77,26 +109,37 @@ function addCents(total: number | null, part: number | null): number | null {
 }
 
 /**
- * Sums per-model rollups for one source. Rows keep first-seen order and are
- * never merged across sources: `(source, model)` is the key, so the same model
- * on OMP and Cursor is deliberately two rows.
+ * Sums per-model rollups. Rows keep first-seen order and are never merged
+ * across sources: `(source, model)` is the key, so the same model on OMP and
+ * Claude Code is deliberately two rows.
  *
  * Costs are summed per part, not per rollup: an event keeps the rate that was
  * valid at its own timestamp, so two events on the same model can price at two
  * different rates.
  */
-function rollup(source: Source, parts: readonly PricedPart[], priceCents?: PriceCents) {
+function rollup(parts: readonly PricedPart[], priceCents?: PriceCents) {
   const total: Required<TokenCounts> = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const byModel = new Map<string, { tokens: Required<TokenCounts>; cents: number | null }>();
+  const byModel = new Map<
+    string,
+    { source: Source; model: string; tokens: Required<TokenCounts>; cents: number | null }
+  >();
   // No pricer is no cost knowledge, not free usage: nothing can be counted.
   const start = priceCents ? 0 : null;
   let totalCents = start;
 
   for (const part of parts) {
-    let row = byModel.get(part.model);
+    // NUL cannot occur in a source slug or a model id, so it cannot make two
+    // different pairs collide on one key.
+    const key = `${part.source}\u0000${part.model}`;
+    let row = byModel.get(key);
     if (!row) {
-      row = { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cents: start };
-      byModel.set(part.model, row);
+      row = {
+        source: part.source,
+        model: part.model,
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        cents: start,
+      };
+      byModel.set(key, row);
     }
     addTokens(row.tokens, part.tokens);
     addTokens(total, part.tokens);
@@ -109,30 +152,30 @@ function rollup(source: Source, parts: readonly PricedPart[], priceCents?: Price
     totals: { estimatedCents: totalCents, tokens: total },
     // Unknown ids and Cursor's `default` (Auto) stay as rows: an unpriceable
     // model must stay visible, not disappear from the table.
-    rows: [...byModel].map(([model, row]) => ({
+    rows: [...byModel.values()].map(({ source, model, tokens, cents }) => ({
       source,
       model,
-      tokens: row.tokens,
-      estimatedCents: row.cents,
+      tokens,
+      estimatedCents: cents,
     })),
   };
 }
 
 /**
- * Per-project OMP rollups, biggest spender first. Only OMP events carry a
- * working directory, so Cursor is absent by construction — a cycle-to-date
- * aggregate belongs to no directory and splitting it would be invention.
+ * Per-project rollups, biggest spender first, over every event source that
+ * records a working directory — OMP and Claude Code. Cursor is absent by
+ * construction: a cycle-to-date aggregate belongs to no directory and
+ * splitting it would be invention.
  *
  * Events whose transcript had no header (so no `cwd`) group under `null`
  * rather than vanishing: unattributed usage is still usage.
  */
 function rollupProjects(
-  events: readonly UsageEvent[],
+  parts: readonly EventPart[],
   priceCents?: PriceCents,
 ): DashboardSnapshot["projects"] {
   const groups = new Map<string, PricedPart[]>();
-  for (const { project, model, tokens, timestamp } of events) {
-    const part = { model, tokens, timestamp };
+  for (const { project, ...part } of parts) {
     // The empty string cannot collide with a real absolute path.
     const existing = groups.get(project ?? "");
     if (existing) existing.push(part);
@@ -140,8 +183,8 @@ function rollupProjects(
   }
 
   return [...groups]
-    .map(([key, parts]) => {
-      const { totals, rows } = rollup("omp", parts, priceCents);
+    .map(([key, grouped]) => {
+      const { totals, rows } = rollup(grouped, priceCents);
       return {
         project: key === "" ? null : key,
         tokens: totals.tokens,
@@ -169,34 +212,32 @@ function rollupProjects(
 /**
  * Builds the aggregated view model: per-source subtotals, `(source, model)`
  * rows, the per-project breakdown the Projects route renders, and the
- * mixed-period flag. Combined tokens are the plain sum of the two subtotals —
+ * mixed-period flag. Combined tokens are the plain sum of the subtotals —
  * sources are never deduped.
  */
 export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot {
-  const { period, ompEvents, cursor, now, priceCents } = input;
+  const { period, ompEvents, claudeEvents = [], cursor, now, priceCents } = input;
 
-  const inPeriod = filterEventsByPeriod(ompEvents, period, now);
-  const omp = rollup(
-    "omp",
-    inPeriod.map(({ model, tokens, timestamp }) => ({
-      model,
-      tokens,
-      timestamp,
-    })),
-    priceCents,
-  );
+  const ompParts = partsOf("omp", filterEventsByPeriod(ompEvents, period, now));
+  const omp = rollup(ompParts, priceCents);
+
+  // Claude Code's transcripts are timestamped like OMP's, so they take the
+  // same calendar period and land in the combined total unconditionally.
+  const claudeParts = partsOf("claude-code", filterEventsByPeriod(claudeEvents, period, now));
+  const claudeCode = rollup(claudeParts, priceCents);
 
   // Enterprise events are timestamped, so they take the same period as OMP.
   // Pro cycle aggregates have no timestamps and are used exactly as fetched.
   const cursorParts: PricedPart[] =
     cursor.mode === "events"
-      ? filterEventsByPeriod(cursor.events, period, now).map(({ model, tokens, timestamp }) => ({
+      ? partsOf("cursor", filterEventsByPeriod(cursor.events, period, now))
+      : cursor.models.map(({ model, tokens }) => ({
+          source: "cursor" as const,
           model,
           tokens,
-          timestamp,
-        }))
-      : cursor.models.map(({ model, tokens }) => ({ model, tokens, timestamp: "" }));
-  const cursorRollup = rollup("cursor", cursorParts, priceCents);
+          timestamp: "",
+        }));
+  const cursorRollup = rollup(cursorParts, priceCents);
 
   // Cursor's rows are cycle-wide unless the collector narrowed them to a
   // window. While they are cycle-wide and the period is not all-time, the two
@@ -210,13 +251,20 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
     period,
     // Same calendar scope as everything else on the screen: the projects are
     // rolled from the period-filtered events, never from the whole history.
-    projects: rollupProjects(inPeriod, priceCents),
-    // Only what the period covers. Cursor out of scope means OMP alone here;
-    // its own subtotal still carries the cycle number.
+    projects: rollupProjects([...ompParts, ...claudeParts], priceCents),
+    // Only what the period covers. Cursor out of scope means the timestamped
+    // sources alone here; its own subtotal still carries the cycle number.
     estimatedCents: mixedPeriod
-      ? omp.totals.estimatedCents
-      : addCents(omp.totals.estimatedCents, cursorRollup.totals.estimatedCents),
+      ? addCents(omp.totals.estimatedCents, claudeCode.totals.estimatedCents)
+      : addCents(
+          addCents(omp.totals.estimatedCents, claudeCode.totals.estimatedCents),
+          cursorRollup.totals.estimatedCents,
+        ),
+    // Unnamed is on: a caller that knows nothing about toggles — a mock
+    // snapshot, a test — gets every source on screen, as before.
+    enabled: { omp: true, "claude-code": true, cursor: true, ...input.enabled },
     omp: omp.totals,
+    claudeCode: claudeCode.totals,
     cursor: {
       ...cursorRollup.totals,
       mode: cursor.mode,
@@ -234,7 +282,7 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
           }
         : {}),
     },
-    models: [...omp.rows, ...cursorRollup.rows],
+    models: [...omp.rows, ...claudeCode.rows, ...cursorRollup.rows],
     mixedPeriod,
     // Provider clocks are not calendar data: they never move with `period`.
     limits: [...(input.limits ?? [])],

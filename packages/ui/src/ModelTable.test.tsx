@@ -89,6 +89,28 @@ describe("ModelTable", () => {
     expect(screen.getAllByText("Cursor")).toHaveLength(2);
   });
 
+  it("gives Claude Code its own pill and its own row for a shared model", () => {
+    const base = snapshot({ "omp:claude-opus-5": 900 });
+    render(
+      <ModelTable
+        rows={[
+          ...base.models,
+          {
+            source: "claude-code",
+            model: "claude-opus-5",
+            tokens: { input: 10, output: 20, cacheRead: 0, cacheWrite: 0 },
+            estimatedCents: 1_500,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Claude Code")).toBeTruthy();
+    // Three sources, one model, three rows — and the biggest spender leads.
+    expect(screen.getByTestId("model-row-claude-code-claude-opus-5")).toBeTruthy();
+    expect(rowsOf(screen.getByTestId("model-table"))[0]?.[2]).toBe("Claude Code");
+  });
+
   it("shows compact token columns and per-row costs, priced rows first", () => {
     render(
       <ModelTable

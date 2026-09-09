@@ -1,7 +1,8 @@
 /**
- * `createUsageReader` over both sources, in-process and offline: injected OMP
- * directory, injected synthetic `state.vscdb`, injected `fetch` serving the
- * spike fixtures. No real Cursor install, no live API, no real `~/.prompt-burn`.
+ * `createUsageReader` over every source, in-process and offline: injected OMP
+ * and Claude Code directories, injected synthetic `state.vscdb`, injected
+ * `fetch` serving the spike fixtures. No real Cursor install, no live API, no
+ * real `~/.prompt-burn`, and no read of the machine's own `~/.claude`.
  *
  * The settings cases use the reader's own `saveSettings` / `addPrice`, which is
  * the path both shells drive, so a stored path or toggle is proved through the
@@ -55,6 +56,29 @@ const HEADER = JSON.stringify({
   cwd: "/Users/example/project",
 });
 
+/** One Claude Code assistant turn: Anthropic's field names, its own cwd. */
+const CLAUDE_LINE = JSON.stringify({
+  type: "assistant",
+  uuid: "8b6e7d3a-1111-4c22-9d55-aaaabbbbcccc",
+  requestId: "req_011XYZ",
+  sessionId: "6f1d0a2c-6d2f-4a0b-9c34-2f3ab1c5d7e0",
+  cwd: "/Users/example/claude-project",
+  timestamp: "2026-09-02T09:00:00.000Z",
+  message: {
+    id: "msg_01ABCDEF",
+    role: "assistant",
+    model: "claude-opus-5",
+    usage: {
+      input_tokens: 10,
+      output_tokens: 20,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    },
+  },
+});
+/** That line at the seeded Opus rates: 10 in @ $5/Mtok + 20 out @ $25/Mtok. */
+const CLAUDE_CENTS = 0.055;
+
 /** An unsigned JWT with the two claims the auth read looks at. */
 const FAKE_JWT = [
   Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url"),
@@ -72,6 +96,7 @@ const OMP_CENTS = 2.421775;
 
 let root: string;
 let sessions: string;
+let claudeProjects: string;
 let statePath: string;
 let db: DatabaseSync;
 /** Flipped by a test to make the Cursor call fail mid-session. */
@@ -91,6 +116,7 @@ let windowCalls: Array<{ startDate?: string; endDate?: string; teamId?: number }
 function reader(cursorStatePath = statePath) {
   return createUsageReader(db, {
     ompDirectory: sessions,
+    claudeDirectory: claudeProjects,
     cursorStatePath,
     fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
       if (String(url).endsWith("/api/usage-summary")) return new Response(SUMMARY, { status });
@@ -112,6 +138,12 @@ beforeEach(() => {
   sessions = join(root, "omp-sessions");
   mkdirSync(join(sessions, "proj"), { recursive: true });
   writeFileSync(join(sessions, "proj", "20260902_074150_abc.jsonl"), `${HEADER}\n${FIXTURE_LINE}\n`);
+  claudeProjects = join(root, "claude-projects");
+  mkdirSync(join(claudeProjects, "-Users-example-claude-project"), { recursive: true });
+  writeFileSync(
+    join(claudeProjects, "-Users-example-claude-project", "session.jsonl"),
+    `${CLAUDE_LINE}\n`,
+  );
 
   statePath = join(root, "state.vscdb");
   const state = new DatabaseSync(statePath);
@@ -129,13 +161,14 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-it("aggregates both sources after a dual-success fetch", async () => {
+it("aggregates every source after a successful fetch", async () => {
   const host = reader();
   const result = await host.fetch();
 
   expect(result).toMatchObject({
     ok: true,
     omp: { ok: true, scannedFiles: 1, insertedEvents: 1 },
+    claudeCode: { ok: true, scannedFiles: 1, insertedEvents: 1 },
     cursor: { ok: true, models: 6 },
   });
   // No Ollama key under this temp home, and that is not a failed pass: the
@@ -145,6 +178,15 @@ it("aggregates both sources after a dual-success fetch", async () => {
 
   const snapshot = await host.getSnapshot({ kind: "all_time" });
   expect(snapshot.omp.tokens.input).toBe(2);
+  // Claude Code's tokens are its own: nothing is deduped against OMP's, even
+  // though both turns billed the same Claude subscription.
+  expect(snapshot.claudeCode.tokens).toEqual({
+    input: 10,
+    output: 20,
+    cacheRead: 0,
+    cacheWrite: 0,
+  });
+  expect(snapshot.claudeCode.estimatedCents).toBeCloseTo(CLAUDE_CENTS, 6);
   expect(snapshot.cursor).toMatchObject({
     mode: "cycle_aggregate",
     cycleLabel: "Cycle to date",
@@ -154,7 +196,35 @@ it("aggregates both sources after a dual-success fetch", async () => {
   });
   const sources = snapshot.models.map((row) => row.source);
   expect(sources).toContain("omp");
+  expect(sources).toContain("claude-code");
   expect(sources).toContain("cursor");
+  // Same model on two tools is two rows, never merged into one.
+  expect(
+    snapshot.models.filter((row) => row.model === "claude-opus-5").map((row) => row.source),
+  ).toEqual(["omp", "claude-code", "cursor"]);
+  // Its cwd is its own project row, beside OMP's.
+  expect(snapshot.projects.map((entry) => entry.project)).toContain(
+    "/Users/example/claude-project",
+  );
+});
+
+it("hides Claude Code entirely once the toggle is off, without losing the rows", async () => {
+  const host = reader();
+  await host.fetch();
+  await host.saveSettings({ claudeEnabled: false });
+
+  const hidden = await host.getSnapshot({ kind: "all_time" });
+  expect(hidden.claudeCode.tokens.input).toBe(0);
+  expect(hidden.models.some((row) => row.source === "claude-code")).toBe(false);
+  // The dashboard is told it is off, so it drops the row rather than drawing a
+  // $0.00 line for a source the user switched away.
+  expect(hidden.enabled).toEqual({ omp: true, "claude-code": false, cursor: true });
+  // Nothing was deleted: switching it back on shows the stored rows again,
+  // with no re-sync needed.
+  await host.saveSettings({ claudeEnabled: true });
+  const shown = await host.getSnapshot({ kind: "all_time" });
+  expect(shown.claudeCode.tokens.input).toBe(10);
+  expect(shown.enabled["claude-code"]).toBe(true);
 });
 
 it("asks Cursor for the period's own window and counts it in the total", async () => {
@@ -242,7 +312,7 @@ it("counts an idle Cursor day as zero, not as the whole cycle", async () => {
   // Zero Cursor spend, not a $132 cycle bolted onto one day's OMP number.
   expect(today.cursor.estimatedCents).toBe(0);
   expect(today.estimatedCents).toBeCloseTo(OMP_CENTS, 6);
-  expect(today.models.map((row) => row.source)).toEqual(["omp"]);
+  expect(today.models.map((row) => row.source)).toEqual(["omp", "claude-code"]);
 });
 
 it("keeps the last Cursor cycle when a later fetch fails", async () => {
@@ -265,6 +335,7 @@ it("degrades Cursor without failing the pass when there is no local session", as
 
   expect(await host.discover()).toEqual([
     { source: "omp", available: true, detail: sessions },
+    { source: "claude-code", available: true, detail: claudeProjects },
     { source: "cursor", available: false, detail: expect.stringContaining("No Cursor state at") },
   ]);
 
@@ -284,32 +355,38 @@ it("degrades Cursor without failing the pass when there is no local session", as
 it("reports the Cursor state path, never the token, from discover", async () => {
   const health = await reader().discover();
 
-  expect(health[1]).toEqual({ source: "cursor", available: true, detail: statePath });
+  expect(health[2]).toEqual({ source: "cursor", available: true, detail: statePath });
   expect(JSON.stringify(health)).not.toContain(FAKE_JWT);
 });
 
-it("fetches through the stored OMP path and reports it from discover", async () => {
-  // No injected directory: the stored setting is the only thing pointing at it.
+it("fetches through the stored paths and reports them from discover", async () => {
+  // No injected directories: the stored settings are the only thing pointing
+  // at them, which is the path both shells drive.
   const host = createUsageReader(db, { cursorStatePath: join(root, "absent"), now: () => NOW });
-  await host.saveSettings({ ompPath: sessions });
+  await host.saveSettings({ ompPath: sessions, claudePath: claudeProjects });
 
   expect(await host.getSettings()).toEqual({
     ompEnabled: true,
     ompPath: sessions,
     cursorEnabled: true,
+    claudeEnabled: true,
+    claudePath: claudeProjects,
   });
-  expect((await host.discover())[0]).toEqual({
-    source: "omp",
-    available: true,
-    detail: sessions,
+  expect((await host.discover()).slice(0, 2)).toEqual([
+    { source: "omp", available: true, detail: sessions },
+    { source: "claude-code", available: true, detail: claudeProjects },
+  ]);
+  expect(await host.fetch()).toMatchObject({
+    omp: { ok: true, insertedEvents: 1 },
+    claudeCode: { ok: true, insertedEvents: 1 },
   });
-  expect(await host.fetch()).toMatchObject({ omp: { ok: true, insertedEvents: 1 } });
 });
 
 it("does not fetch a source the settings switched off", async () => {
   const calls: string[] = [];
   const host = createUsageReader(db, {
     ompDirectory: sessions,
+    claudeDirectory: claudeProjects,
     cursorStatePath: statePath,
     fetchImpl: (async (url: string | URL | Request) => {
       calls.push(String(url));
@@ -317,22 +394,28 @@ it("does not fetch a source the settings switched off", async () => {
     }) as unknown as typeof fetch,
     now: () => NOW,
   });
-  await host.saveSettings({ ompEnabled: false, cursorEnabled: false });
+  await host.saveSettings({ ompEnabled: false, cursorEnabled: false, claudeEnabled: false });
 
   const result = await host.fetch();
-  // Neither source ran, and neither counts as a failure: the pass is clean.
+  // No source ran, and none of them counts as a failure: the pass is clean.
   expect(result).toMatchObject({
     ok: true,
     omp: { ok: true, scannedFiles: 0, insertedEvents: 0 },
+    claudeCode: { ok: true, scannedFiles: 0, insertedEvents: 0 },
     cursor: { ok: false, reason: "disabled", models: 0 },
     // Ollama's key lives in OMP's credential store, so the OMP toggle owns it.
     ollama: { ok: false, reason: "disabled" },
   });
   expect(result.error).toBeUndefined();
   expect(calls).toEqual([]);
-  expect((await host.getSnapshot({ kind: "all_time" })).omp.tokens.input).toBe(0);
+  const snapshot = await host.getSnapshot({ kind: "all_time" });
+  expect(snapshot.omp.tokens.input).toBe(0);
+  expect(snapshot.claudeCode.tokens.input).toBe(0);
+  expect(snapshot.enabled).toEqual({ omp: false, "claude-code": false, cursor: false });
+  expect(snapshot.models).toEqual([]);
   expect(await host.discover()).toEqual([
     { source: "omp", available: false, detail: "Disabled in Settings" },
+    { source: "claude-code", available: false, detail: "Disabled in Settings" },
     { source: "cursor", available: false, detail: "Disabled in Settings" },
   ]);
 });
@@ -344,7 +427,13 @@ it("never persists a Cursor token or a crsr_ key while saving settings", async (
 
   const stored = db.prepare("SELECT key, value FROM settings").all();
   expect(JSON.stringify(stored)).not.toContain(FAKE_JWT);
-  expect(Object.keys(readSettings(db))).toEqual(["ompEnabled", "ompPath", "cursorEnabled"]);
+  expect(Object.keys(readSettings(db))).toEqual([
+    "ompEnabled",
+    "ompPath",
+    "cursorEnabled",
+    "claudeEnabled",
+    "claudePath",
+  ]);
 });
 
 it("prices stored OMP events from the bundled rates and leaves unknowns as null", async () => {

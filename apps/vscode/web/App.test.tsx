@@ -63,13 +63,15 @@ const postMessage = vi.fn((message: unknown) => {
       await host.gate?.promise;
       const at = "2026-09-04T12:00:00.000Z";
       const result = host.fetchOk
-        ? { at, ok: true, omp: { ok: true }, cursor: { ok: true } }
+        ? { at, ok: true, omp: { ok: true }, claudeCode: { ok: true }, cursor: { ok: true } }
         : {
             at,
             ok: false,
-            // The reader's wording: both sources really failed here.
-            error: "OMP failed: sync exploded · Cursor failed: cursor.com said 503",
+            // The reader's wording: every source really failed here.
+            error:
+              "OMP failed: sync exploded · Claude Code failed: no transcripts · Cursor failed: cursor.com said 503",
             omp: { ok: false },
+            claudeCode: { ok: false },
             cursor: { ok: false },
           };
       answer({ id, ok: true, result });
@@ -113,7 +115,13 @@ beforeEach(() => {
     snapshot: snapshotWith(2421.775),
     methods: [],
     periods: [],
-    settings: { ompEnabled: true, ompPath: "~/.omp/agent/sessions/", cursorEnabled: true },
+    settings: {
+      ompEnabled: true,
+      ompPath: "~/.omp/agent/sessions/",
+      cursorEnabled: true,
+      claudeEnabled: true,
+      claudePath: "~/.claude/projects/",
+    },
     prices: [],
   };
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -174,7 +182,7 @@ it("keeps the last good snapshot when a fetch fails", async () => {
   expect(total()).toBe("$24.22");
   // The same banner the desktop window shows, from the same UI package.
   expect(screen.getByTestId("fetch-error-message").textContent).toContain(
-    "OMP failed · Cursor failed — sync exploded · cursor.com said 503",
+    "OMP failed · Claude Code failed · Cursor failed — sync exploded · no transcripts · cursor.com said 503",
   );
   // The failed pass read nothing back: no snapshot request followed it.
   expect(host.methods).toEqual(["fetch", "getSettings", "getSnapshot", "fetch"]);
@@ -191,7 +199,13 @@ it("re-reads the snapshot for a new period without fetching", async () => {
 });
 
 it("saves the source settings the tab loaded, over the same channel", async () => {
-  host.settings = { ompEnabled: true, ompPath: "/stored/omp", cursorEnabled: true };
+  host.settings = {
+    ompEnabled: true,
+    ompPath: "/stored/omp",
+    cursorEnabled: true,
+    claudeEnabled: true,
+    claudePath: "/stored/claude",
+  };
   render(<App />);
   await waitFor(() => expect(host.methods).toContain("getSettings"));
 
@@ -199,8 +213,12 @@ it("saves the source settings the tab loaded, over the same channel", async () =
   expect((screen.getByRole("textbox", { name: "OMP sessions path" }) as HTMLInputElement).value).toBe(
     "/stored/omp",
   );
+  expect(
+    (screen.getByRole("textbox", { name: "Claude Code projects path" }) as HTMLInputElement).value,
+  ).toBe("/stored/claude");
 
   await userEvent.click(screen.getByRole("checkbox", { name: "Enable Cursor" }));
+  await userEvent.click(screen.getByRole("checkbox", { name: "Enable Claude Code" }));
   await userEvent.click(screen.getByTestId("save-sources"));
 
   await waitFor(() =>
@@ -208,6 +226,8 @@ it("saves the source settings the tab loaded, over the same channel", async () =
       ompEnabled: true,
       ompPath: "/stored/omp",
       cursorEnabled: false,
+      claudeEnabled: false,
+      claudePath: "/stored/claude",
     }),
   );
   // Same database file as the desktop window; the tab only sends the values.

@@ -143,8 +143,20 @@ const CURSOR_SLICE: DashboardSnapshot["cursor"] = {
   included: { autoPercentUsed: 19.575555555555553, apiPercentUsed: 32.74074074074074 },
 };
 
+/**
+ * Claude Code never ran under this temp home, so its slice is a real zero: a
+ * priced rollup of nothing, not an unknown. Its own coverage is in
+ * `reader.test.ts`; this golden stays the OMP + Cursor pipeline it locks.
+ */
+const NO_CLAUDE_CODE: DashboardSnapshot["claudeCode"] = {
+  estimatedCents: 0,
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+};
+
 const ALL_TIME: DashboardSnapshot = {
   period: { kind: "all_time" },
+  // Every toggle on: the shape a default install renders.
+  enabled: { omp: true, "claude-code": true, cursor: true },
   // One project — the transcript's `cwd` — holding both OMP rows and neither
   // Cursor row: Cursor reports no directory.
   projects: [
@@ -162,6 +174,7 @@ const ALL_TIME: DashboardSnapshot = {
     estimatedCents: 4.1983375,
     tokens: { input: 4161, output: 260, cacheRead: 224_913, cacheWrite: 463 },
   },
+  claudeCode: NO_CLAUDE_CODE,
   cursor: CURSOR_SLICE,
   models: [OMP_OPUS, OMP_GEMINI, ...CURSOR_ROWS],
   // All-time is the one period a cycle-to-date Cursor total does not clash with.
@@ -188,6 +201,7 @@ const CURSOR_WINDOW_ROW: DashboardSnapshot["models"][number] = {
  */
 const TODAY: DashboardSnapshot = {
   period: { kind: "today" },
+  enabled: { omp: true, "claude-code": true, cursor: true },
   // Today keeps only the Gemini turn, so the project shrinks with it.
   projects: [
     {
@@ -202,6 +216,7 @@ const TODAY: DashboardSnapshot = {
     estimatedCents: 1.7765625,
     tokens: { input: 4159, output: 155, cacheRead: 187_535, cacheWrite: 0 },
   },
+  claudeCode: NO_CLAUDE_CODE,
   cursor: {
     estimatedCents: 463.7984,
     tokens: { input: 675_956, output: 45_332, cacheRead: 6_028_160, cacheWrite: 0 },
@@ -235,6 +250,7 @@ const TODAY_CYCLE_ONLY: DashboardSnapshot = {
 let root: string;
 let db: DatabaseSync;
 let sessions: string;
+let claudeProjects: string;
 let statePath: string;
 
 beforeEach(() => {
@@ -246,6 +262,11 @@ beforeEach(() => {
     join(sessions, "project", "20260902_074150_golden.jsonl"),
     `${[SESSION_HEADER, ...OMP_LINES].join("\n")}\n`,
   );
+
+  // Injected and empty: the developer's own `~/.claude` is not this test's
+  // business, and an inherited `CLAUDE_CONFIG_DIR` cannot reach it either.
+  claudeProjects = join(root, "claude-projects");
+  mkdirSync(claudeProjects, { recursive: true });
 
   statePath = join(root, "state.vscdb");
   const state = new DatabaseSync(statePath);
@@ -282,6 +303,7 @@ async function snapshots(
 ): Promise<Record<"allTime" | "today", DashboardSnapshot>> {
   const reader = createUsageReader(db, {
     ompDirectory: sessions,
+    claudeDirectory: claudeProjects,
     cursorStatePath: statePath,
     // Cursor aggregates carry no timestamp and price at "now"; the bundled
     // rates are open-ended from 1970, so this is the rate in force.

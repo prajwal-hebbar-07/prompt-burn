@@ -19,7 +19,7 @@ export const SCHEMA_SQL = `
 -- new or corrected rate re-prices history without rewriting a single row.
 CREATE TABLE usage_events (
   id          TEXT PRIMARY KEY,
-  source      TEXT NOT NULL CHECK (source IN ('omp', 'cursor')),
+  source      TEXT NOT NULL CHECK (source IN ('omp', 'cursor', 'claude-code')),
   -- 'event' rows are timestamped and obey calendar filters. 'cycle' rows are
   -- Cursor Pro aggregates: real tokens, no timestamp, never split into days.
   period      TEXT NOT NULL CHECK (period IN ('event', 'cycle')),
@@ -32,7 +32,7 @@ CREATE TABLE usage_events (
   cache_read  INTEGER NOT NULL DEFAULT 0,
   cache_write INTEGER NOT NULL DEFAULT 0,
   session_id  TEXT,
-  -- Absolute cwd of the OMP session; NULL for sources that report none.
+  -- Absolute cwd of the OMP / Claude Code session; NULL for sources with none.
   project     TEXT,
   CHECK ((period = 'cycle') = (timestamp = ''))
 );
@@ -59,7 +59,10 @@ CREATE TABLE price_entries (
 
 CREATE INDEX price_entries_model ON price_entries (model, effective_from);
 
--- Incremental OMP sync: skip a session file whose mtime and size are unchanged.
+-- Incremental transcript sync — OMP's and Claude Code's, keyed by absolute
+-- path, so the two never collide. Skip a file whose mtime and size are
+-- unchanged. Named before Claude Code was a source; renaming it would cost a
+-- migration that buys nothing.
 CREATE TABLE omp_sync_state (
   path   TEXT PRIMARY KEY,
   mtime  INTEGER NOT NULL,
