@@ -21,11 +21,17 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-it("defaults to both sources on and no path override", () => {
+it("defaults to every source on and no path override", () => {
   const db = openDatabase(databasePath(home));
 
   expect(readSettings(db)).toEqual(DEFAULT_SETTINGS);
-  expect(DEFAULT_SETTINGS).toEqual({ ompEnabled: true, ompPath: "", cursorEnabled: true });
+  expect(DEFAULT_SETTINGS).toEqual({
+    ompEnabled: true,
+    ompPath: "",
+    cursorEnabled: true,
+    claudeEnabled: true,
+    claudePath: "",
+  });
   db.close();
 });
 
@@ -39,6 +45,8 @@ it("keeps the path and the toggles across a reopen", () => {
     ompEnabled: true,
     ompPath: "/tmp/omp-sessions",
     cursorEnabled: false,
+    claudeEnabled: true,
+    claudePath: "",
   });
   second.close();
 });
@@ -62,11 +70,15 @@ it("leaves keys the patch does not mention alone", () => {
 
   writeSettings(db, { ompPath: "/tmp/omp-sessions", ompEnabled: false });
   writeSettings(db, { cursorEnabled: false });
+  writeSettings(db, { claudePath: "/tmp/claude-projects" });
 
   expect(readSettings(db)).toEqual({
     ompEnabled: false,
     ompPath: "/tmp/omp-sessions",
     cursorEnabled: false,
+    // Never written by any of the three patches, so still the default.
+    claudeEnabled: true,
+    claudePath: "/tmp/claude-projects",
   });
   db.close();
 });
