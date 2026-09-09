@@ -245,7 +245,8 @@ it("asks Cursor for the period's own window and counts it in the total", async (
   // The cycle dates survive the narrowing: they label the window, not the rows.
   expect(today.cursor.cycleStart).toBe("2026-08-26T07:25:29.000Z");
   expect(today.mixedPeriod).toBe(false);
-  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS + WINDOW_CENTS, 6);
+  // Both timestamped sources land in the day, plus Cursor's own window for it.
+  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS + CLAUDE_CENTS + WINDOW_CENTS, 6);
 
   // Asked as far as the present, never to the period's future midnight.
   expect(windowCalls).toHaveLength(1);
@@ -291,9 +292,10 @@ it("keeps the cycle out of the total when Cursor cannot answer for the period", 
   expect(today.cursor.window).toBeUndefined();
   expect(today.mixedPeriod).toBe(true);
   // And out of the combined figure: a 30-day cycle is not part of one day. The
-  // cycle holds unpriced models, so summing it would also blank the total.
+  // cycle holds unpriced models, so summing it would also blank the total —
+  // what is left is the timestamped sources, both filtered to the day.
   expect(today.cursor.estimatedCents).toBeNull();
-  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS, 6);
+  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS + CLAUDE_CENTS, 6);
 });
 
 it("counts an idle Cursor day as zero, not as the whole cycle", async () => {
@@ -311,7 +313,7 @@ it("counts an idle Cursor day as zero, not as the whole cycle", async () => {
   expect(today.mixedPeriod).toBe(false);
   // Zero Cursor spend, not a $132 cycle bolted onto one day's OMP number.
   expect(today.cursor.estimatedCents).toBe(0);
-  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS, 6);
+  expect(today.estimatedCents).toBeCloseTo(OMP_CENTS + CLAUDE_CENTS, 6);
   expect(today.models.map((row) => row.source)).toEqual(["omp", "claude-code"]);
 });
 
