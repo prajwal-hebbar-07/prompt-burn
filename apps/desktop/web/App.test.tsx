@@ -79,7 +79,13 @@ beforeEach(() => {
     snapshot: snapshotWith(2421.775),
     methods: [],
     periods: [],
-    settings: { ompEnabled: true, ompPath: "~/.omp/agent/sessions/", cursorEnabled: true },
+    settings: {
+      ompEnabled: true,
+      ompPath: "~/.omp/agent/sessions/",
+      cursorEnabled: true,
+      claudeEnabled: true,
+      claudePath: "~/.claude/projects/",
+    },
     prices: [],
   };
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -106,6 +112,7 @@ beforeEach(() => {
             ok: !sidecar.cursorFails,
             ...(sidecar.cursorFails ? { error: "Cursor failed: cursor.com said 503" } : {}),
             omp: { ok: true, scannedFiles: 1, skippedFiles: 0, insertedEvents: 3 },
+            claudeCode: { ok: true, scannedFiles: 1, skippedFiles: 0, insertedEvents: 1 },
             cursor,
           }
         : {
@@ -113,8 +120,9 @@ beforeEach(() => {
             ok: false,
             // The reader's own wording: only real failures are named, so the
             // not-installed Cursor below gets no line of its own.
-            error: "OMP failed: sync exploded",
+            error: "OMP failed: sync exploded · Claude Code failed: no ~/.claude here",
             omp: { ok: false, error: "sync exploded", scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 },
+            claudeCode: { ok: false, error: "no ~/.claude here", scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 },
             cursor: { ok: false, reason: "not_installed", error: "no state", models: 0 },
           };
       return JSON.stringify({ type: "response", id, ok: true, result });
@@ -217,7 +225,7 @@ it("keeps the last good snapshot when a fetch fails", async () => {
   expect(status()).toBe(fetchedLabel);
   // A total failure is a banner too: today it only reached the console.
   expect(screen.getByTestId("fetch-error-message").textContent).toContain(
-    "OMP failed — sync exploded",
+    "OMP failed · Claude Code failed — sync exploded · no ~/.claude here",
   );
   expect(sidecar.methods).toEqual(["fetch", "getSettings", "getSnapshot", "fetch"]);
 
@@ -319,7 +327,13 @@ it("navigates to Settings without calling fetch or writing sidecar state", async
 
 it("loads the stored settings, saves edits, and re-prices without fetching", async () => {
   const user = userEvent.setup();
-  sidecar.settings = { ompEnabled: true, ompPath: "/stored/omp", cursorEnabled: false };
+  sidecar.settings = {
+    ompEnabled: true,
+    ompPath: "/stored/omp",
+    cursorEnabled: false,
+    claudeEnabled: false,
+    claudePath: "/stored/claude",
+  };
   sidecar.snapshot = snapshotWithUnpriced("mystery-model");
   render(<App />);
   await waitFor(() => expect(sidecar.methods).toContain("getSettings"));
@@ -332,6 +346,10 @@ it("loads the stored settings, saves edits, and re-prices without fetching", asy
   expect((screen.getByRole("checkbox", { name: "Enable Cursor" }) as HTMLInputElement).checked).toBe(
     false,
   );
+  // Switched off in the stored settings, so the box is unchecked here too.
+  expect(
+    (screen.getByRole("checkbox", { name: "Enable Claude Code" }) as HTMLInputElement).checked,
+  ).toBe(false);
 
   await user.click(screen.getByRole("checkbox", { name: "Enable OMP" }));
   await user.click(screen.getByTestId("save-sources"));
@@ -340,6 +358,8 @@ it("loads the stored settings, saves edits, and re-prices without fetching", asy
       ompEnabled: false,
       ompPath: "/stored/omp",
       cursorEnabled: false,
+      claudeEnabled: false,
+      claudePath: "/stored/claude",
     }),
   );
 

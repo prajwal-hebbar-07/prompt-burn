@@ -23,6 +23,13 @@ export interface FetchResult {
     skippedFiles: number;
     insertedEvents: number;
   };
+  claudeCode: {
+    ok: boolean;
+    error?: string;
+    scannedFiles: number;
+    skippedFiles: number;
+    insertedEvents: number;
+  };
   cursor: { ok: boolean; reason?: string; error?: string; models: number };
   /** Provider clocks only; a failure here never flips `ok`. */
   ollama: { ok: boolean; reason?: string; error?: string };
@@ -53,7 +60,7 @@ async function request<T>(method: string, extra: Record<string, unknown> = {}): 
   return response.result as T;
 }
 
-/** Runs both collectors in parallel. A missing source is degraded, not fatal. */
+/** Runs every collector in parallel. A missing source is degraded, not fatal. */
 export function fetchUsage(): Promise<FetchResult> {
   return request<FetchResult>("fetch");
 }
@@ -63,7 +70,7 @@ export function getSnapshot(period: PeriodFilter): Promise<DashboardSnapshot> {
   return request<DashboardSnapshot>("getSnapshot", { period });
 }
 
-/** The persisted source toggles and OMP path override. */
+/** The persisted source toggles and the transcript path overrides. */
 export function getSettings(): Promise<SourceSettings> {
   return request<SourceSettings>("getSettings");
 }

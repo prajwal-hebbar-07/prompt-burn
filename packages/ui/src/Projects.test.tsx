@@ -30,10 +30,16 @@ function event(id: string, model: string, project?: string): UsageEvent {
   };
 }
 
-const snapshot = (events: UsageEvent[]) =>
+/** The same shape, read from the Claude Code CLI's own transcripts. */
+function claudeEvent(id: string, model: string, project?: string): UsageEvent {
+  return { ...event(id, model, project), source: "claude-code" };
+}
+
+const snapshot = (events: UsageEvent[], claudeEvents: UsageEvent[] = []) =>
   buildDashboardSnapshot({
     period: { kind: "all_time" },
     ompEvents: events,
+    claudeEvents,
     cursor: CURSOR,
     priceCents: (_model, tokens) => tokens.output,
   });
@@ -126,9 +132,30 @@ describe("Projects", () => {
     expect(bucket.querySelector('[data-testid="model-row-omp-claude-opus-5"]')).not.toBeNull();
   });
 
-  it("says so when the period holds no OMP usage at all", () => {
+  it("counts Claude Code working directories beside OMP's, and says both are here", () => {
+    render(
+      <Projects
+        snapshot={snapshot(
+          [event("1", "claude-opus-5", "/w/api")],
+          [claudeEvent("2", "claude-opus-5", "/w/cli")],
+        )}
+      />,
+    );
+
+    const cli = screen.getByTestId("project-/w/cli");
+    expect(
+      cli.querySelector('[data-testid="model-row-claude-code-claude-opus-5"]'),
+    ).not.toBeNull();
+    expect(screen.getByTestId("projects-note").textContent).toContain(
+      "Projects are OMP and Claude Code working directories",
+    );
+  });
+
+  it("says so when the period holds no OMP or Claude Code usage at all", () => {
     render(<Projects snapshot={snapshot([])} />);
 
-    expect(screen.getByTestId("projects-empty").textContent).toContain("nothing to break down");
+    expect(screen.getByTestId("projects-empty").textContent).toBe(
+      "No OMP or Claude Code usage for this period, so there is nothing to break down by project",
+    );
   });
 });

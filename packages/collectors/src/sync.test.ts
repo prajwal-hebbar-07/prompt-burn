@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { databasePath, openDatabase } from "@prompt-burn/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { syncOmpSessions } from "./index.js";
+import { syncClaudeSessions, syncOmpSessions } from "./index.js";
 
 const FIXTURE_LINE = readFileSync(
   new URL("../../../docs/fixtures/omp-session-line.json", import.meta.url),
@@ -201,6 +201,94 @@ describe("syncOmpSessions", () => {
 
   it("does nothing when OMP has never run here", () => {
     expect(syncOmpSessions(db, join(root, "nope"))).toEqual({
+      scannedFiles: 0,
+      skippedFiles: 0,
+      insertedEvents: 0,
+    });
+  });
+});
+
+describe("syncClaudeSessions", () => {
+  /** One Claude Code assistant turn; Anthropic's field names, not OMP's. */
+  function claudeLine(messageId: string): string {
+    return JSON.stringify({
+      type: "assistant",
+      uuid: `line-${messageId}`,
+      requestId: "req_011XYZ",
+      sessionId: "6f1d0a2c-6d2f-4a0b-9c34-2f3ab1c5d7e0",
+      cwd: "/Users/example/project",
+      timestamp: "2026-09-04T09:00:00.000Z",
+      message: {
+        id: messageId,
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        usage: {
+          input_tokens: 7,
+          output_tokens: 11,
+          cache_read_input_tokens: 3,
+          cache_creation_input_tokens: 5,
+        },
+      },
+    });
+  }
+
+  function writeClaudeTranscript(relativePath: string, lines: string[]): string {
+    const path = join(root, "claude-projects", relativePath);
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    return path;
+  }
+
+  it("stores its rows under their own source and skips unchanged files", () => {
+    const projects = join(root, "claude-projects");
+    writeClaudeTranscript("-Users-example-project/session.jsonl", [claudeLine("msg_01")]);
+
+    expect(syncClaudeSessions(db, projects)).toMatchObject({
+      scannedFiles: 1,
+      insertedEvents: 1,
+    });
+    expect(rows()).toEqual([
+      {
+        id: "claude-code:msg_01:req_011XYZ",
+        source: "claude-code",
+        period: "event",
+        timestamp: "2026-09-04T09:00:00.000Z",
+        model: "claude-sonnet-4-5",
+        raw_model: "claude-sonnet-4-5-20250929",
+        input: 7,
+        output: 11,
+        cache_read: 3,
+        cache_write: 5,
+        session_id: "6f1d0a2c-6d2f-4a0b-9c34-2f3ab1c5d7e0",
+        project: "/Users/example/project",
+      },
+    ]);
+
+    expect(syncClaudeSessions(db, projects)).toEqual({
+      scannedFiles: 0,
+      skippedFiles: 1,
+      insertedEvents: 0,
+    });
+  });
+
+  it("shares the sync-state table with OMP without colliding on it", () => {
+    const projects = join(root, "claude-projects");
+    writeTranscript("proj/a.jsonl", [HEADER, FIXTURE_LINE]);
+    writeClaudeTranscript("proj/session.jsonl", [claudeLine("msg_02")]);
+
+    syncOmpSessions(db, sessions);
+    syncClaudeSessions(db, projects);
+
+    // Two sources, two rows, two sync-state entries keyed by absolute path.
+    expect(rows().map((row) => row["source"])).toEqual(["claude-code", "omp"]);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM omp_sync_state").get()?.["n"]).toBe(2);
+    // Neither pass re-reads the other's files.
+    expect(syncOmpSessions(db, sessions)).toMatchObject({ scannedFiles: 0, skippedFiles: 1 });
+    expect(syncClaudeSessions(db, projects)).toMatchObject({ scannedFiles: 0, skippedFiles: 1 });
+  });
+
+  it("does nothing when Claude Code has never run here", () => {
+    expect(syncClaudeSessions(db, join(root, "nope"))).toEqual({
       scannedFiles: 0,
       skippedFiles: 0,
       insertedEvents: 0,

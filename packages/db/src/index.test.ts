@@ -189,4 +189,62 @@ describe("openDatabase", () => {
     ).toBe("/w/api");
     fourth.close();
   });
+
+  it("widens the source CHECK for Claude Code, keeping every row and index", () => {
+    const path = databasePath(fakeHome());
+    const first = openDatabase(path);
+    // Rewind to the shape shipped before Claude Code was a source.
+    first.exec(`
+      DROP TABLE usage_events;
+      CREATE TABLE usage_events (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL CHECK (source IN ('omp', 'cursor')),
+        period TEXT NOT NULL CHECK (period IN ('event', 'cycle')),
+        timestamp TEXT NOT NULL, model TEXT NOT NULL, raw_model TEXT NOT NULL,
+        input INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0,
+        cache_read INTEGER NOT NULL DEFAULT 0, cache_write INTEGER NOT NULL DEFAULT 0,
+        session_id TEXT, project TEXT,
+        CHECK ((period = 'cycle') = (timestamp = '')));
+      INSERT INTO usage_events VALUES
+        ('omp:s1:1', 'omp', 'event', '2026-09-02T08:31:31.505Z', 'claude-opus-5', 'claude-opus-5', 2, 105, 0, 0, 's1', '/w/api');
+      INSERT INTO omp_sync_state (path, mtime, offset) VALUES ('/w/api/a.jsonl', 1, 400);`);
+    // The old file cannot hold a Claude Code row at all.
+    expect(() =>
+      first.exec(
+        `INSERT INTO usage_events (id, source, period, timestamp, model, raw_model)
+         VALUES ('claude-code:m:r', 'claude-code', 'event', '2026-09-04T09:00:00Z', 'm', 'm')`,
+      ),
+    ).toThrow();
+    first.close();
+
+    const second = openDatabase(path);
+    second.exec(
+      `INSERT INTO usage_events (id, source, period, timestamp, model, raw_model, project)
+       VALUES ('claude-code:m:r', 'claude-code', 'event', '2026-09-04T09:00:00Z', 'm', 'm', '/w/api')`,
+    );
+    // The rebuild copies, it does not reset: the OMP row and the sync state
+    // both survive, so no transcript is re-read for nothing.
+    expect(second.prepare("SELECT id, source FROM usage_events ORDER BY id").all()).toEqual([
+      { id: "claude-code:m:r", source: "claude-code" },
+      { id: "omp:s1:1", source: "omp" },
+    ]);
+    expect(second.prepare("SELECT COUNT(*) AS n FROM omp_sync_state").get()?.["n"]).toBe(1);
+    const indexes = second
+      .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'usage_events'")
+      .all()
+      .map((row) => row["name"]);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        "usage_events_timestamp",
+        "usage_events_source_model",
+        "usage_events_project",
+      ]),
+    );
+    second.close();
+
+    // Idempotent: a later open neither rebuilds nor loses the new row.
+    const third = openDatabase(path);
+    expect(third.prepare("SELECT COUNT(*) AS n FROM usage_events").get()?.["n"]).toBe(2);
+    third.close();
+  });
 });

@@ -42,6 +42,17 @@ describe("fetchErrorMessage", () => {
     ).toBe("OMP failed · Cursor OK — sync exploded");
   });
 
+  it("names Claude Code beside the two older sources", () => {
+    expect(
+      fetchErrorMessage({
+        omp: { ok: true },
+        claudeCode: { ok: false },
+        cursor: { ok: true },
+        error: "Claude Code failed: ~/.claude/projects unreadable",
+      }),
+    ).toBe("Claude Code failed · OMP OK · Cursor OK — ~/.claude/projects unreadable");
+  });
+
   it("claims nothing OK when both sources failed", () => {
     expect(
       fetchErrorMessage({

@@ -1,21 +1,32 @@
 /**
- * Incremental OMP sync: session transcripts on disk into `usage_events`.
+ * Incremental transcript sync: session files on disk into `usage_events`.
+ *
+ * Two collectors share it — OMP's transcripts and Claude Code's. They differ
+ * only in where they live, how one line parses and which `source` the rows
+ * carry, so the walk, the resume bookkeeping and the transaction are written
+ * once here.
  *
  * `omp_sync_state` remembers each file's mtime and how many bytes we have
- * consumed. A file whose mtime and size still match its row is not opened at
- * all — that is what makes the second fetch cheap. A grown file resumes at its
- * offset; a shrunk or rewritten one restarts from byte 0.
+ * consumed, keyed by absolute path — so the two sources cannot collide in it
+ * even though the table kept OMP's name. A file whose mtime and size still
+ * match its row is not opened at all; that is what makes the second fetch
+ * cheap. A grown file resumes at its offset; a shrunk or rewritten one
+ * restarts from byte 0.
  *
  * Rows are keyed by the parser's stable `UsageEvent.id`, so re-reading the same
  * lines (a torn tail, a restart, a rewritten file) cannot duplicate them.
- * Tokens and timestamps are stored; OMP's own `usage.cost` never is.
+ * Tokens and timestamps are stored; the tools' own cost fields never are.
  */
 
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
-import type { UsageEvent } from "@prompt-burn/core";
+import type { Source, UsageEvent } from "@prompt-burn/core";
+import { defaultClaudeDirectory, scanClaudeSessionFile } from "./claude-code.js";
 import { defaultSessionsDirectory, scanOmpSessionFile } from "./omp.js";
+
+/** One transcript parse, resumed from a byte offset. */
+type ScanFile = (filePath: string, fromOffset: number) => { events: UsageEvent[]; offset: number };
 
 export interface OmpSyncResult {
   /** Files opened and parsed this run. */
@@ -35,7 +46,7 @@ export interface OmpSyncResult {
 const INSERT_EVENT = `
   INSERT INTO usage_events
     (id, source, period, timestamp, model, raw_model, input, output, cache_read, cache_write, session_id, project)
-  VALUES (?, 'omp', 'event', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, 'event', ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET project = excluded.project
     WHERE usage_events.project IS NULL AND excluded.project IS NOT NULL`;
 
@@ -44,18 +55,38 @@ const UPSERT_STATE = `
   ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, offset = excluded.offset`;
 
 /**
- * Syncs every transcript under `directory` (recursively — subagent transcripts
- * live one level deeper and carry their own usage) into `db`.
+ * Syncs every OMP transcript under `directory` (recursively — subagent
+ * transcripts live one level deeper and carry their own usage) into `db`.
  */
 export function syncOmpSessions(
   db: DatabaseSync,
   directory: string = defaultSessionsDirectory(),
 ): OmpSyncResult {
+  return syncTranscripts(db, directory, "omp", scanOmpSessionFile);
+}
+
+/**
+ * Same, for Claude Code's `~/.claude/projects` tree — the transcripts the VS
+ * Code extension and a terminal session both write.
+ */
+export function syncClaudeSessions(
+  db: DatabaseSync,
+  directory: string = defaultClaudeDirectory(),
+): OmpSyncResult {
+  return syncTranscripts(db, directory, "claude-code", scanClaudeSessionFile);
+}
+
+function syncTranscripts(
+  db: DatabaseSync,
+  directory: string,
+  source: Source,
+  scanFile: ScanFile,
+): OmpSyncResult {
   let entries;
   try {
     entries = readdirSync(directory, { recursive: true, withFileTypes: true });
   } catch {
-    // OMP has never run here, or the configured path is gone. Not an error.
+    // The tool has never run here, or the configured path is gone. Not an error.
     return { scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 };
   }
 
@@ -88,10 +119,10 @@ export function syncOmpSessions(
       }
 
       // A file that shrank was rewritten, not appended to: start over.
-      const scan = scanOmpSessionFile(path, knownOffset <= size ? knownOffset : 0);
+      const scan = scanFile(path, knownOffset <= size ? knownOffset : 0);
       result.scannedFiles += 1;
       for (const event of scan.events) {
-        result.insertedEvents += insert(insertEvent, event);
+        result.insertedEvents += insert(insertEvent, source, event);
       }
       upsertState.run(path, mtime, scan.offset);
     }
@@ -104,12 +135,13 @@ export function syncOmpSessions(
   return result;
 }
 
-function insert(statement: StatementSync, event: UsageEvent): number {
+function insert(statement: StatementSync, source: Source, event: UsageEvent): number {
   // The schema forbids an event row without a timestamp; skipping beats
   // aborting the whole sync over one malformed line.
   if (event.timestamp === "") return 0;
   const changes = statement.run(
     event.id,
+    source,
     event.timestamp,
     event.model,
     event.rawModel,

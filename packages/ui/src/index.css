@@ -28,7 +28,9 @@
   --color-source-omp-subtle: #f0fdfa;
   --color-source-cursor: #6d28d9;
   --color-source-cursor-subtle: #f5f3ff;
-  /* Usage-limits tiles. Not OMP/Cursor source identity — those stay teal/violet. */
+  /* Usage-limits tiles, and — for `claude` alone — the Claude Code source
+     identity, which reuses this terracotta rather than a token pair of its own.
+     OMP and Cursor keep their own teal/violet. */
   --color-provider-claude: #c15f3c;
   --color-provider-claude-subtle: #fdf0ea;
   --color-provider-antigravity: #2563eb;

@@ -1,6 +1,6 @@
 /**
- * Settings screen tests: sources (OMP + Cursor), pricing (unknown models +
- * bundled rates), and about (db path).
+ * Settings screen tests: sources (OMP + Claude Code + Cursor), pricing
+ * (unknown models + bundled rates), and about (db path).
  *
  * The toggles and the path are view state until Save fires; Save and Add price
  * hand values to the host, which is the only thing that touches a database.
@@ -77,6 +77,29 @@ describe("Settings", () => {
     );
 
     expect(screen.getByTestId("omp-health").textContent).toBe("Directory not found");
+  });
+
+  it("renders the Claude Code section with toggle, path override, and health", () => {
+    render(
+      <Settings
+        health={[{ source: "claude-code", available: false, detail: "No transcripts found" }]}
+      />,
+    );
+
+    expect(screen.getByTestId("settings-claude")).toBeTruthy();
+    expect(screen.getByText("Claude Code")).toBeTruthy();
+    expect(
+      (screen.getByRole("checkbox", { name: "Enable Claude Code" }) as HTMLInputElement).checked,
+    ).toBe(true);
+
+    const pathInput = screen.getByRole("textbox", {
+      name: "Claude Code projects path",
+    }) as HTMLInputElement;
+    expect(pathInput.value).toBe("~/.claude/projects/");
+    expect(screen.getByText("Default: ~/.claude/projects/")).toBeTruthy();
+    // Its own health line: OMP's must not answer for it.
+    expect(screen.getByTestId("claude-health").textContent).toBe("No transcripts found");
+    expect(screen.getByTestId("omp-health").textContent).toBe("Available");
   });
 
   it("renders the Cursor section with Pro status by default, toggle, and crsr_ key field", () => {
@@ -183,15 +206,19 @@ describe("Settings", () => {
     expect((keyInput as HTMLInputElement).value).toBe("crsr_secret_key");
   });
 
-  it("hands the edited toggles and path to onSave, not before", async () => {
+  it("hands the edited toggles and paths to onSave, not before", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
     render(<Settings ompPath="/stored/omp" onSave={onSave} />);
 
     await user.click(screen.getByRole("checkbox", { name: "Enable Cursor" }));
+    await user.click(screen.getByRole("checkbox", { name: "Enable Claude Code" }));
     const pathInput = screen.getByRole("textbox", { name: "OMP sessions path" });
     await user.clear(pathInput);
     await user.type(pathInput, "/custom/omp/path");
+    const claudeInput = screen.getByRole("textbox", { name: "Claude Code projects path" });
+    await user.clear(claudeInput);
+    await user.type(claudeInput, "/custom/claude/projects");
     expect(onSave).not.toHaveBeenCalled();
 
     await user.click(screen.getByTestId("save-sources"));
@@ -199,6 +226,8 @@ describe("Settings", () => {
     expect(onSave).toHaveBeenCalledWith({
       ompEnabled: true,
       ompPath: "/custom/omp/path",
+      claudeEnabled: false,
+      claudePath: "/custom/claude/projects",
       cursorEnabled: false,
     });
     expect(screen.getByTestId("save-state").textContent).toContain("Saved");

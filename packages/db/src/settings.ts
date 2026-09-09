@@ -1,5 +1,6 @@
 /**
- * The `settings` key/value table: source toggles and the OMP path override.
+ * The `settings` key/value table: source toggles and the transcript-path
+ * overrides.
  *
  * One row per key in the same `~/.prompt-burn/db.sqlite` both shells open, so a
  * path typed in the desktop window is what the VS Code tab reads next time it
@@ -12,24 +13,35 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-/** What the shells may change. `ompPath` empty means "the collector default". */
+/** What the shells may change. An empty path means "the collector default". */
 export interface AppSettings {
   ompEnabled: boolean;
   ompPath: string;
   cursorEnabled: boolean;
+  /**
+   * Claude Code — the CLI behind the VS Code extension. Off hides it from the
+   * dashboard as well as skipping the sync: the toggle is "do I want to see
+   * this", not just "do I want to read it".
+   */
+  claudeEnabled: boolean;
+  claudePath: string;
 }
 
-/** Both sources on, no path override — what the Settings screen shows today. */
+/** Every source on, no path override — what the Settings screen shows today. */
 export const DEFAULT_SETTINGS: AppSettings = {
   ompEnabled: true,
   ompPath: "",
   cursorEnabled: true,
+  claudeEnabled: true,
+  claudePath: "",
 };
 
 const KEYS = {
   ompEnabled: "omp_enabled",
   ompPath: "omp_path",
   cursorEnabled: "cursor_enabled",
+  claudeEnabled: "claude_enabled",
+  claudePath: "claude_path",
 } as const satisfies Record<keyof AppSettings, string>;
 
 /** Stored settings, with a default for every key nobody has written yet. */
@@ -44,6 +56,8 @@ export function readSettings(db: DatabaseSync): AppSettings {
     ompEnabled: readBoolean(stored.get(KEYS.ompEnabled), DEFAULT_SETTINGS.ompEnabled),
     ompPath: stored.get(KEYS.ompPath) ?? DEFAULT_SETTINGS.ompPath,
     cursorEnabled: readBoolean(stored.get(KEYS.cursorEnabled), DEFAULT_SETTINGS.cursorEnabled),
+    claudeEnabled: readBoolean(stored.get(KEYS.claudeEnabled), DEFAULT_SETTINGS.claudeEnabled),
+    claudePath: stored.get(KEYS.claudePath) ?? DEFAULT_SETTINGS.claudePath,
   };
 }
 

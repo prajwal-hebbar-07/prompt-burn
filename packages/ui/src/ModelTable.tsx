@@ -22,6 +22,11 @@ const PILLS: Record<Source, { label: string; className: string; bar: string }> =
     className: "bg-source-omp-subtle text-source-omp ring-1 ring-source-omp/30",
     bar: "bg-source-omp",
   },
+  "claude-code": {
+    label: "Claude Code",
+    className: "bg-provider-claude-subtle text-provider-claude ring-1 ring-provider-claude/30",
+    bar: "bg-provider-claude",
+  },
   cursor: {
     label: "Cursor",
     className: "bg-source-cursor-subtle text-source-cursor ring-1 ring-source-cursor/30",

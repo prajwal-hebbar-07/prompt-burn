@@ -1,8 +1,8 @@
 /**
- * Settings screen: sources (OMP + Cursor), pricing (bundled rates + unknown models),
- * and about (local SQLite database path).
+ * Settings screen: sources (OMP + Claude Code + Cursor), pricing (bundled
+ * rates + unknown models), and about (local SQLite database path).
  *
- * Props only, like the rest of this package: the toggles and the path are view
+ * Props only, like the rest of this package: the toggles and the paths are view
  * state until `onSave` fires, and `onAddPrice` hands one hand-entered rate to
  * the host, which inserts it and re-reads the snapshot. This file opens no
  * database and knows no file paths — it is handed the strings it shows.
@@ -25,10 +25,15 @@ export interface PriceRate {
   cacheWritePerMtok?: number | null;
 }
 
-/** What the host persists for the two sources. `ompPath` is the real directory. */
+/**
+ * What the host persists for the three sources. `ompPath` and `claudePath` are
+ * real directories; blank means the collector's own default.
+ */
 export interface SourceSettings {
   ompEnabled: boolean;
   ompPath: string;
+  claudeEnabled: boolean;
+  claudePath: string;
   cursorEnabled: boolean;
 }
 
@@ -46,7 +51,7 @@ export interface NewPriceInput {
 }
 
 export interface SourceHealth {
-  source: "omp" | "cursor";
+  source: "omp" | "cursor" | "claude-code";
   available: boolean;
   detail?: string;
 }
@@ -61,6 +66,10 @@ export interface SettingsProps {
   ompPath?: string;
   /** OMP enabled state; defaults to true */
   ompEnabled?: boolean;
+  /** Claude Code enabled state; defaults to true */
+  claudeEnabled?: boolean;
+  /** Claude Code projects path override; defaults to `~/.claude/projects/` */
+  claudePath?: string;
   /** Cursor enabled state; defaults to true */
   cursorEnabled?: boolean;
   /** Optional crsr_ key placeholder/value */
@@ -76,6 +85,7 @@ export interface SettingsProps {
 }
 
 const DEFAULT_OMP_PATH = "~/.omp/agent/sessions/";
+const DEFAULT_CLAUDE_PATH = "~/.claude/projects/";
 const DEFAULT_DB_PATH = "~/.prompt-burn/db.sqlite";
 
 function formatRate(dollars: number | null | undefined): string {
@@ -134,6 +144,8 @@ export function Settings({
   bundledPrices = [],
   ompPath: initialOmpPath = DEFAULT_OMP_PATH,
   ompEnabled: initialOmpEnabled = true,
+  claudeEnabled: initialClaudeEnabled = true,
+  claudePath: initialClaudePath = DEFAULT_CLAUDE_PATH,
   cursorEnabled: initialCursorEnabled = true,
   cursorKey: initialCursorKey = "",
   health = [],
@@ -145,6 +157,8 @@ export function Settings({
   // collectors, so the whole section persists on one click.
   const [ompEnabled, setOmpEnabled] = useState(initialOmpEnabled);
   const [ompPath, setOmpPath] = useState(initialOmpPath);
+  const [claudeEnabled, setClaudeEnabled] = useState(initialClaudeEnabled);
+  const [claudePath, setClaudePath] = useState(initialClaudePath);
   const [cursorEnabled, setCursorEnabled] = useState(initialCursorEnabled);
   const [cursorKey, setCursorKey] = useState(initialCursorKey);
   const [saved, setSaved] = useState(false);
@@ -155,7 +169,7 @@ export function Settings({
   const price = pricing === null ? null : parseDraft(pricing, draft);
 
   function save(): void {
-    onSave?.({ ompEnabled, ompPath, cursorEnabled });
+    onSave?.({ ompEnabled, ompPath, claudeEnabled, claudePath, cursorEnabled });
     setSaved(true);
   }
 
@@ -167,6 +181,11 @@ export function Settings({
   }
 
   const ompHealth = health.find((h) => h.source === "omp") ?? {
+    available: true,
+    detail: "Available",
+  };
+
+  const claudeHealth = health.find((h) => h.source === "claude-code") ?? {
     available: true,
     detail: "Available",
   };
@@ -255,6 +274,63 @@ export function Settings({
 
           <div className="border-t border-border pt-6" />
 
+          {/* Claude Code: the CLI's own transcripts, never OMP's. */}
+          <div data-testid="settings-claude" className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true" className="size-2 rounded-full bg-provider-claude" />
+                <span className="text-body font-medium">Claude Code</span>
+              </div>
+              <label className="flex items-center gap-2 text-small font-medium cursor-pointer">
+                <input
+                  type="checkbox"
+                  aria-label="Enable Claude Code"
+                  checked={claudeEnabled}
+                  onChange={(e) => {
+                    setClaudeEnabled(e.target.checked);
+                    setSaved(false);
+                  }}
+                  className="rounded-control border-border text-brand focus:ring-brand"
+                />
+                <span>{claudeEnabled ? "Enabled" : "Disabled"}</span>
+              </label>
+            </div>
+
+            <p className="text-table text-foreground-muted">
+              The Claude Code CLI and its VS Code extension keep their own transcripts, separate
+              from OMP's. Disabled, this source is skipped on every sync and hidden from the
+              dashboard.
+            </p>
+
+            <div>
+              <label className="block text-small text-foreground-secondary">
+                Projects directory
+                <input
+                  type="text"
+                  aria-label="Claude Code projects path"
+                  value={claudePath}
+                  onChange={(e) => {
+                    setClaudePath(e.target.value);
+                    setSaved(false);
+                  }}
+                  className="mt-1 w-full rounded-control border border-border px-3 py-1.5 font-mono text-small text-foreground"
+                />
+              </label>
+              <span className="mt-1 block text-table text-foreground-muted">
+                Default: {DEFAULT_CLAUDE_PATH}
+              </span>
+            </div>
+
+            <div className="text-small text-foreground-muted">
+              Health:{" "}
+              <span data-testid="claude-health" className="text-foreground-secondary">
+                {claudeHealth.detail ?? (claudeHealth.available ? "Available" : "Unavailable")}
+              </span>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-6" />
+
           {/* Cursor */}
           <div data-testid="settings-cursor" className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -315,7 +391,7 @@ export function Settings({
           <span data-testid="save-state" className="text-small text-foreground-muted">
             {saved
               ? "Saved. The next fetch uses these settings."
-              : "Toggles and the path apply once saved."}
+              : "Toggles and the paths apply once saved."}
           </span>
         </div>
       </section>

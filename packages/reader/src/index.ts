@@ -4,12 +4,15 @@
  * host both call this one implementation, so there is a single set of
  * `@prompt-burn/db` + `@prompt-burn/collectors` calls behind both dashboards.
  *
- * Both sources land here: `fetch()` runs the parallel collector pass, and
- * `getSnapshot()` aggregates stored OMP rows together with Cursor's numbers for
- * that same period — asking Cursor for the period's own window when the period
- * is bounded, and falling back to the cached cycle when it cannot answer.
- * Partial success is normal — a failed source keeps its previous data while the
- * other's new data is applied.
+ * Every source lands here: `fetch()` runs the parallel collector pass, and
+ * `getSnapshot()` aggregates the stored transcript rows — OMP's and Claude
+ * Code's — together with Cursor's numbers for that same period, asking Cursor
+ * for the period's own window when the period is bounded and falling back to
+ * the cached cycle when it cannot answer. Partial success is normal — a failed
+ * source keeps its previous data while the others' new data is applied.
+ *
+ * A source switched off in Settings is neither collected nor shown: its stored
+ * rows stay in the database, out of the snapshot, until it is switched back on.
  *
  * Host-side only. The UI package never imports this, or anything under it.
  */
@@ -36,6 +39,7 @@ import {
 } from "@prompt-burn/db";
 import {
   collectAllSources,
+  defaultClaudeDirectory,
   defaultCursorStatePath,
   defaultSessionsDirectory,
   fetchCursorWindowAggregate,
@@ -49,7 +53,7 @@ export type { AppSettings, DashboardSnapshot, NewPriceEntry, PeriodFilter };
 
 /** One source's availability, as `discover()` reports it to the UI. */
 export interface ReaderHealth {
-  source: "omp" | "cursor";
+  source: "omp" | "cursor" | "claude-code";
   /** Is this source collectable on this machine right now? */
   available: boolean;
   /** Human-readable detail: a directory path, or why it is unavailable. */
@@ -65,6 +69,13 @@ export interface FetchResult {
   error?: string;
   /** Per-source sync counters, straight from the collectors. */
   omp: { ok: boolean; error?: string; scannedFiles: number; skippedFiles: number; insertedEvents: number };
+  claudeCode: {
+    ok: boolean;
+    error?: string;
+    scannedFiles: number;
+    skippedFiles: number;
+    insertedEvents: number;
+  };
   cursor: { ok: boolean; reason?: string; error?: string; models: number };
   /**
    * Ollama Cloud's clocks. Never flips `ok`: they are a panel, not usage, and
@@ -117,12 +128,19 @@ export function createUsageReader(
   db: DatabaseSync,
   options: {
     ompDirectory?: string;
+    claudeDirectory?: string;
     cursorStatePath?: string;
     fetchImpl?: typeof fetch;
     now?: () => Date;
   } = {},
 ): UsageReader {
-  const { ompDirectory, cursorStatePath, fetchImpl, now = () => new Date() } = options;
+  const {
+    ompDirectory,
+    claudeDirectory,
+    cursorStatePath,
+    fetchImpl,
+    now = () => new Date(),
+  } = options;
 
   // The last cycle Cursor returned, kept so a period change or a later failed
   // fetch still renders it. ponytail: in memory only — a restart shows an empty
@@ -147,7 +165,11 @@ export function createUsageReader(
     const stored = readSettings(db);
     // A stored override wins, then the constructor injection (tests only),
     // then the collector's own default location.
-    return { ...stored, ompPath: stored.ompPath || ompDirectory || defaultSessionsDirectory() };
+    return {
+      ...stored,
+      ompPath: stored.ompPath || ompDirectory || defaultSessionsDirectory(),
+      claudePath: stored.claudePath || claudeDirectory || defaultClaudeDirectory(),
+    };
   }
 
   /**
@@ -193,7 +215,7 @@ export function createUsageReader(
 
   return {
     async discover() {
-      const { ompEnabled, ompPath, cursorEnabled } = sources();
+      const { ompEnabled, ompPath, cursorEnabled, claudeEnabled, claudePath } = sources();
       const statePath = cursorStatePath ?? defaultCursorStatePath();
       // A disabled source is not probed at all: Cursor's database is not even
       // opened to look for a token.
@@ -203,6 +225,11 @@ export function createUsageReader(
           source: "omp",
           available: ompEnabled && existsSync(ompPath),
           detail: ompEnabled ? ompPath : DISABLED_DETAIL,
+        },
+        {
+          source: "claude-code",
+          available: claudeEnabled && existsSync(claudePath),
+          detail: claudeEnabled ? claudePath : DISABLED_DETAIL,
         },
         {
           source: "cursor",
@@ -215,14 +242,16 @@ export function createUsageReader(
 
     async fetch() {
       const at = now().toISOString();
-      const { ompEnabled, ompPath, cursorEnabled } = sources();
+      const { ompEnabled, ompPath, cursorEnabled, claudeEnabled, claudePath } = sources();
       const result = await collectAllSources({
         db,
         ompDirectory: ompPath,
+        claudeDirectory: claudePath,
         cursorStatePath,
         fetchImpl,
         ompEnabled,
         cursorEnabled,
+        claudeEnabled,
       });
       const cycle = result.cursor.cycle;
       if (cycle) cursorCycle = cycle;
@@ -234,16 +263,24 @@ export function createUsageReader(
       const cursorFailed = !result.cursor.ok && !CURSOR_DEGRADED.has(result.cursor.reason ?? "");
       const errors: string[] = [];
       if (!result.omp.ok) errors.push(`OMP failed: ${result.omp.error ?? "unknown error"}`);
+      if (!result.claudeCode.ok) {
+        errors.push(`Claude Code failed: ${result.claudeCode.error ?? "unknown error"}`);
+      }
       if (cursorFailed) errors.push(`Cursor failed: ${result.cursor.error ?? "unknown error"}`);
 
       return {
         at,
-        ok: result.omp.ok && !cursorFailed,
+        ok: result.omp.ok && result.claudeCode.ok && !cursorFailed,
         ...(errors.length > 0 ? { error: errors.join(" · ") } : {}),
         omp: {
           ok: result.omp.ok,
           ...(result.omp.error === undefined ? {} : { error: result.omp.error }),
           ...result.omp.sync,
+        },
+        claudeCode: {
+          ok: result.claudeCode.ok,
+          ...(result.claudeCode.error === undefined ? {} : { error: result.claudeCode.error }),
+          ...result.claudeCode.sync,
         },
         cursor: {
           ok: result.cursor.ok,
@@ -261,11 +298,16 @@ export function createUsageReader(
 
     async getSnapshot(period: PeriodFilter) {
       const at = now().toISOString();
-      const { ompEnabled, ompPath } = sources();
+      const { ompEnabled, ompPath, cursorEnabled, claudeEnabled } = sources();
       return buildDashboardSnapshot({
         period,
-        ompEvents: loadUsageEvents(db, "omp"),
-        cursor: await cursorForPeriod(period),
+        // Switched off means off the screen, not just unsynced: no events, no
+        // subtotal row. Stored rows stay in the database and come back the
+        // moment the toggle does.
+        ompEvents: ompEnabled ? loadUsageEvents(db, "omp") : [],
+        claudeEvents: claudeEnabled ? loadUsageEvents(db, "claude-code") : [],
+        cursor: cursorEnabled ? await cursorForPeriod(period) : EMPTY_CURSOR_CYCLE,
+        enabled: { omp: ompEnabled, "claude-code": claudeEnabled, cursor: cursorEnabled },
         now: now(),
         // Provider clocks. The OMP ones are re-read out of OMP's own agent
         // database on every snapshot — OMP refreshes them while it works, and

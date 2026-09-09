@@ -57,9 +57,20 @@ function ompEvent(): UsageEvent {
   };
 }
 
+/** One Claude Code transcript event, on the same model as OMP's. */
+function claudeEvent(): UsageEvent {
+  return {
+    ...ompEvent(),
+    id: "claude:s9:line1",
+    source: "claude-code",
+    tokens: { input: 1_000, output: 500, cacheRead: 2_000, cacheWrite: 159 },
+  };
+}
+
 interface Costs {
   combined?: number | null;
   omp?: number | null;
+  claudeCode?: number | null;
   cursor?: number | null;
 }
 
@@ -69,10 +80,12 @@ function snapshot(
   events: UsageEvent[] = [],
   cursor: CursorSnapshot = EMPTY_CURSOR,
   costs: Costs = {},
+  claudeEvents: UsageEvent[] = [],
 ): DashboardSnapshot {
   const base = buildDashboardSnapshot({
     period,
     ompEvents: events,
+    claudeEvents,
     cursor,
     now: new Date("2026-09-02T12:00:00.000Z"),
   });
@@ -80,6 +93,7 @@ function snapshot(
     ...base,
     estimatedCents: costs.combined ?? null,
     omp: { ...base.omp, estimatedCents: costs.omp ?? null },
+    claudeCode: { ...base.claudeCode, estimatedCents: costs.claudeCode ?? null },
     cursor: { ...base.cursor, estimatedCents: costs.cursor ?? null },
   };
 }
@@ -114,13 +128,13 @@ describe("formatting", () => {
 describe("the mixed-scope subtitle", () => {
   it("names both scopes, and which one the number is, when Cursor cannot follow", () => {
     expect(heroSubtitle(snapshot({ kind: "today" }))).toBe(
-      "Estimated total · OMP: Today · Cursor: cycle to date (not in total)",
+      "Estimated total · OMP + Claude Code: Today · Cursor: cycle to date (not in total)",
     );
     expect(heroSubtitle(snapshot({ kind: "this_month" }))).toBe(
-      "Estimated total · OMP: This month · Cursor: cycle to date (not in total)",
+      "Estimated total · OMP + Claude Code: This month · Cursor: cycle to date (not in total)",
     );
     expect(heroSubtitle(snapshot({ kind: "range", start: "2026-08-01", end: "2026-08-15" }))).toBe(
-      "Estimated total · OMP: Date range · Cursor: cycle to date (not in total)",
+      "Estimated total · OMP + Claude Code: Date range · Cursor: cycle to date (not in total)",
     );
   });
 
@@ -137,23 +151,53 @@ describe("the mixed-scope subtitle", () => {
 });
 
 describe("Dashboard", () => {
-  it("shows the combined total and both subtotals, priced or not", () => {
+  it("shows the combined total and all three subtotals, priced or not", () => {
     render(
       <Dashboard
-        snapshot={snapshot({ kind: "today" }, [ompEvent()], CURSOR_WINDOWED, {
-          combined: 2421.775,
-          omp: 1200,
-          cursor: 1221.775,
-        })}
+        snapshot={snapshot(
+          { kind: "today" },
+          [ompEvent()],
+          CURSOR_WINDOWED,
+          { combined: 2721.775, omp: 1200, claudeCode: 300, cursor: 1221.775 },
+          [claudeEvent()],
+        )}
       />,
     );
 
-    expect(screen.getByTestId("estimated-total").textContent).toBe("$24.22");
+    expect(screen.getByTestId("estimated-total").textContent).toBe("$27.22");
     expect(screen.getByTestId("omp-subtotal").textContent).toContain("OMP");
     expect(screen.getByTestId("omp-subtotal").textContent).toContain("$12.00");
+    // Its own row, never folded into OMP's even on the same model.
+    expect(screen.getByTestId("claude-code-subtotal").textContent).toBe("Claude Code$3.00");
     // Cursor answered for the day, so it is plain "Cursor" and it is counted.
     expect(screen.getByTestId("cursor-subtotal").textContent).toContain("Cursor$12.22");
     expect(screen.getByTestId("hero-subtitle").textContent).toBe("Estimated total · Today");
+  });
+
+  it("drops a switched-off source from the card instead of showing it as $0", () => {
+    const base = snapshot({ kind: "today" }, [ompEvent()], CURSOR_WINDOWED, {
+      combined: 1200,
+      omp: 1200,
+      cursor: 1221.775,
+    });
+    render(
+      <Dashboard snapshot={{ ...base, enabled: { ...base.enabled, "claude-code": false } }} />,
+    );
+
+    expect(screen.queryByTestId("claude-code-subtotal")).toBeNull();
+    // The sources still on are untouched.
+    expect(screen.getByTestId("omp-subtotal").textContent).toContain("$12.00");
+    expect(screen.getByTestId("cursor-subtotal")).not.toBeNull();
+  });
+
+  it("names only the switched-on scopes in a mixed-period subtitle", () => {
+    const base = snapshot({ kind: "today" }, [ompEvent()], CURSOR_WITH_USAGE, { omp: 1200 });
+    expect(heroSubtitle(base)).toBe(
+      "Estimated total · OMP + Claude Code: Today · Cursor: cycle to date (not in total)",
+    );
+    expect(heroSubtitle({ ...base, enabled: { ...base.enabled, "claude-code": false } })).toBe(
+      "Estimated total · OMP: Today · Cursor: cycle to date (not in total)",
+    );
   });
 
   it("keeps a cycle-only Cursor out of the hero and says so on its row", () => {
@@ -240,14 +284,43 @@ describe("Dashboard", () => {
     expect(screen.queryByTestId("unpriced-note")).toBeNull();
   });
 
-  it("sums the token breakdown across both sources without deduping", () => {
+  it("floors the hero on both timestamped sources, not OMP alone", () => {
+    // Cursor's cycle is out of the day, so the fallback covers OMP and Claude
+    // Code together: $12.00 here would mean Claude Code was dropped from it.
+    const base = snapshot(
+      { kind: "today" },
+      [ompEvent()],
+      CURSOR_WITH_USAGE,
+      { combined: null, omp: 1200, claudeCode: 300 },
+      [claudeEvent()],
+    );
+    const priced: DashboardSnapshot = {
+      ...base,
+      models: base.models.map((row) => ({
+        ...row,
+        estimatedCents: row.source === "omp" ? 1200 : row.source === "claude-code" ? 300 : null,
+      })),
+    };
+
+    render(<Dashboard snapshot={priced} />);
+
+    expect(screen.getByTestId("estimated-total").textContent).toBe("≈$15.00");
+    // The unpriced rows are Cursor's, outside the number the note qualifies.
+    expect(screen.queryByTestId("unpriced-note")).toBeNull();
+  });
+
+  it("sums the token breakdown across all three sources without deduping", () => {
     render(
-      <Dashboard snapshot={snapshot({ kind: "all_time" }, [ompEvent()], CURSOR_WITH_USAGE)} />,
+      <Dashboard
+        snapshot={snapshot({ kind: "all_time" }, [ompEvent()], CURSOR_WITH_USAGE, {}, [
+          claudeEvent(),
+        ])}
+      />,
     );
 
-    // 900,002 in · 40,105 out · 37,841 cache (OMP read + write, Cursor none).
+    // 901,002 in · 40,605 out · 40,000 cache across OMP, Claude Code and Cursor.
     expect(screen.getByTestId("token-breakdown").textContent).toBe(
-      "Tokens: 900K in · 40.1K out · 37.8K cache",
+      "Tokens: 901K in · 40.6K out · 40K cache",
     );
   });
 });

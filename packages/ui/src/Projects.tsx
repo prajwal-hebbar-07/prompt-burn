@@ -1,6 +1,7 @@
 /**
- * The Projects route: every OMP working directory that burned tokens in the
- * selected period, biggest spender first, each with the models it used.
+ * The Projects route: every OMP or Claude Code working directory that burned
+ * tokens in the selected period, biggest spender first, each with the models it
+ * used.
  *
  * Designed for visual clarity:
  * - An SVG Donut / Ring chart at the top shows macro spend distribution across
@@ -10,8 +11,9 @@
  * - Clean model chips below each lane detail the tokens and cost, replacing
  *   intimidating multi-column spreadsheet matrices.
  *
- * Cursor reports no working directory at all, so it is absent here by
- * construction; the callout states that out loud.
+ * Cursor reports no working directory at all — a cycle-to-date aggregate
+ * belongs to no directory — so it is absent here by construction; the callout
+ * states that out loud.
  */
 
 import type { DashboardSnapshot, ProjectUsage } from "@prompt-burn/core";
@@ -20,11 +22,13 @@ import { formatCost, formatTokens } from "./format.js";
 /** Usage from a transcript that carried no `cwd` — real work, no owner. */
 export const UNATTRIBUTED = "No project";
 
-/** Nothing has been attributed yet: no OMP events, or none in this period. */
-const NO_PROJECTS = "No OMP usage for this period, so there is nothing to break down by project";
+/** Nothing attributed yet: no timestamped events, or none in this period. */
+const NO_PROJECTS =
+  "No OMP or Claude Code usage for this period, so there is nothing to break down by project";
 
 /** Cursor cannot appear on this screen, and the screen has to admit it. */
-const CURSOR_NOTE = "Projects are OMP working directories · Cursor reports none, so it is not here";
+const CURSOR_NOTE =
+  "Projects are OMP and Claude Code working directories · Cursor reports none, so it is not here";
 
 /** Color sequence for charts and indicators. */
 export const CHART_PALETTE = [

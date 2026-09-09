@@ -9,6 +9,10 @@ Fixtures: [`fixtures/omp-session-line.json`](fixtures/omp-session-line.json),
 A second OMP scan on 2026-09-04 added Gemini through Antigravity — see
 [Gemini through Antigravity](#gemini-through-antigravity--second-scan-2026-09-04).
 
+A Claude Code section was written on 2026-09-09 from the collector code and Anthropic's
+documented transcript format — **not** from a local transcript; see
+[Claude Code](#claude-code).
+
 **Headline answer: yes — Cursor Pro returns per-model input / output / cache tokens on this
 account.** The dashboard's core assumption holds. One locked decision is wrong, though: see
 [Finding: Cursor Pro *does* accept date windows](#finding-cursor-pro-does-accept-date-windows).
@@ -234,6 +238,113 @@ timestamp+model+tokens alone — two identical tiny turns in one session collide
 `omp_sync_state` keys on `path` with `mtime` + `offset`, so a resumed file needs its session uuid
 cached alongside the offset, or re-read from line 1 (cheap: it is the first line).
 
+## Claude Code
+
+> **Not spiked — unverified against a local fixture.** Everything in this section is read off
+> `packages/collectors/src/claude-code.ts` and Claude Code's documented transcript format.
+> There was no Claude Code data on the machine when it was written, so no field here has been
+> checked against a real transcript and there is deliberately no fixture. Treat the shape as
+> unconfirmed until someone runs Claude Code on this machine and re-reads it.
+
+Source: `~/.claude/projects/<slugified-cwd>/<session-uuid>.jsonl`, one JSON object per line,
+walked recursively like OMP's — the CLI the VS Code extension drives and a terminal session
+both write here, so one collector covers both. `CLAUDE_CONFIG_DIR` relocates the whole config
+directory (the collector then reads `<CLAUDE_CONFIG_DIR>/projects`); Settings' `claude_path`
+overrides either. Only the first entry is read if that variable holds a comma-separated list —
+a `ponytail:` shortcut recorded in `defaultClaudeDirectory`.
+
+A line counts only when `message.role === "assistant"` and `message.usage` exists. The fields
+the parser reads, in the shape it expects them:
+
+```json
+{
+  "type": "assistant",
+  "uuid": "6f1c9b7e-…",
+  "requestId": "req_011XYZ",
+  "sessionId": "11111111-2222-3333-4444-555555555555",
+  "cwd": "/Users/example/project",
+  "timestamp": "2026-09-02T08:31:31.505Z",
+  "message": {
+    "id": "msg_01ABC",
+    "role": "assistant",
+    "model": "claude-sonnet-4-5-20250929",
+    "usage": {
+      "input_tokens": 2,
+      "output_tokens": 105,
+      "cache_read_input_tokens": 37378,
+      "cache_creation_input_tokens": 463
+    }
+  }
+}
+```
+
+Token keys are Anthropic's API names, not OMP's. **There is no session header**: `cwd` and
+`sessionId` sit on every line, so project attribution never depends on line 1 and a resumed
+file needs no re-read from the top — the opposite of OMP's scan. `type` is shown above for
+realism but the parser does not declare or test it: `message.role === "assistant"` plus a
+`message.usage` block is the whole filter, chosen so an unfamiliar or renamed line type
+cannot silently drop real usage.
+
+### `UsageEvent` mapping
+
+| Our field | Claude Code source | Example |
+|-----------|--------------------|---------|
+| `id` | `message.id` + `requestId`, with fallbacks — see [Event id](#event-id-claude-code) | `claude-code:msg_01ABC:req_011XYZ` |
+| `source` | constant | `"claude-code"` |
+| `timestamp` | top-level `timestamp`; must be a string or the line is skipped | `"2026-09-02T08:31:31.505Z"` |
+| `rawModel` | `message.model`, verbatim | `"claude-sonnet-4-5-20250929"` |
+| `model` | `canonicalModelId(message.model)` — dated snapshot stripped | `"claude-sonnet-4-5"` |
+| `tokens.input` | `message.usage.input_tokens` | `2` |
+| `tokens.output` | `message.usage.output_tokens` | `105` |
+| `tokens.cacheRead` | `message.usage.cache_read_input_tokens` | `37378` |
+| `tokens.cacheWrite` | `message.usage.cache_creation_input_tokens` | `463` |
+| `sessionId` | `sessionId`; omitted when it is not a string | `11111111-…` |
+| `project` | `cwd` — the directory that owns the usage; omitted when absent or empty | `/Users/example/project` |
+
+Every token field goes through the same `count()` guard OMP's does: a missing key or a
+non-finite value becomes `0` rather than failing the line.
+
+Skipped rather than stored:
+
+- `message.model === "<synthetic>"` — Claude Code's stand-in on locally generated messages
+  (interrupts, API errors). No provider call happened, so there is nothing to price.
+- Anything without `message.usage`, a non-assistant role, or a non-string `timestamp` /
+  `message.model`; blank and unparsable lines (a live transcript can be mid-write).
+- `costUSD`, which older Claude Code versions wrote — ignored exactly like OMP's
+  `message.usage.cost`, because cost is recomputed from `price_entries`.
+
+### Event id (Claude Code)
+
+In falling order of strength:
+
+1. `` `claude-code:${message.id}:${requestId}` `` when both are strings.
+2. `` `claude-code:${sessionId ?? "unknown"}:${uuid}` `` — the per-line uuid.
+3. `claude-code:` + first 16 hex of `sha256(filePath:byteOffset)`.
+
+The response ids come first for a reason: resuming or branching a session copies earlier turns
+into a new transcript with **fresh per-line uuids** but the original `message.id` and
+`requestId`, so keying on those is what stops one API response being counted twice across
+files. Never a hash of timestamp + model + tokens — two identical tiny turns would collide.
+The id is the `usage_events` primary key, so a re-read is idempotent.
+
+### Dated model ids collapse
+
+Claude Code writes Anthropic's dated snapshot ids. `canonicalModelId` strips a trailing
+`-YYYYMMDD`, so `claude-sonnet-4-5-20250929` becomes `claude-sonnet-4-5` — the id OMP writes
+and the id `price_entries` keys on, which is what makes one model one row and one rate.
+`rawModel` keeps the dated string. A value that is *only* a date, with no base model left after
+the strip, is kept verbatim rather than reduced to nothing.
+
+### Not deduped against OMP
+
+OMP and Claude Code read different transcript trees, so a turn appears in one or the other and
+never both: the two subtotals add up, `(source, model)` keeps them on separate rows, and there
+is nothing to dedupe. The overlap is the *subscription*, not the tokens — see
+[spec.md § Double counting](spec.md#double-counting-omp-claude-code-and-the-limit-cards).
+
+`omp_sync_state` carries both sources' resume state, keyed by absolute path, so the two trees
+cannot collide in it despite the table's OMP-era name.
+
 ---
 
 ## Cursor (Pro)
@@ -379,6 +490,11 @@ an idle Cursor day fall back to the whole billing cycle and drop out of the day'
 - Ollama Cloud lines report `cost.total: 0`; whether we treat Ollama Cloud as free or price it is a pricing decision.
 - OMP session-log format is `version: 3`; no compatibility guarantee across OMP updates.
 - `teamId: 0` was accepted but untested for a real team account.
+- **Every Claude Code field above is unverified on this machine.** The layout, the
+  `message.usage.*` key names, the presence of `requestId` / `uuid` / `cwd` on each line and
+  the `<synthetic>` model are all taken from the documented format, not from a transcript here.
+  First machine with real Claude Code data should re-read the section and add a redacted
+  fixture.
 - `gemini-3.8-flash` is the only Gemini id seen. Other Gemini ids (Pro tiers, dated
   snapshots) may appear under different routing and are simply unobserved, not ruled out.
 - `limits.*.usage` from Ollama's `/api/usage` is read as a 0–1 fraction. Both observed values
