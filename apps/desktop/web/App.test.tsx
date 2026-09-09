@@ -245,10 +245,11 @@ it("applies the successful source when only one of the two fails", async () => {
   sidecar.snapshot = snapshotWith(500);
   await user.click(screen.getByRole("button", { name: "Fetch data" }));
 
-  // OMP's new rows land even though Cursor failed, and the banner names both.
+  // OMP's new rows land even though Cursor failed, and the banner names every
+  // source: the one that broke, and the two that did not.
   await waitFor(() => expect(total()).toBe("$5.00"));
   expect(screen.getByTestId("fetch-error-message").textContent).toContain(
-    "Cursor failed · OMP OK — cursor.com said 503",
+    "Cursor failed · OMP OK · Claude Code OK — cursor.com said 503",
   );
   expect(sidecar.methods).toEqual([
     "fetch",
