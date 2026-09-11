@@ -36,7 +36,7 @@ Two sources only.
 | Source | What we read | Time grain | Cost |
 |--------|----------------|------------|------|
 | **OMP** (Oh My Pi) | Session logs under `~/.omp/agent/sessions/` | Per-event timestamps | Tokens × our price DB |
-| **Cursor (Pro, default)** | Dashboard API per-model aggregates (`GetAggregatedUsageEvents`), auth from local `state.vscdb` | **Any window we ask for** — `startDate` / `endDate` narrow it, so calendar filters apply; all-time falls back to the cycle, labeled **“Cycle to date”** | Same price DB |
+| **Cursor (Pro, default)** | Dashboard API per-model aggregates (`get-aggregated-usage-events`), auth from local `state.vscdb` | **Any window we ask for** — `startDate` / `endDate` narrow it, so calendar filters apply; all-time falls back to the cycle, labeled **“Cycle to date”** | Same price DB |
 | **Cursor (Enterprise, optional)** | Admin API usage events with a `crsr_` key | Per-event timestamps → calendar filters work | Same price DB |
 
 OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split usage or cost by account.** Model-level breakdown is enough. Provider *limits* are the exception, because a 5-hour window belongs to one subscription and not to a model — those are shown per account, named by the email OMP recorded for it, because the reason to read the panel is to decide which account to pin next. An account with no email on record falls back to `Account A` / `Account B`.
