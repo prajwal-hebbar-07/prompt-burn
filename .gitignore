@@ -12,3 +12,6 @@ src-tauri/gen/
 
 # Built sidecar, produced by `vite build --config vite.config.sidecar.mts`
 sidecar-dist/
+
+# Local docs not for public repo
+docs/twitter-campaign.md
