@@ -1,4 +1,11 @@
 export {
+  fetchAntigravityLimits,
+  readAntigravityAuth,
+  type AntigravityAuth,
+  type AntigravityCredential,
+  type AntigravityUnavailable,
+} from "./antigravity.js";
+export {
   defaultCursorStatePath,
   readCursorAuth,
   type CursorAuth,

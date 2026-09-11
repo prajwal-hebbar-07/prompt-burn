@@ -28,6 +28,10 @@ const AGGREGATES = readFileSync(
   new URL("../../../docs/fixtures/cursor-cycle-aggregates.json", import.meta.url),
   "utf8",
 );
+const QUOTA = readFileSync(
+  new URL("../../../docs/fixtures/antigravity-quota-summary.json", import.meta.url),
+  "utf8",
+);
 
 const HEADER = JSON.stringify({
   type: "session",
@@ -77,6 +81,15 @@ function stubFetch(status = 200): typeof fetch {
     })) as unknown as typeof fetch;
 }
 
+/**
+ * No `agy` session. Every case injects this for the reason every case injects
+ * the transcript directories: the default reads the developer's own keychain.
+ * `security` reports a missing item as exit status 44.
+ */
+const NO_AGY = (): string => {
+  throw Object.assign(new Error("SecKeychainSearchCopyNext"), { status: 44 });
+};
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "prompt-burn-collect-"));
   sessions = join(root, "omp-sessions");
@@ -123,6 +136,7 @@ describe("collectAllSources", () => {
       claudeDirectory: claudeProjects,
       cursorStatePath: statePath,
       fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
     });
 
     expect(result.omp).toEqual({
@@ -154,6 +168,7 @@ describe("collectAllSources", () => {
       claudeDirectory: claudeProjects,
       cursorStatePath: join(root, "absent", "state.vscdb"),
       fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
     });
 
     expect(result.omp.ok).toBe(true);
@@ -169,6 +184,7 @@ describe("collectAllSources", () => {
       claudeDirectory: claudeProjects,
       cursorStatePath: statePath,
       fetchImpl: stubFetch(500),
+      antigravitySecret: NO_AGY,
     });
 
     expect(result.omp.sync.insertedEvents).toBe(2);
@@ -188,6 +204,7 @@ describe("collectAllSources", () => {
       claudeDirectory: claudeProjects,
       cursorStatePath: statePath,
       fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
     });
 
     expect(result.omp.ok).toBe(false);
@@ -226,6 +243,7 @@ describe("collectAllSources", () => {
         called += 1;
         return new Response("{}");
       }) as unknown as typeof fetch,
+      antigravitySecret: NO_AGY,
     });
 
     expect(called).toBe(0);
@@ -241,6 +259,7 @@ describe("collectAllSources", () => {
       claudeDirectory: claudeProjects,
       cursorStatePath: statePath,
       fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
       claudeEnabled: false,
     });
 
@@ -255,5 +274,55 @@ describe("collectAllSources", () => {
       ],
     ).toBe(0);
     expect(result.omp.sync.insertedEvents).toBe(2);
+  });
+
+  it("fetches Antigravity's clocks even with OMP switched off", async () => {
+    // The case this collector exists for: the provider is unlinked from OMP —
+    // or OMP is off entirely — and `agy` is still burning the same pool.
+    const secret = () =>
+      `go-keyring-base64:${Buffer.from(
+        JSON.stringify({
+          token: {
+            access_token: "at",
+            refresh_token: "rt",
+            expiry: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        }),
+      ).toString("base64")}`;
+
+    const result = await collectAllSources({
+      db,
+      ompDirectory: sessions,
+      claudeDirectory: claudeProjects,
+      cursorStatePath: statePath,
+      fetchImpl: (async (url: string | URL | Request) =>
+        String(url).includes("retrieveUserQuotaSummary")
+          ? new Response(QUOTA)
+          : new Response(AGGREGATES)) as unknown as typeof fetch,
+      antigravitySecret: secret,
+      ompEnabled: false,
+    });
+
+    expect(result.antigravity.ok).toBe(true);
+    expect(result.antigravity.limits?.provider).toBe("google-antigravity");
+    expect(result.antigravity.limits?.limits).toHaveLength(4);
+    // Ollama's key lives in OMP's store, so it goes quiet with the toggle —
+    // Antigravity's does not, and that difference is the whole point.
+    expect(result.ollama).toMatchObject({ ok: false, reason: "disabled" });
+  });
+
+  it("treats a machine with no agy session as a missing card, not a failure", async () => {
+    const result = await collectAllSources({
+      db,
+      ompDirectory: sessions,
+      claudeDirectory: claudeProjects,
+      cursorStatePath: statePath,
+      fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
+    });
+
+    expect(result.antigravity).toMatchObject({ ok: false, reason: "signed_out" });
+    expect(result.antigravity.limits).toBeUndefined();
+    expect(result.omp.ok).toBe(true);
   });
 });

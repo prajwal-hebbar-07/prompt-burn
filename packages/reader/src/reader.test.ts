@@ -108,6 +108,11 @@ let windowBody: string;
 /** Every windowed aggregate body Cursor was asked for, in order. */
 let windowCalls: Array<{ startDate?: string; endDate?: string; teamId?: number }>;
 
+/** No `agy` session: `security` reports a missing item as exit status 44. */
+const NO_AGY = (): string => {
+  throw Object.assign(new Error("SecKeychainSearchCopyNext"), { status: 44 });
+};
+
 /**
  * A reader whose Cursor HTTP answers from the fixtures. The aggregate call is
  * two endpoints in one: `{}` is the cycle, a body carrying `startDate` is the
@@ -125,6 +130,7 @@ function reader(cursorStatePath = statePath) {
       windowCalls.push(body);
       return new Response(windowBody, { status: windowStatus });
     }) as unknown as typeof fetch,
+    antigravitySecret: NO_AGY,
     now: () => NOW,
   });
 }
@@ -364,7 +370,11 @@ it("reports the Cursor state path, never the token, from discover", async () => 
 it("fetches through the stored paths and reports them from discover", async () => {
   // No injected directories: the stored settings are the only thing pointing
   // at them, which is the path both shells drive.
-  const host = createUsageReader(db, { cursorStatePath: join(root, "absent"), now: () => NOW });
+  const host = createUsageReader(db, {
+    cursorStatePath: join(root, "absent"),
+    antigravitySecret: NO_AGY,
+    now: () => NOW,
+  });
   await host.saveSettings({ ompPath: sessions, claudePath: claudeProjects });
 
   expect(await host.getSettings()).toEqual({
@@ -394,6 +404,7 @@ it("does not fetch a source the settings switched off", async () => {
       calls.push(String(url));
       return new Response(AGGREGATES, { status: 200 });
     }) as unknown as typeof fetch,
+    antigravitySecret: NO_AGY,
     now: () => NOW,
   });
   await host.saveSettings({ ompEnabled: false, cursorEnabled: false, claudeEnabled: false });

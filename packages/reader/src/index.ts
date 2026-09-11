@@ -131,6 +131,8 @@ export function createUsageReader(
     claudeDirectory?: string;
     cursorStatePath?: string;
     fetchImpl?: typeof fetch;
+    /** `agy`'s raw keychain secret; injectable so tests stay off the keychain. */
+    antigravitySecret?: () => string;
     now?: () => Date;
   } = {},
 ): UsageReader {
@@ -139,6 +141,7 @@ export function createUsageReader(
     claudeDirectory,
     cursorStatePath,
     fetchImpl,
+    antigravitySecret,
     now = () => new Date(),
   } = options;
 
@@ -151,6 +154,10 @@ export function createUsageReader(
   // Ollama's clocks, same deal: fetched over the network, so unlike the OMP
   // clocks in `usage_history` they cannot be re-read per snapshot.
   let ollamaLimits: ProviderLimits | undefined;
+  // Antigravity's clocks, likewise over the network — and the reason they are
+  // fetched at all: with the provider unlinked from OMP, `usage_history` stops
+  // gaining rows while `agy` keeps burning the same pool.
+  let antigravityLimits: ProviderLimits | undefined;
   // Per-period aggregates Cursor has already answered for, keyed by the
   // period's own bounds. A window is worth one round trip, not one per render;
   // `fetch()` clears the map so "today" keeps growing as the day does.
@@ -249,6 +256,7 @@ export function createUsageReader(
         claudeDirectory: claudePath,
         cursorStatePath,
         fetchImpl,
+        ...(antigravitySecret ? { antigravitySecret } : {}),
         ompEnabled,
         cursorEnabled,
         claudeEnabled,
@@ -256,6 +264,7 @@ export function createUsageReader(
       const cycle = result.cursor.cycle;
       if (cycle) cursorCycle = cycle;
       if (result.ollama.limits) ollamaLimits = result.ollama.limits;
+      if (result.antigravity.limits) antigravityLimits = result.antigravity.limits;
       // Every window Cursor answered for is now stale — "today" has grown, and
       // a manual refresh is the user asking for current numbers.
       cursorWindows.clear();
@@ -293,6 +302,11 @@ export function createUsageReader(
           ...(result.ollama.reason === undefined ? {} : { reason: result.ollama.reason }),
           ...(result.ollama.error === undefined ? {} : { error: result.ollama.error }),
         },
+        antigravity: {
+          ok: result.antigravity.ok,
+          ...(result.antigravity.reason === undefined ? {} : { reason: result.antigravity.reason }),
+          ...(result.antigravity.error === undefined ? {} : { error: result.antigravity.error }),
+        },
       };
     },
 
@@ -314,9 +328,20 @@ export function createUsageReader(
         // they are not ours to cache — while Ollama's came over the network in
         // the last `fetch()`. A disabled OMP source reports none of either,
         // exactly like its events.
-        limits: ompEnabled
-          ? [...readOmpLimits(ompAgentDatabase(ompPath), now()), ...(ollamaLimits ? [ollamaLimits] : [])]
-          : [],
+        // A fetched Antigravity card always wins over OMP's cached rows for the
+        // same provider: once the provider is unlinked those rows only age, and
+        // two cards for one subscription is worse than a stale one.
+        limits: [
+          ...(ompEnabled
+            ? [
+                ...readOmpLimits(ompAgentDatabase(ompPath), now()).filter(
+                  (group) => antigravityLimits === undefined || group.provider !== "google-antigravity",
+                ),
+                ...(ollamaLimits ? [ollamaLimits] : []),
+              ]
+            : []),
+          ...(antigravityLimits ? [antigravityLimits] : []),
+        ],
         // Cost is a join, never a stored column, so every snapshot re-reads
         // `price_entries`: a rate added in Settings prices old events on the
         // very next call, with no rewrite of `usage_events`. Cursor aggregates

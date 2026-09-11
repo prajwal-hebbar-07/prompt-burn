@@ -24,7 +24,7 @@ This page is the short version to keep open while coding. It duplicates no reaso
 | Filters | Today, This month (calendar month, not rolling 30 days), All time, Date range (single day = same start and end). Device timezone. Inclusive end day in UI; exclusive next-day 00:00 in code. |
 | Combined total | Always shown. Every **switched-on** source keeps its own subtotal row, even at zero; a source switched off in Settings has no row, no meter segment and no events at all — `DashboardSnapshot.enabled` carries the toggles to the UI. No dedupe across OMP + Claude Code + Cursor. |
 | By-model table | Rows keyed by `(source, model)`. The same model on two sources is deliberately two rows. |
-| Usage limits | Provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's `usage_history` (the account clock — Anthropic has already counted Claude Code's turns in it), Ollama Cloud's session / weekly from the undocumented `GET ollama.com/api/usage`, Cursor's included-pool percentages from `/api/usage-summary`. Never priced, never period-filtered, never summed with anything, never per-tool. A provider that has not answered has no card; an Ollama failure never fails the fetch. |
+| Usage limits | Provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's `usage_history` (the account clock — Anthropic has already counted Claude Code's turns in it), Ollama Cloud's session / weekly from the undocumented `GET ollama.com/api/usage`, Antigravity's two pools from the undocumented `POST cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` against `agy`'s own keychain session, Cursor's included-pool percentages from `/api/usage-summary`. Never priced, never period-filtered, never summed with anything, never per-tool. A provider that has not answered has no card; an Ollama or Antigravity failure never fails the fetch. |
 | Fetch | On open + manual button. No background timers. Spinner while fetching; **keep previous data**. Relative "Fetched N min ago". On error: keep old data + banner. |
 | Persistence | SQLite at `~/.prompt-burn/db.sqlite`. Outside install dirs so updates/reinstalls keep data. |
 | Prices | Usage stores tokens only. Cost is derived from `price_entries` with `effective_from` / `effective_until`. Adding a price retroactively prices old events. Ship bundled Claude + Ollama Cloud + Google Gemini rates. Unknown models surface in Settings. |
@@ -42,6 +42,16 @@ This page is the short version to keep open while coding. It duplicates no reaso
 > Its public Gemini API rates are bundled (`gemini-3.8-flash`, provider `google-antigravity`),
 > so those turns price like any other model. Seeds apply on database create only: an existing
 > `db.sqlite` needs a delete, or a Settings insert, to pick the row up.
+
+> **Antigravity's *limits* are a fourth fetch, its usage is not.** Unlinking the provider from
+> OMP stops `usage_history` gaining `google-antigravity` rows, so the clocks come straight from
+> Google — see
+> [data-shapes.md § Antigravity quota](data-shapes.md#antigravity-quota--v1internalretrieveuserquotasummary-2026-09-11).
+> The credential is `agy`'s keychain item, so the card survives OMP being switched off, and a
+> fetched card replaces any `usage_history` rows for the same provider. The quota is
+> account-level, so it already counts whatever the standalone CLI burned. Those CLI **turns**
+> are still not a usage source: they live in `~/.gemini/antigravity-cli/conversations/*.db`,
+> are not read, and so are missing from the cost estimate.
 
 ## Double counting: OMP, Claude Code, and the limit cards
 

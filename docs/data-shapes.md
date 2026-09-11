@@ -5,9 +5,13 @@ Fixtures: [`fixtures/omp-session-line.json`](fixtures/omp-session-line.json),
 [`fixtures/omp-gemini-session-line.json`](fixtures/omp-gemini-session-line.json),
 [`fixtures/cursor-cycle-aggregates.json`](fixtures/cursor-cycle-aggregates.json),
 [`fixtures/cursor-usage-summary.json`](fixtures/cursor-usage-summary.json),
-[`fixtures/ollama-usage.json`](fixtures/ollama-usage.json).
+[`fixtures/ollama-usage.json`](fixtures/ollama-usage.json),
+[`fixtures/antigravity-quota-summary.json`](fixtures/antigravity-quota-summary.json).
 A second OMP scan on 2026-09-04 added Gemini through Antigravity — see
-[Gemini through Antigravity](#gemini-through-antigravity--second-scan-2026-09-04).
+[Gemini through Antigravity](#gemini-through-antigravity--second-scan-2026-09-04). On 2026-09-11
+the Antigravity provider was unlinked from OMP and the standalone `agy` CLI installed, which
+moved its quota clocks off `usage_history` and onto a direct call — see
+[Antigravity quota](#antigravity-quota--v1internalretrieveuserquotasummary-2026-09-11).
 
 A Claude Code section was written on 2026-09-09 from the collector code and Anthropic's
 documented transcript format — **not** from a local transcript; see
@@ -159,12 +163,19 @@ CREATE TABLE usage_history (
 | `UsageLimit.resetsAt` | `resets_at` — **epoch milliseconds**, `NULL` when no window is running | `1788626400097` |
 | `ProviderLimits.observedAt` | `recorded_at` — epoch milliseconds | `1788609218274` |
 
-Confirmed on this machine: `anthropic` (two accounts, ids `anthropic:5h` / `:7d` / `:extra`) and
-`google-antigravity` (one account, six ids — a 5-hour and a weekly pool for each of Google,
-Anthropic and OpenAI). `ollama-cloud` writes **no rows at all**: its cached report is
+Confirmed on this machine: `anthropic` (two accounts, ids `anthropic:5h` / `:7d` / `:extra`) and,
+until the provider was unlinked on 2026-09-11, `google-antigravity`. `ollama-cloud` writes **no
+rows at all**: its cached report is
 `{ limits: [], notes: ["Ollama does not expose a standalone quota usage API…"] }`. That note is
 out of date — see [Ollama Cloud usage](#ollama-cloud-usage--apiusage-2026-09-05), which Prompt
 Burn fetches for itself rather than waiting for OMP to record it.
+
+**Antigravity no longer arrives this way.** With the provider unlinked from OMP and the
+standalone `agy` CLI installed, `usage_history` stops gaining `google-antigravity` rows while the
+CLI keeps burning the same account-level pool, so Prompt Burn asks Google itself — see
+[Antigravity quota](#antigravity-quota--v1internalretrieveuserquotasummary-2026-09-11). A fetched
+card always replaces any `usage_history` rows for the same provider; two cards for one
+subscription is worse than a stale one.
 
 Reading notes, all of them load-bearing:
 
@@ -182,6 +193,71 @@ Reading notes, all of them load-bearing:
 - The database is **live** — OMP writes it while the app reads — so the open is `mode=ro`
   *without* `immutable=1`, unlike Cursor's `state.vscdb`.
 - `status` (`ok` observed) is not read: the percentage already says when a window is nearly out.
+
+### Antigravity quota — `v1internal:retrieveUserQuotaSummary`, 2026-09-11
+
+`POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` with an empty
+body and `Authorization: Bearer <access token>`. **Internal and undocumented**: the message
+names come out of the shipped `agy` binary's embedded descriptors
+(`RetrieveUserQuotaSummaryRequest` has one field, `project`, and it is not needed), so every
+failure is data — the panel loses one card and nothing else moves.
+
+Two traps, both found by hitting the endpoint:
+
+- The `User-Agent` **must** contain `antigravity`, case-insensitively. `Python-urllib/3.9`,
+  `GeminiCLI/1.0` and `prompt-burn/0.1` are all answered `403 PERMISSION_DENIED` /
+  `SUBSCRIPTION_REQUIRED (#3501)` — "you do not have a valid license of this product", which
+  describes a licensing problem this account does not have.
+- Sending `x-goog-user-project` turns the same call into
+  `403 Caller does not have required permission to use project aicode-consumers`. Antigravity
+  bills through Google's own project; naming one is the error.
+
+Credential: `agy`'s, in the macOS keychain under service `gemini`, account `antigravity`, written
+by go-keyring as `go-keyring-base64:<base64 JSON>` holding
+`{ token: { access_token, refresh_token, expiry }, auth_method, id_token }`. The access token
+lives about an hour, so Prompt Burn refreshes it in memory against
+`https://oauth2.googleapis.com/token` with Antigravity's own desktop OAuth client. That pair is
+**read out of the installed `~/.gemini/bin/agy` at run time and never committed** — a shipped
+OAuth pair in a public repository is what GitHub's push protection blocks, and reading the
+binary also means a rotation arrives with the next `agy update` instead of breaking the
+collector. The binary carries several pairs and labels none, so each is offered to Google until
+one is accepted (a wrong pair answers `401 invalid_client`, which is not the same failure as a
+revoked session's `400 invalid_grant`); the accepted pair is then cached per binary path for the
+process. Nothing is ever written back to the keychain or to `~/.prompt-burn/db.sqlite`.
+`id_token`'s `email` claim names the card.
+
+Response: `groups[]`, each `{ displayName, description, buckets[] }`, each bucket
+`{ bucketId, displayName, window, resetTime, description, remainingFraction | remainingAmount,
+disabled? }`.
+
+| Our field | Quota source | Example |
+|-----------|--------------|---------|
+| `ProviderLimits.provider` | constant | `google-antigravity` |
+| `ProviderLimits.account` | `email` claim of the keychain `id_token` | `you@example.com` |
+| `UsageLimit.id` | `google-antigravity:` + `bucketId` | `google-antigravity:gemini-5h` |
+| `UsageLimit.label` | the **group's** `displayName`, in `Usage (…)` form | `Usage (Gemini Models)` |
+| `UsageLimit.windowLabel` | `window`, `5h` → `5 Hour` | `5 Hour`, `Weekly` |
+| `UsageLimit.usedFraction` | **`1 - remainingFraction`**, clamped | `0.9821167` |
+| `UsageLimit.resetsAt` | `resetTime` — already an ISO instant, unlike OMP's epoch ms | `2026-09-11T13:45:43Z` |
+
+Four buckets in two groups on this account: `gemini-5h` / `gemini-weekly` under
+**Gemini Models**, and `3p-5h` / `3p-weekly` under **Claude and GPT models**. OMP used to split
+that second group into separate Anthropic and OpenAI ids; Google reports one shared pool, and
+this reads it as one. The group name is what the panel turns into a heading, so two five-hour
+rows never read alike.
+
+Reading notes:
+
+- Google reports what is **left**. The panel shows what is gone, so the inversion happens here
+  and nowhere else.
+- A bucket carrying `remainingAmount` instead of `remainingFraction` has no percentage:
+  `usedFraction: null`, never a zero standing in for silence.
+- `disabled: true` is a pool this account does not have. It is dropped, not rendered as 0%.
+- `description` ("it will fully refresh in 1 hour, 54 minutes") is prose around the same
+  `resetTime` the panel already formats, and is not read.
+
+Fixture: [`fixtures/antigravity-quota-summary.json`](fixtures/antigravity-quota-summary.json) —
+one real response, unaltered. It carries no credential.
 
 ### Ollama Cloud usage — `/api/usage`, 2026-09-05
 

@@ -17,6 +17,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import type { CursorSnapshot, ProviderLimits } from "@prompt-burn/core";
+import { fetchAntigravityLimits, readAntigravityAuth } from "./antigravity.js";
 import { readCursorAuth, type CursorAuthUnavailable } from "./cursor-auth.js";
 import { fetchCursorCycle } from "./cursor.js";
 import { fetchOllamaLimits, readOllamaKey } from "./ollama.js";
@@ -32,8 +33,14 @@ export interface CollectOptions {
   claudeDirectory?: string;
   /** Cursor's `state.vscdb`; defaults to the macOS global storage path. */
   cursorStatePath?: string;
-  /** Injectable so tests never reach cursor.com. */
+  /** Injectable so tests never reach cursor.com or Google. */
   fetchImpl?: typeof fetch;
+  /**
+   * `agy`'s raw keychain secret; defaults to the real macOS keychain read.
+   * Injectable for the same reason the transcript directories are: a default
+   * reaches into the developer's own credentials.
+   */
+  antigravitySecret?: () => string;
   /** Settings toggle. A disabled source is not read at all; default on. */
   ompEnabled?: boolean;
   cursorEnabled?: boolean;
@@ -87,6 +94,24 @@ export interface CollectResult {
     /** Present only when this pass fetched them. */
     limits?: ProviderLimits;
   };
+  /**
+   * Antigravity's quota clocks, fetched straight from Google. Same contract as
+   * Ollama's: not a usage source, so a failure never fails the pass. Separate
+   * from `ollama` because the credential is `agy`'s keychain item rather than
+   * anything OMP holds, and it survives unlinking the provider from OMP.
+   */
+  antigravity: {
+    ok: boolean;
+    /**
+     * `signed_out` — no `agy` session on this machine; `unreadable` — a
+     * keychain item we cannot parse; `fetch_failed` — transport, a refused
+     * refresh, or the internal endpoint changing shape.
+     */
+    reason?: "signed_out" | "unreadable" | "fetch_failed";
+    error?: string;
+    /** Present only when this pass fetched them. */
+    limits?: ProviderLimits;
+  };
 }
 
 const NO_SYNC: OmpSyncResult = { scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 };
@@ -99,6 +124,7 @@ export async function collectAllSources(options: CollectOptions): Promise<Collec
     claudeDirectory,
     cursorStatePath,
     fetchImpl,
+    antigravitySecret,
     ompEnabled = true,
     cursorEnabled = true,
     claudeEnabled = true,
@@ -116,13 +142,24 @@ export async function collectAllSources(options: CollectOptions): Promise<Collec
     ? collectOllama(ompDirectory, fetchImpl)
     : Promise.resolve({ ok: false, reason: "disabled" });
 
+  // Antigravity's credential is `agy`'s keychain item, not OMP's — it is read
+  // whether or not OMP is enabled, because unlinking the provider from OMP is
+  // exactly the case this collector exists for.
+  const antigravity = collectAntigravity(antigravitySecret, fetchImpl);
+
   // Each sync is its own transaction and rolls itself back, so a failure in
   // one leaves the other's rows — and the last consistent state of its own —
   // untouched.
   const omp = sync(() => syncOmpSessions(db, ompDirectory), ompEnabled);
   const claudeCode = sync(() => syncClaudeSessions(db, claudeDirectory), claudeEnabled);
 
-  return { omp, claudeCode, cursor: await cursor, ollama: await ollama };
+  return {
+    omp,
+    claudeCode,
+    cursor: await cursor,
+    ollama: await ollama,
+    antigravity: await antigravity,
+  };
 }
 
 /** One transcript sync as a result: disabled is clean and empty, never an error. */
@@ -158,6 +195,19 @@ async function collectOllama(
   }
   try {
     return { ok: true, limits: await fetchOllamaLimits(key, fetchImpl) };
+  } catch (error) {
+    return { ok: false, reason: "fetch_failed", error: message(error) };
+  }
+}
+
+async function collectAntigravity(
+  secret: (() => string) | undefined,
+  fetchImpl: typeof fetch | undefined,
+): Promise<CollectResult["antigravity"]> {
+  const auth = secret === undefined ? readAntigravityAuth() : readAntigravityAuth(secret);
+  if (!auth.ok) return { ok: false, reason: auth.reason, error: auth.detail };
+  try {
+    return { ok: true, limits: await fetchAntigravityLimits(auth, fetchImpl) };
   } catch (error) {
     return { ok: false, reason: "fetch_failed", error: message(error) };
   }

@@ -44,6 +44,10 @@ function hostReader() {
     // this test's business.
     claudeDirectory: claudeProjects,
     cursorStatePath: join(root, "absent", "state.vscdb"),
+    // No `agy` session: exit status 44 is `security`'s "item not found".
+    antigravitySecret: () => {
+      throw Object.assign(new Error("SecKeychainSearchCopyNext"), { status: 44 });
+    },
   });
 }
 

@@ -41,7 +41,11 @@ OMP — see [spec.md § Double counting](../spec.md#double-counting-omp-claude-c
 | `package.json`           | Config | `@prompt-burn/collectors`, private, workspace package                   |
 
 Outside this document, in the same package: `src/cursor-auth.ts`, `src/cursor.ts`,
-`src/ollama.ts`, `src/omp-limits.ts` and their suites.
+`src/ollama.ts`, `src/omp-limits.ts`, `src/antigravity.ts` and their suites.
+`src/antigravity.ts` is the odd one: it reads `agy`'s macOS keychain session and asks Google for
+the Antigravity quota directly, because unlinking that provider from OMP stops `usage_history`
+recording it — see
+[data-shapes.md § Antigravity quota](../data-shapes.md#antigravity-quota--v1internalretrieveuserquotasummary-2026-09-11).
 
 ## 3. Public surface
 

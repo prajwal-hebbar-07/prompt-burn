@@ -178,6 +178,10 @@ it("fetch syncs OMP transcripts incrementally", async () => {
       cursor: { ok: false, reason: "not_installed", error: expect.any(String), models: 0 },
       // No `ollama login` under the temp HOME, so there is no key to try.
       ollama: { ok: false, reason: "signed_out", error: expect.any(String) },
+      // No `agy` session either: a temp HOME has no keychain item on macOS,
+      // and a Linux runner has no `security` at all. Both are "signed out",
+      // so this line reads the same on a laptop and in CI.
+      antigravity: { ok: false, reason: "signed_out", error: expect.any(String) },
     });
 
     // Nothing changed on disk: the second sync opens no file (one transcript).
