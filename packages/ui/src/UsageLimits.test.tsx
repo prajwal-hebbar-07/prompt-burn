@@ -162,24 +162,34 @@ describe("the usage limits panel", () => {
   });
 
   it("labels each Antigravity pool so two identical windows never read alike", () => {
+    // The shape `fetchAntigravityLimits` emits: one `Usage (<group>)` row per
+    // bucket, two groups, two windows each.
     const antigravity: ProviderLimits[] = [
       {
         provider: "google-antigravity",
+        account: "you@example.com",
         observedAt: "2026-09-05T11:56:02.069Z",
         limits: [
           {
-            id: "google-antigravity:google:default:gemini-5h",
-            label: "Usage (Google)",
+            id: "google-antigravity:gemini-5h",
+            label: "Usage (Gemini Models)",
             windowLabel: "5 Hour",
             usedFraction: 0,
             resetsAt: "2026-09-05T16:56:03.000Z",
           },
           {
-            id: "google-antigravity:google:default:gemini-weekly",
-            label: "Usage (Google)",
+            id: "google-antigravity:gemini-weekly",
+            label: "Usage (Gemini Models)",
             windowLabel: "Weekly",
             usedFraction: 0.064,
             resetsAt: "2026-09-11T12:46:10.000Z",
+          },
+          {
+            id: "google-antigravity:3p-5h",
+            label: "Usage (Claude and GPT models)",
+            windowLabel: "5 Hour",
+            usedFraction: 0,
+            resetsAt: "2026-09-05T16:56:03.000Z",
           },
         ],
       },
@@ -189,16 +199,18 @@ describe("the usage limits panel", () => {
 
     const card = screen.getByTestId("limit-card-google-antigravity");
     expect(card.textContent).toContain("Antigravity");
-    expect(card.textContent).toContain("Google");
+    expect(card.textContent).toContain("Gemini Models");
+    // Two pools, two headings: the second group must not be swallowed by the
+    // first, or its 5-hour row reads as Gemini's.
+    expect(card.textContent).toContain("Claude and GPT models");
     expect(card.textContent).not.toContain("Account A");
-    expect(
-      screen.getByTestId("limit-row-google-antigravity:google:default:gemini-5h").textContent,
-    ).toContain("5-hour");
-    expect(
-      screen.getByTestId("limit-row-google-antigravity:google:default:gemini-weekly").textContent,
-    ).toContain("weekly6%");
+    expect(screen.getByTestId("limit-row-google-antigravity:gemini-5h").textContent).toContain(
+      "5-hour",
+    );
+    expect(screen.getByTestId("limit-row-google-antigravity:gemini-weekly").textContent).toContain(
+      "weekly6%",
+    );
     expect(card.textContent).not.toContain("Usage (");
-    expect(card.textContent).not.toContain("Google ·");
     expect(card.className).toContain("provider-antigravity");
   });
 

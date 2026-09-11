@@ -26,6 +26,8 @@ export interface HostReaderOptions {
   cursorStatePath?: string;
   /** HTTP for the Cursor pass. Injected by tests only. */
   fetchImpl?: typeof fetch;
+  /** `agy`'s raw keychain secret for the Antigravity pass. Tests only. */
+  antigravitySecret?: () => string;
 }
 
 /**

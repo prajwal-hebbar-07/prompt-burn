@@ -41,7 +41,17 @@ Two sources only.
 
 OMP usage in this household: two Claude Pro subscriptions, one Ollama Cloud API key, and Gemini through Antigravity. **Do not split usage or cost by account.** Model-level breakdown is enough. Provider *limits* are the exception, because a 5-hour window belongs to one subscription and not to a model — those are shown per account, named by the email OMP recorded for it, because the reason to read the panel is to decide which account to pin next. An account with no email on record falls back to `Account A` / `Account B`.
 
-Gemini is **not a third source.** It reaches OMP through Antigravity, so its turns are ordinary OMP session-log lines (`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage. Its public Gemini API rates are bundled, so those turns price like any other model.
+Gemini is **not a third source.** Its turns inside OMP are ordinary OMP session-log lines
+(`provider: "google-antigravity"`, model `gemini-3.8-flash`) and count as OMP usage; its public
+Gemini API rates are bundled, so they price like any other model.
+
+Antigravity's **limits** are a different matter. Since the provider was unlinked from OMP on
+2026-09-11, OMP no longer records those clocks, so Prompt Burn asks Google for them directly
+using the standalone `agy` CLI's own signed-in session. The quota is account-level, so the card
+is correct no matter which tool spent it. What that card does **not** tell you is where the
+spend went: turns made by the standalone CLI live in `~/.gemini/antigravity-cli/conversations/`,
+outside every transcript tree we read, and so are absent from the cost estimate. A card near its
+cap with no matching Gemini line in the by-model table is that gap, not a bug.
 
 Cursor **subscription remaining and included-pool percentages are quoted on the Usage limits panel only** — provider clocks, next to Claude's and Ollama Cloud's. They are never a cost figure, never period-filtered, and never mixed into the estimate. Cursor's dollar spend and "$X of $20 plan used" stay out.
 

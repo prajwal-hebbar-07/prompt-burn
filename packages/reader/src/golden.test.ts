@@ -308,6 +308,11 @@ async function snapshots(
     // Cursor aggregates carry no timestamp and price at "now"; the bundled
     // rates are open-ended from 1970, so this is the rate in force.
     now: () => NOW,
+    // No `agy` session under the temp home: the golden snapshot's `limits` are
+    // empty, and a developer's own keychain is never read to build it.
+    antigravitySecret: () => {
+      throw Object.assign(new Error("SecKeychainSearchCopyNext"), { status: 44 });
+    },
     // The aggregate endpoint is two answers in one, exactly as cursor.com
     // behaves: `{}` is the cycle, a body carrying `startDate` is the window.
     fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
