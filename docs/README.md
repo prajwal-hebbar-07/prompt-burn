@@ -25,10 +25,12 @@ Same number, same subject.
 | 05  | The database (packages/db)                      | [05-database.md](architecture/05-database.md)                 | [05-the-file-cabinet.md](plain-english/05-the-file-cabinet.md) |
 | 06  | OMP collector (packages/collectors)             | [06-omp-collector.md](architecture/06-omp-collector.md)       | [06-the-harvester.md](plain-english/06-the-harvester.md)       |
 | 07  | Desktop shell (Tauri v2 + Node sidecar)         | [07-desktop-shell.md](architecture/07-desktop-shell.md)       | [07-the-front-door.md](plain-english/07-the-front-door.md)     |
+| 08  | UI components (packages/ui)                     | [08-ui-components.md](architecture/08-ui-components.md)       | [08-the-showroom.md](plain-english/08-the-showroom.md)         |
+| 09  | Usage reader (packages/reader)                  | [09-usage-reader.md](architecture/09-usage-reader.md)         | [09-the-switchboard.md](plain-english/09-the-switchboard.md)   |
+| 10  | VS Code extension (apps/vscode)                 | [10-vscode-extension.md](architecture/10-vscode-extension.md) | [10-the-workbench.md](plain-english/10-the-workbench.md)       |
 
-Numbers are append-only. Future areas (`packages/ui`, `apps/vscode`) take 08+ when their first
-real commit lands — the implementation plan forbids scaffolding empty packages, so no pair
-exists before its code does.
+Numbers are append-only. Areas 01–10 cover the entire workspace: core domain, database,
+collectors, desktop shell, shared UI components, usage reader orchestrator, and VS Code extension.
 
 ## Architecture docs
 
@@ -47,9 +49,9 @@ areas, and contradicted decisions appear here too.
 The pairs are read against a stored baseline; anything committed after it may not be documented
 yet. Advance it only after a docs sweep re-read every pair the diff touched.
 
-- Baseline: `325b156` — 2026-09-04 (`feat(desktop): add Tauri shell with Node sidecar`),
-  swept 2026-09-04 (pairs 01–02 refreshed; 04–07 opened).
+- Baseline: `9a88364` — 2026-09-11 (`chore: ignore docs/twitter-campaign.md`, v1.1.0),
+  swept 2026-09-11 (pairs 01–07 refreshed; 08–10 opened).
 
-<!-- docs-baseline: 325b156ac4fb35fea509305ade7cbc8d26e1c2be -->
+<!-- docs-baseline: 9a88364ee3a5166b32139fd3c0abef3b508fd6c9 -->
 <!-- parent-owned: area table, blurbs, baseline. Pair docs live in architecture/ and
 plain-english/. -->

@@ -21,38 +21,42 @@ Two decisions define it:
 
 ## 2. Inventory
 
-| File                              | Kind     | Role                                                    |
-| --------------------------------- | -------- | ------------------------------------------------------- |
-| `packages/db/src/index.ts`        | Module   | open/create logic; re-exports the pricing surface       |
-| `packages/db/src/schema.ts`       | Module   | `SCHEMA_SQL`, applied once on file creation             |
-| `packages/db/src/prices.ts`       | Module   | `BUNDLED_PRICES`, `SEED_EFFECTIVE_FROM`, `BundledPrice` |
-| `packages/db/src/pricing.ts`      | Module   | `resolvePrice`, `estimateCents`, pricing types          |
-| `packages/db/src/settings.ts`     | Module   | `AppSettings` over the `settings` table (source toggles, paths) |
-| `packages/db/src/events.ts`       | Module   | `loadUsageEvents` — stored rows back out as `UsageEvent`s |
-| `packages/db/src/index.test.ts`   | Tests    | Paths, create/reopen, schema shape, seed rows           |
-| `packages/db/src/pricing.test.ts` | Tests    | Windows, boundaries, retroactive pricing                |
-| `packages/db/package.json`        | Manifest | `@prompt-burn/db`; `typecheck` / `test`; devDeps only   |
+| File                              | Kind     | Role                                              |
+| --------------------------------- | -------- | ------------------------------------------------- |
+| `packages/db/src/index.ts`        | Module   | open/create, migrations, price seeding, exports   |
+| `packages/db/src/schema.ts`       | Module   | `SCHEMA_SQL` inlined, applied on file creation    |
+| `packages/db/src/prices.ts`       | Module   | `BUNDLED_PRICES` (22 rows), `SEED_EFFECTIVE_FROM` |
+| `packages/db/src/pricing.ts`      | Module   | `resolvePrice`, `estimateCents`, insert helper    |
+| `packages/db/src/settings.ts`     | Module   | `readSettings`, `writeSettings`, AppSettings      |
+| `packages/db/src/events.ts`       | Module   | `loadUsageEvents` — stored rows as `UsageEvent`s  |
+| `packages/db/src/index.test.ts`   | Tests    | Paths, create/reopen, schema, migrations, seeds   |
+| `packages/db/src/pricing.test.ts` | Tests    | Windows, boundaries, retroactive pricing          |
+| `packages/db/src/settings.test.ts`| Tests    | Settings persistence, toggles, paths, patch       |
+| `packages/db/src/events.test.ts`  | Tests    | Row mapping, cycle timestamp, source filter       |
+| `packages/db/package.json`        | Manifest | `@prompt-burn/db`; devDeps only for npm           |
 
 ## 3. Public surface
 
 Exports of `@prompt-burn/db` (all from `src/index.ts`, which re-exports `prices.ts`,
-`pricing.ts`, `settings.ts` and `events.ts`):
+`pricing.ts`, `schema.ts`, `settings.ts` and `events.ts`):
 
-| Export                | Signature                                     | Notes                                         |
-| --------------------- | --------------------------------------------- | --------------------------------------------- |
-| `appDirectory`        | `(home = homedir()) => string`                | `<home>/.prompt-burn`                         |
-| `databasePath`        | `(home = homedir()) => string`                | the db path; `home` injectable for tests      |
-| `openDatabase`        | `(path = databasePath()) => DatabaseSync`     | See §4                                        |
-| `seedBundledPrices`   | `(db: DatabaseSync) => void`                  | Inserts `BUNDLED_PRICES`; runs on every open   |
-| `BUNDLED_PRICES`      | `readonly BundledPrice[]`                     | 15 vendor rows (4 Anthropic, 11 Ollama Cloud) |
-| `SEED_EFFECTIVE_FROM` | `"1970-01-01T00:00:00Z"`                      | Backdates bundled rows; old logs price        |
-| `resolvePrice`        | `(db, model, timestamp) => PriceRate \| null` | Rate valid at that moment                     |
-| `estimateCents`       | `(rate, tokens) => number \| null`            | Cents; UI does the rounding                   |
-| types                 | `BundledPrice`, `PriceRate`, `TokenCounts`    | cache keys optional, absent at zero           |
-| `readSettings`        | `(db) => AppSettings`                         | Toggles + paths; defaults for unwritten keys  |
-| `writeSettings`       | `(db, patch: Partial<AppSettings>) => void`   | Upserts only the keys `patch` names           |
-| `loadUsageEvents`     | `(db, source?: Source) => UsageEvent[]`       | Stored rows as domain events, oldest first    |
-| settings types        | `AppSettings`, `DEFAULT_SETTINGS`             | `omp`/`cursor`/`claude` toggles + two paths   |
+| Export                | Signature                       | Notes                                |
+| --------------------- | ------------------------------- | ------------------------------------ |
+| `appDirectory`        | `(home = homedir()) => string`  | `<home>/.prompt-burn`                |
+| `databasePath`        | `(home = homedir()) => string`  | db path; `home` injectable for tests |
+| `openDatabase`        | `(path = databasePath()) => db` | See §4; creates, migrates, and seeds |
+| `seedBundledPrices`   | `(db: DatabaseSync) => void`    | Inserts `BUNDLED_PRICES` on open     |
+| `BUNDLED_PRICES`      | `readonly BundledPrice[]`       | 22 vendor rows across 6 groups       |
+| `SEED_EFFECTIVE_FROM` | `"1970-01-01T00:00:00Z"`        | Backdates bundled rows; prices logs  |
+| `SCHEMA_SQL`          | `string`                        | Inlined DDL for file creation        |
+| `resolvePrice`        | `(db, model, ts) => PriceRate?` | Valid rate; null for cycle rows      |
+| `estimateCents`       | `(rate, tokens) => number?`     | Cents; null if unpriced or rate null |
+| `insertPriceEntry`    | `(db, entry: NewPriceEntry)`    | Hand-added rate, backdated to 1970   |
+| types                 | `BundledPrice`, `PriceRate` etc | `TokenCounts`, `NewPriceEntry`       |
+| `readSettings`        | `(db) => AppSettings`           | Toggles + paths; defaults unwritten  |
+| `writeSettings`       | `(db, patch) => void`           | Upserts only keys named in patch     |
+| `loadUsageEvents`     | `(db, source?) => UsageEvent[]` | Stored rows as domain events         |
+| settings types        | `AppSettings`, `DEFAULT_SETTINGS` | `omp`/`cursor`/`claude` + two paths |
 
 ## 4. Flow
 
@@ -62,17 +66,17 @@ flowchart TD
     B --> C{file exists?}
     C -- no --> D[new DatabaseSync path]
     D --> E[db.exec SCHEMA_SQL]
-    E --> F[seedBundledPrices: 15 rows, effective_until NULL, effective_from 1970]
+    E --> F[seedBundledPrices: 22 rows, effective_until NULL, effective_from 1970]
     C -- yes --> D2[new DatabaseSync path]
     D2 --> M1[addProjectColumn: no-op once usage_events.project exists]
     M1 --> M2[widenSourceCheck: no-op once the stored DDL names claude-code]
     M2 --> F
-    F --> G[return]
+    F --> G[return db]
     H[resolvePrice db model ts] --> I{ts empty string?}
     I -- yes --> J[null: cycle rows are unpriceable]
-    I -- no --> K[price_entries: model = ?, from &lt;= ts,<br>until null or past ts]
+    I -- no --> K[price_entries: model = ?, from <= ts,<br>until null or past ts]
     K --> L[row? map to PriceRate : null]
-    M[estimateCents rate tokens] --> N{rate null or a present token kind has a NULL rate?}
+    M[estimateCents rate tokens] --> N{rate null or present token kind has NULL rate?}
     N -- yes --> O[null]
     N -- no --> P[sum tokens x rate / 1e6 x 100 = cents]
 ```
@@ -117,11 +121,12 @@ idempotent, and deleting the file remains the reset path for anything they do no
 **Point-in-time pricing.** The row that prices an event satisfies `effective_from <= timestamp
 AND (effective_until IS NULL OR effective_until > timestamp)` — `effective_from` inclusive,
 `effective_until` exclusive (an event exactly at the boundary belongs to the _next_ row).
-Overlapping windows resolve to the latest `effective_from`; past the last window's end the
-result is `null`, not the most recent rate. A rate change is a new row with the previous row
-closed by `effective_until` — never an UPDATE — so old events keep the rate that was valid
-then. Windows are compared as ISO text, which is only ordered if every value is written the
-same way (`Z`, not `+05:30`).
+Overlapping windows resolve to the latest `effective_from`, with ties broken by `id DESC`
+(the row inserted last) — so a rate added in Settings wins over the bundled row it was meant
+to correct. Past the last window's end the result is `null`, not the most recent rate. A rate
+change is a new row with the previous row closed by `effective_until` — never an UPDATE — so
+old events keep the rate that was valid then. Windows are compared as ISO text, which is only
+ordered if every value is written the same way (`Z`, not `+05:30`).
 
 **Cost is derived, never stored.** `usage_events` rows hold tokens only; cost is always a join
 against `price_entries`. That is what makes pricing retroactive: inserting a rate prices every
@@ -137,12 +142,39 @@ a model has to reach databases that already exist, and there is no migration run
 it. Each row is inserted only when `(model, provider, effective_from)` is absent, so a rate
 added in Settings, or a later row closing a seed, is never touched or duplicated — the cost is
 that deleting a bundled row does not stick (close it with `effective_until` instead). Bundled
-rows carry no `effective_until` and are backdated to 1970 because they are the
-currently published rates with no history; a future rate change closes the row and inserts a
-new one with a real date. Ollama Cloud rows use the standard (non-peak) rates, and their cache
-_write_ rate is `0` because Ollama publishes no such category at all (the first pass is billed
-as plain input); `qwen3.5:397b`'s cached-input rate is `null` because Ollama lists none —
-unknown, never guessed.
+rows carry no `effective_until` and are backdated to 1970 because they are the currently
+published rates with no history; a future rate change closes the row and inserts a new one
+with a real date.
+
+The 22 bundled prices span six vendor groups:
+- **Anthropic:** 4 standard models (`claude-opus-5`, `claude-sonnet-5`, `claude-sonnet-4-5`,
+  `claude-haiku-4-5`) with 5-minute cache write and 0.1x cache read rates.
+- **Ollama Cloud:** 11 models (`glm-5.3`, `glm-5.3-flash`, `deepseek-v4-pro`,
+  `deepseek-v4-flash`, `kimi-k3`, `kimi-k2.7-code`, `minimax-m3`, `qwen3.5:397b`,
+  `gpt-oss:120b`, `gpt-oss:20b`, `gemma4`). Standard non-peak rates; cache write is `0` because
+  Ollama has no cache-write billing category (first pass is input, reuse is cached input);
+  `qwen3.5:397b` cache read is `null` (unknown, never guessed). `gemma4` is Ollama's open model,
+  not Google Gemini.
+- **Google Gemini via Antigravity:** 1 model (`gemini-3.8-flash`, provider
+  `google-antigravity`), using standard intro rates through 2026-12-31; cache write is `0`
+  (Google charges explicit caching as hourly storage, not token writes).
+- **xAI Grok via Cursor:** 3 models (`cursor-grok-4.6-high`, `cursor-grok-4.6-xhigh`,
+  `cursor-grok-4.5-high`, provider `xai`). Effort levels share token pricing; cache write is `0`.
+  Standard (<200K context) rates.
+- **Cursor Composer:** 1 model (`composer-2.5`, provider `cursor`). The `-fast` variant is
+  unbundled and stays unpriced until observed.
+- **OpenAI:** 1 model (`gpt-5.6-sol-medium`, provider `openai`). Reasoning effort `-medium` does
+  not change token rates; cache write is `0` (automatic caching, no write fee).
+- **Anthropic under Cursor id:** 1 model (`claude-4.5-haiku-thinking`, provider `anthropic`).
+  Mode `-thinking` is priced at standard Haiku 4.5 rates.
+
+`default` (Cursor Auto) is intentionally unbundled: it routes dynamically with no public rate.
+
+**Hand-entered rates (`insertPriceEntry`).** Settings inserts a price row backdated to
+`SEED_EFFECTIVE_FROM` ("1970-01-01T00:00:00Z") with `effective_until = NULL`, exactly like
+the bundled seeds. Because users price models to cover history they already observe, an
+open-ended backdated row ensures past events and timestamp-less Cursor cycle aggregates price
+immediately. A future correction inserts a second row with a real `effective_from`.
 
 **Migrations are hand-written and idempotent.** Two of them, both in `index.ts`, both skipped
 on a brand-new file:
@@ -174,14 +206,13 @@ flags, no settings rows participate in opening the database.
 
 ## 7. Boundaries and dependencies
 
-- **Zero npm dependencies.** `package.json` declares only devDependencies (`@types/node`,
-  `vitest`). The runtime surface is `node:fs`, `node:os`, `node:path`, and `node:sqlite` —
-  Node 24+, already required by `.nvmrc`.
-- **Consumed by:** `packages/collectors` (devDependency; `syncOmpSessions` and
-  `syncClaudeSessions` write `usage_events` / `omp_sync_state` in tests), `packages/reader`
-  (settings, stored events) and `apps/desktop`'s Node sidecar
-  (`apps/desktop/sidecar/index.ts`), which opens the database on startup for the Tauri window.
-  The VS Code extension is intended to open the same file through this package.
+- **Workspace dependencies:** depends on `@prompt-burn/core` (`Source`, `UsageEvent`).
+- **Zero npm runtime dependencies.** `package.json` declares only devDependencies
+  (`@types/node`, `vitest`). The runtime surface is `node:fs`, `node:os`, `node:path`, and
+  `node:sqlite` — Node 24+, already required by `.nvmrc`.
+- **Consumed by:** `packages/collectors` (syncs `usage_events` / `omp_sync_state`),
+  `packages/reader` (reads settings, stored events, calculates costs), `apps/desktop`'s Node
+  sidecar (`apps/desktop/sidecar/index.ts`), and the VS Code extension (`apps/vscode`).
 - **Not in scope here:** reading Cursor's `state.vscdb` is a separate decision, made elsewhere.
 - Reads/writes: exactly the one SQLite file and its parent directory.
 
@@ -191,29 +222,31 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
 (`mkdtempSync`) — tests never touch a real `~/.prompt-burn`:
 
 - `index.test.ts`: `databasePath` resolves under the home and contains no install dir;
-  first open creates the four tables, seeds exactly `BUNDLED_PRICES.length` rows, and
-  spot-checks Anthropic, Ollama, deepseek-standard-rate, and the `qwen3.5` NULL rate;
-  reopening an existing file keeps its data, does not re-apply the schema, and tops the
-  bundled prices back up without duplicating a hand-added rate; the cycle/event timestamp
-  CHECK rejects faked timestamps in both directions. Both migrations have a case of their own,
-  each built by rewinding a fresh file to an older shape: `addProjectColumn` adds the column,
-  keeps every row with a NULL project, empties `omp_sync_state`, and is a no-op on the next
-  two opens; `widenSourceCheck` starts from the two-value CHECK (which really does refuse a
-  `claude-code` row), then proves the reopened file accepts one while keeping the pre-existing
-  rows, the `project` column and the indexes.
+  first open creates the four tables, seeds exactly `BUNDLED_PRICES.length` (22) rows, and
+  spot-checks Anthropic, Ollama, deepseek-standard-rate, `qwen3.5` NULL rate, Gemini via
+  Antigravity, and `gemma4`; reopening an existing file keeps its data, does not re-apply the
+  schema, and tops missing bundled prices back up without duplicating a hand-added rate; the
+  cycle/event timestamp CHECK rejects faked timestamps in both directions. Both migrations have
+  a test case rewinding a fresh file to an older shape: `addProjectColumn` adds the column,
+  keeps every row with a NULL project, empties `omp_sync_state`, and is idempotent;
+  `widenSourceCheck` verifies that rewinding to a two-value CHECK refuses `claude-code`, and
+  reopening migrates cleanly while preserving rows, the `project` column, and all three indexes.
 - `pricing.test.ts`: window selection across boundaries (`effective_from` inclusive,
-  `effective_until` exclusive), bundled seeds resolve — including the Cursor-side ids at their
-  vendors' public rates — `default` (Auto) and unobserved variants return `null`, an empty
-  timestamp is refused, overlapping windows prefer the latest `effective_from` and then the
-  newest row, retroactive pricing inserts a rate without touching the event row, a rate change
-  keeps old events on the old rate, and `estimateCents` converts tokens at published rates —
-  `null` never `$0` for unknown models or unpriced cache kinds, zero cache tokens never poison
-  the estimate.
-- `settings.test.ts`: defaults when nothing is written, a written path and toggle surviving a
-  reopen, a repeated write updating in place rather than stacking rows, and a partial patch
-  leaving unmentioned keys alone.
-- `events.test.ts`: an empty database returns nothing for either source, and stored columns map
-  onto the domain `UsageEvent` shape with `source` filtering honoured.
+  `effective_until` exclusive), bundled seeds resolve — including Cursor-side ids at their
+  vendors' public rates (Grok, Composer 2.5, GPT-5.6 Sol, Haiku 4.5 thinking) — `default` (Auto)
+  and unobserved variants (`composer-2.5-fast`) return `null`, empty timestamp is refused,
+  overlapping windows prefer the latest `effective_from` and tie-break by newest row,
+  retroactive pricing inserts a rate without touching the event row, a rate change keeps old
+  events on the old rate, `insertPriceEntry` covers stored history and cycle aggregates,
+  `estimateCents` converts tokens at published rates (`null` never `$0` for unknown models or
+  unpriced cache kinds; zero cache tokens never poison the estimate), and Gemini turn pricing
+  distinguishes Antigravity from Ollama Cloud `gemma4`.
+- `settings.test.ts`: defaults when nothing is written (`DEFAULT_SETTINGS` has all sources on
+  and paths empty), written path and toggles surviving a reopen, repeated writes updating in
+  place rather than stacking rows, and partial patches leaving unmentioned keys alone.
+- `events.test.ts`: fresh database returns an empty list (with or without source filter),
+  stored rows map onto domain `UsageEvent` shape, cycle rows keep their empty timestamp, and
+  events sort oldest timestamp first.
 
 ## 9. Debt and traps
 
@@ -246,9 +279,8 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
 - **Cursor-side rates are the vendors' public list prices, not Cursor's bill.** Grok, Composer
   and GPT rows price at xAI / Cursor / OpenAI published rates; Cursor's own pool bills
   differently, and xAI's over-200K-context surcharge (every rate doubles) is not modelled.
-- **The bundled rows have no vendor-verified history.** They are the 2026-09-04 published
-  rates backdated to 1970; pricing "before 1970 plus" with today's rate is an approximation,
-  not a record.
+- **The bundled rows have no vendor-verified history.** They are published rates backdated to
+  1970; pricing "before 1970 plus" with today's rate is an approximation, not a record.
 - **`raw_model` aliases are still unpriced territory.** Models like Cursor's `default` (Auto)
   have real tokens and no public rate; `null` estimates are a normal state the UI must render.
 
@@ -260,10 +292,12 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
 - **Changing a rate:** never UPDATE the rate columns of an old row in production data; close
   it with `effective_until` and insert a new row with a new `effective_from`. That is the
   invariant retroactive pricing is built on.
+- **Adding a user rate in Settings:** call `insertPriceEntry(db, entry)`. It backdates to 1970
+  with null `effective_until` so history and cycle rows price immediately.
 - **Changing the schema:** edit `SCHEMA_SQL` in `schema.ts` knowing it only applies to new
   files. There is still no migration runner; the two hand-written migrations in `index.ts` are
   the pattern to copy. `addProjectColumn` is the additive-column shape — add the column, keep
-  every row, clear `omp_sync_state` so the next fetch re-reads the transcripts and the sync's
+  every row, clear `omp_sync_state` so the next fetch re-reads transcripts and the sync's
   upsert backfills it. `widenSourceCheck` is the constraint-change shape — a guarded,
   transactional table rebuild that copies every row and recreates every index, because SQLite
   cannot alter a CHECK. Follow whichever fits, keep it idempotent and lossless, or write the
@@ -271,6 +305,6 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
 - **Keeping the divergence:** `node:sqlite` over `better-sqlite3` is deliberate; do not add
   the dependency "for features". If a `node:sqlite` limitation ever forces the change, it
   should be a visible decision, not a quiet one.
-- **Consumers to keep in sync:** the desktop sidecar (`apps/desktop/sidecar/index.ts`) and the
-  collectors both go through `databasePath`/`openDatabase`; a change to open semantics lands in
-  both through this package.
+- **Consumers to keep in sync:** the desktop sidecar (`apps/desktop/sidecar/index.ts`), the
+  collectors, and the VS Code extension (`apps/vscode`) all go through
+  `databasePath`/`openDatabase`; a change to open semantics lands in all through this package.

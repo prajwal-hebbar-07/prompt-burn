@@ -6,32 +6,39 @@
 
 Before `packages/core` types were frozen (commit 4), one script had to answer a single
 question: do the two data sources really carry the fields the dashboard design assumes? It
-does. It also recorded one finding that contradicts a locked product decision. The spike is
-the only executable code in the repo at this commit; everything else is scaffold and planning
-documents.
+does. Over time, that initial probe grew into a broader investigation of actual data shapes
+across all supported tools and quota meters. The findings confirmed core viability, uncovered
+API quirks, and overturned a locked product decision.
 
-- Script: [`scripts/spike/dump-shapes.mjs`](../../scripts/spike/dump-shapes.mjs) — 68 lines,
+- Script: [`scripts/spike/dump-shapes.mjs`](../../scripts/spike/dump-shapes.mjs) — 69 lines,
   zero dependencies (`node:sqlite` + `fetch`), Node 24+.
-- Findings: [`docs/data-shapes.md`](../data-shapes.md) — the authoritative record of what was
-  observed on one machine, 2026-09-02.
-- Redacted fixtures the script's output was cleaned into: `docs/fixtures/omp-session-line.json`,
-  `docs/fixtures/cursor-cycle-aggregates.json`, `docs/fixtures/cursor-usage-summary.json`.
+- Findings: [`docs/data-shapes.md`](../data-shapes.md) — the authoritative record of observed
+  shapes, field mappings, dedupe keys, and quota APIs across OMP, Cursor Pro, Gemini, Ollama
+  Cloud, Claude Code, and Antigravity.
+- Sanitized fixtures: seven committed files in `docs/fixtures/` preserving concrete outputs
+  from these spikes and probes (OMP Claude assistant turn, OMP Gemini turn, Cursor cycle
+  aggregates, Cursor single-day window aggregates, Cursor usage summary, Ollama Cloud usage, and
+  Antigravity quota summary). Claude Code was documented from published specifications rather
+  than a local transcript, so it deliberately carries no fixture.
 
 ## 2. Inventory
 
-| File                                         | Kind           | Role                                                          |
-| -------------------------------------------- | -------------- | ------------------------------------------------------------- |
-| `scripts/spike/dump-shapes.mjs`              | Script         | Samples both sources; prints shapes, dumps raw JSON           |
-| `docs/data-shapes.md`                        | Document       | Findings: field mappings, dedupe key, the date-window finding |
-| `docs/fixtures/omp-session-line.json`        | Fixture        | One OMP assistant line, redacted                              |
-| `docs/fixtures/cursor-cycle-aggregates.json` | Fixture        | Per-model aggregate response, one cycle                       |
-| `docs/fixtures/cursor-window-aggregates.json` | Fixture       | Per-model aggregate for one day's window (2026-09-07)        |
-| `docs/fixtures/cursor-usage-summary.json`    | Fixture        | Cycle dates + membership type + quotas                        |
-| `out/`                                       | Runtime output | Gitignored; UNREDACTED dumps when the script gets a directory |
+| File | Kind | Role |
+| --- | --- | --- |
+| `scripts/spike/dump-shapes.mjs` | Script | Samples both sources; prints shapes, dumps raw JSON |
+| `docs/data-shapes.md` | Document | Findings: mappings, dedupe key, quota APIs |
+| `docs/fixtures/omp-session-line.json` | Fixture | One OMP assistant line, redacted |
+| `docs/fixtures/omp-gemini-session-line.json` | Fixture | One OMP Gemini line, redacted |
+| `docs/fixtures/cursor-cycle-aggregates.json` | Fixture | Per-model aggregate response, one cycle |
+| `docs/fixtures/cursor-window-aggregates.json` | Fixture | Aggregate for one-day window |
+| `docs/fixtures/cursor-usage-summary.json` | Fixture | Cycle dates + membership type + quotas |
+| `docs/fixtures/ollama-usage.json` | Fixture | Undocumented `/api/usage` quota response |
+| `docs/fixtures/antigravity-quota-summary.json` | Fixture | Antigravity quota response |
+| `out/` | Runtime | Gitignored UNREDACTED dumps when given out-dir |
 
 ## 3. Public surface
 
-The spike has two CLI forms, stated in the script's header comment:
+The spike script has two CLI forms, stated in its header comment:
 
 ```
 node scripts/spike/dump-shapes.mjs            # prints shapes to stdout
@@ -40,8 +47,12 @@ node scripts/spike/dump-shapes.mjs out/       # also writes raw JSON there (giti
 
 Stdout prints: the OMP session header, the OMP usage object + model, the Cursor cycle dates +
 membership type, and the Cursor per-model aggregations. The Cursor access token is never
-printed (§5). The fixture files under `docs/fixtures/` are the second surface: they are the
-redacted, committed form of what the script observed, and `docs/data-shapes.md` cites them.
+printed (§5).
+
+The seven committed fixture files under `docs/fixtures/` form the permanent public contract
+derived from these investigations. They are cited throughout `docs/data-shapes.md` and ingested
+directly as golden inputs by unit and integration tests across `packages/collectors`,
+`packages/reader`, and `packages/core`.
 
 ## 4. Flow
 
@@ -79,9 +90,18 @@ Both requests to `cursor.com` always send `Origin: https://cursor.com`; without 
 returns 403 "Invalid origin for state-changing request". The aggregate call with body `{}` is
 the current cycle; the date-window variant is what a calendar filter now sends (§9).
 
+The diagram illustrates the original automated script. Subsequent data-shape probes were
+conducted manually or codified directly into collectors:
+- **Gemini scan**: full recursive sweep over all OMP transcripts, finding all assistant triples.
+- **Cursor date windows**: POST requests with epoch millisecond bounds.
+- **Limit clocks**: querying `usage_history` in `~/.omp/agent/agent.db`.
+- **Ollama Cloud**: GET request to `https://ollama.com/api/usage` using OMP's saved key.
+- **Antigravity quota**: reading macOS keychain, extracting desktop OAuth client credentials
+  from the `agy` binary, and calling Google's internal quota RPC.
+
 ## 5. Contracts and invariants
 
-**OMP side.**
+**OMP session logs.**
 
 - Session format is `version: 3` on the `type: "session"` header. No compatibility guarantee
   across OMP updates.
@@ -91,14 +111,24 @@ the current cycle; the date-window variant is what a calendar filter now sends (
 - Dedupe id: `omp:<session.id>:<message.id>`. `message.id` is unique per file only, so the
   session uuid — read from the header line — is required. The parser must see the header
   before the messages it scopes; the script's `??=` pattern mirrors this by taking the first
-  header and first usage-bearing line per file.
+  header and first usage-bearing line per file. Fallback: hash of `filePath + byteOffset`.
+- Subagent transcripts live in `<timestamp>_<uuid>/` subfolders and carry their own usage.
+  File discovery must be recursive or helper sessions are silently dropped.
 - The script filters on `cacheRead > 0` (not `usage` presence) to guarantee a line with a
   non-trivial read to show.
-- Deliberately unused: `message.usage.cost` (OMP's own estimate; we recompute from price
-  entries), `totalTokens` (derivable), `cttl.ephemeral5m` (already inside `cacheWrite`),
-  `provider`/`api`, `contextSnapshot.promptTokens` (context gauge, not billable input).
+- Deliberately unused: `message.usage.cost` (recomputed from price entries), `totalTokens`,
+  `cttl.ephemeral5m`, `provider`/`api`, `contextSnapshot.promptTokens`.
 
-**Cursor side.**
+**Gemini through Antigravity in OMP (2026-09-04 scan).**
+
+- Observed triple: `(gemini-3.8-flash, google-antigravity, google-gemini-cli)` across 374 lines.
+- Origin remains `source: "omp"`: records live in OMP transcripts and use the OMP dedupe key.
+- `message.usage.reasoningTokens` was present on 368 lines, but `totalTokens === input + output
+  + cacheRead + cacheWrite` on all lines, `reasoningTokens < output`, and Google's output price
+  includes thinking tokens. Thus, reasoning tokens are not billed as a separate token kind.
+- `cacheWrite` was `0` across all 374 lines; Google prices cache storage per hour, not per write.
+
+**Cursor Pro.**
 
 - Auth is a key-only read: `ItemTable`, key `cursorAuth/accessToken`, opened read-only with
   `immutable=1` (the file is ~90 MB and Cursor may hold a WAL). Missing key throws.
@@ -110,77 +140,125 @@ the current cycle; the date-window variant is what a calendar filter now sends (
   `cacheWriteTokens` are **decimal strings** and must be parsed; the cache keys are **absent
   when zero** rather than `0`.
 - `modelIntent` is the only model identifier (no display name). Observed values carry
-  effort/speed suffixes (`-thinking-high`, `-high-fast`) that must collapse onto the base
-  model to match an OMP row or a price entry; `default` is Auto model selection — real tokens,
-  no resolvable public rate.
+  effort/speed suffixes (`-thinking-high`, `-high-fast`) that collapse onto the base model;
+  `default` is Auto model selection — real tokens, no resolvable public rate.
 - `totalCents` / `totalCostCents` are Cursor's own billing numbers as fractional-cent floats;
   deliberately ignored — our estimate is priced from `price_entries`, never mixed into
   `estimatedCents`. `tier` is not modelled.
+- Window queries: accepts `{ teamId: 0, startDate: "<ms>", endDate: "<ms>" }`. Empty windows
+  return `200 {}` without an `aggregations` key, which maps to zero usage rather than an error.
+
+**Provider quota clocks and limits.**
+
+- **OMP `usage_history` (2026-09-05)**: SQLite table in `~/.omp/agent/agent.db`. Opened `mode=ro`
+  without `immutable=1` (live database). Time-series where only the newest row per limit is
+  current; rows older than 7 days are discarded.
+- **Ollama Cloud `/api/usage` (2026-09-05)**: Undocumented GET endpoint authenticated with the API
+  key from OMP's `auth_credentials`. Returns `limits.session.usage` and `limits.weekly.usage` as
+  0–1 fractions (e.g. 0.037). No reset timestamps are provided.
+- **Antigravity direct quota RPC (2026-09-11)**: Internal endpoint `POST
+  https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`. Requires `User-Agent`
+  containing `antigravity`; fails if `x-goog-user-project` is sent. Token read from macOS keychain
+  (`service: "gemini", account: "antigravity"`), refreshed using desktop OAuth client credentials
+  scraped from `~/.gemini/bin/agy` at runtime. Inverts `remainingFraction` to `usedFraction`.
+
+**Claude Code (documented format).**
+
+- Transcripts live at `~/.claude/projects/<slugified-cwd>/<session-uuid>.jsonl`.
+- Assistant lines only; token keys use Anthropic API names (`input_tokens`, `output_tokens`,
+  `cache_read_input_tokens`, `cache_creation_input_tokens`).
+- No session header; `sessionId` and `cwd` are present on every line.
+- Dedupe key: `claude-code:${message.id}:${requestId}`.
+- Model snapshot dates (`-YYYYMMDD`) are stripped by `canonicalModelId`.
 
 ## 6. Configuration
 
-The script takes one optional `argv[2]`: an output directory. No env vars, no config files, no
-flags. Paths are hard-coded home-relative: `~/.omp/agent/sessions` and
+The spike script takes one optional `argv[2]`: an output directory. No env vars, no config files,
+no flags. Paths are hard-coded home-relative: `~/.omp/agent/sessions` and
 `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`. The out-dir relies on
 the repo's `.gitignore` (`out/`).
+
+Subsequent probes read from their standard locations: `~/.omp/agent/agent.db` for provider limits,
+macOS keychain (`gemini`/`antigravity`) plus `~/.gemini/bin/agy` for Antigravity, and
+`~/.claude/projects` for Claude Code.
 
 ## 7. Boundaries and dependencies
 
 - Runtime: Node 24+ (matches `.nvmrc`) for `node:sqlite`; `fetch` is global.
-- No npm dependencies at all — the repo has no `node_modules` yet, and the spike must not
-  require one.
-- Reads: OMP session logs (user files), the Cursor auth database (user file), nothing in-repo
-  except writing to the optional out-dir.
-- Network: `POST https://cursor.com/api/usage-summary` and
-  `POST https://cursor.com/api/dashboard/get-aggregated-usage-events`. `Authorization: Bearer`
-  and `api2.cursor.sh` both fail (404 / no route) — the cookie is the only working auth.
+- Zero npm dependencies in `dump-shapes.mjs` — the spike script requires no `node_modules`.
+- Local reads: OMP session logs (`.jsonl`), Cursor auth database (`state.vscdb`), OMP agent
+  database (`agent.db`), macOS keychain credentials, `agy` binary, and Claude Code transcripts.
+- Network endpoints probed across investigations:
+  - `POST https://cursor.com/api/usage-summary`
+  - `POST https://cursor.com/api/dashboard/get-aggregated-usage-events`
+  - `GET https://ollama.com/api/usage`
+  - `POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`
+  - `POST https://oauth2.googleapis.com/token`
 
 ## 8. Tests
 
-There are no tests anywhere in the repo — no test runner, no CI, no test files. The spike was
-run once, by hand, on one machine (macOS, 2026-09-02); its output was reduced into
-`docs/data-shapes.md` and the three fixtures. That run is the verification. Nothing here is
-covered by an automated test: not the OMP line mapping, not the Cursor field mapping, not the
-cookie construction, not the 403-without-Origin behaviour. The fixtures are the only
-machine-checked record, and even they are a single sample, not a corpus.
+The spike script itself has no automated test runner or test files; it was run manually on one
+machine (macOS, 2026-09-02) and verified against live services.
+
+However, the seven sanitized fixtures in `docs/fixtures/` serve as the test baseline across the
+entire repository. Downstream test suites rely directly on them:
+- `omp-session-line.json`: `packages/collectors/src/omp.test.ts`, `sync.test.ts`,
+  `collect.test.ts`, and `packages/reader/src/reader.test.ts`.
+- `omp-gemini-session-line.json`: `packages/collectors/src/omp-gemini.test.ts`.
+- `cursor-cycle-aggregates.json` and `cursor-usage-summary.json`:
+  `packages/collectors/src/cursor.test.ts`, `collect.test.ts`, and
+  `packages/reader/src/reader.test.ts`.
+- `cursor-window-aggregates.json`: verifies windowed aggregate mapping.
+- `ollama-usage.json`: `packages/collectors/src/ollama.test.ts`.
+- `antigravity-quota-summary.json`: `packages/collectors/src/antigravity.test.ts` and
+  `collect.test.ts`.
+- `packages/reader/src/golden.test.ts` reads fixtures dynamically.
+- `packages/core/src/aggregate.test.ts` models test data on `cursor-cycle-aggregates.json`.
+
+Claude Code has no local fixture; its tests (`packages/collectors/src/claude-code.test.ts`) use
+synthetic transcripts constructed from documented specifications.
 
 ## 9. Debt and traps
 
 - **The out-dir mode writes UNREDACTED dumps.** `ompLine` carries raw message content, `cwd`,
-  and `responseId`; the dump is the live API response plus a real session line. The
-  gitignore is the only thing keeping it out of the repo. Redact `cwd`, `responseId`, and
-  message content before any raw dump becomes a fixture — the committed fixtures already did
-  this; do not regress them.
-- **It samples; it does not verify.** The OMP loop inspects only the newest file that has a
-  usage-bearing line. The Cursor call fetches only the current cycle. Nothing in the spike
-  proves every session file, every model, or every historical cycle matches these shapes.
-- **`default` is the first guaranteed unknown-price row.** It has real tokens (3.2 M input on
-  this account) and no public rate, so `estimatedCents: null` is a normal state, not an edge
-  case. The dashboard must render it, not drop it.
+  and `responseId`; the Cursor dump carries account data; quota endpoints return tokens and emails.
+  The gitignore keeps them out of the repo. Redact all sensitive fields before committing any dump
+  as a fixture.
+- **Sampling vs verification.** `dump-shapes.mjs` inspects only the newest OMP file with usage and
+  one Cursor billing cycle. It does not prove all historical or future files match these shapes.
+- **`default` is the first guaranteed unknown-price row.** Auto model selection burns real tokens
+  without a public rate, so `estimatedCents: null` is expected behaviour, not a failure.
 - **The date-window finding is acted on (2026-09-07).** The API accepts `startDate`/`endDate`,
-  disproving the old "Pro = cycle only" decision, and Today / This month / Date range now send
-  their own bounds. The backend constraint survives: a window may not span both 2025-08-01 and
-  2026-05-14, so all-time cannot be asked for and still shows the cycle. The three-call
-  workaround is deliberately not built.
-- **The `modelIntent` → canonical alias map is unverified.** Only 6 values were seen, on one
-  account. Suffix collapsing and `cursor-` prefix handling are guesses waiting for more data.
-- **The token is read at runtime by design.** The script pulls the access token straight from
-  Cursor's own storage so it is never pasted into a shell, a file, or the repo — and never
-  printed. That is the invariant; the read itself is intentional.
-- Cursor cache-token semantics (TTL tiers, read vs write pricing) were not verified against
-  any rate table.
+  disproving the old "Pro = cycle only" decision, and Today / This month / Date range send their
+  own bounds. The backend constraint survives: queries spanning both 2025-08-01 and 2026-05-14 fail
+  with `ERROR_BAD_REQUEST`, so all-time falls back to the billing cycle.
+- **Empty Cursor windows return `200 {}` (2026-09-08).** A window with no usage returns bare `{}`
+  without an `aggregations` key. It must map to zero rows, not be treated as an error that falls
+  back to the cycle.
+- **Antigravity RPC traps (2026-09-11).** The undocumented `retrieveUserQuotaSummary` endpoint
+  requires a `User-Agent` containing `antigravity` (otherwise 403 `SUBSCRIPTION_REQUIRED #3501`)
+  and rejects requests containing `x-goog-user-project`. OAuth client credentials must be scraped
+  from the `agy` binary dynamically rather than committed. Returned fractions represent remaining
+  quota and must be inverted (`1 - remainingFraction`).
+- **Ollama Cloud `/api/usage` is undocumented.** Returns fractions without reset timestamps and may
+  change without warning.
+- **Claude Code is unverified locally.** Documented from specifications and collector code; needs
+  verification against real transcripts once available on-machine.
+- **`modelIntent` alias mapping is unverified.** Suffix collapsing and `cursor-` prefixes are
+  inferences awaiting wider real-world sampling.
 
 ## 10. Change guide
 
-- **Fixing or extending the spike:** edit `scripts/spike/dump-shapes.mjs`; it is
-  self-contained, and its header comment documents the CLI. Re-run it, reduce the output, and
-  update `docs/data-shapes.md` plus the fixtures together — they are one record.
-- **Redacting a new dump:** replace `cwd`, `responseId`, message `content` text, and any
-  account identifiers with `REDACTED` before committing under `docs/fixtures/`.
-- **When core types freeze (commit 4):** the mapping tables in `docs/data-shapes.md` §OMP and
-  §Cursor are the source of truth for field names; the spike script itself is throwaway and
-  may be deleted or kept as a manual probe — either is fine, but `docs/data-shapes.md`
-  survives it.
-- **Re-checking the date-window finding:** it was re-confirmed on 2026-09-07 (per-day, per-month
-  and one whole past day all answered; unbounded refused). `docs/data-shapes.md` § Finding holds
-  the table, dated per row.
+- **Fixing or extending the spike:** edit `scripts/spike/dump-shapes.mjs`; it is self-contained,
+  and its header comment documents the CLI. Re-run it, reduce the output, and update
+  `docs/data-shapes.md` plus the fixtures together.
+- **Redacting a new dump:** replace `cwd`, `responseId`, message `content` text, account emails,
+  and credential tokens with `REDACTED` before committing under `docs/fixtures/`.
+- **Adding new sources or probe findings:** record field mappings, dedupe strategies, and quirks
+  in `docs/data-shapes.md`. Add corresponding sanitized fixtures to `docs/fixtures/` and wire
+  them into package test suites.
+- **When core types freeze (commit 4):** the mapping tables in `docs/data-shapes.md` are the
+  source of truth for field names. The spike script is throwaway, but `docs/data-shapes.md` and
+  its fixtures survive as living references.
+- **Re-checking findings:** note dates of re-confirmations in `docs/data-shapes.md` (e.g. 2026-09-07
+  for Cursor date windows, 2026-09-08 for empty windows, 2026-09-11 for Antigravity).

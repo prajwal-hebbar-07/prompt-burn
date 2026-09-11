@@ -2,144 +2,135 @@
 
 **Twin of:** [Repo scaffold and workspace tooling](../architecture/01-repo-scaffold.md)
 
-For a while this project was a workshop before any of the machines had been
-delivered: the bench built, the power wired, the safety rules pinned to the
-wall, the floor marked out for where each machine would stand. That has
-changed. The machines have started arriving. The room is still what this
-document is about — the rules every machine must obey and the switchboard that
-turns them all on — but the floor is no longer empty.
+When work began, this project was a workshop before any machinery had been delivered: the bench
+built, the power wired, the safety rules pinned to the wall, the floor marked out for where each
+station would stand. That has changed completely. All seven stations have arrived and taken their
+places on the floor. The room itself is what this document covers — the shared rules every station
+must obey, the master switches that inspect and test them all, the automated inspection line, the
+packaging conveyor, and the stamp that keeps every product labeled with the exact same version
+number.
 
 ## What is actually on the bench
 
-The project is a small dashboard that shows how much token usage you burn
-through with your AI assistants (the ones named OMP and Cursor) and what that
-usage would cost if you were paying per token. Parts of that dashboard now
-exist, but they live in their own chapters — the thinking parts, the storage,
-the collectors, and the desktop app each get their own pair of documents
-(numbers 04 through 07). This one covers the room itself:
+The project is a local dashboard that shows how much token usage you burn through with your AI
+assistants and what that usage would cost if you were paying per token. The five processing stations
+and two finished storefronts each have their own chapters in the guidebook (numbers 04 through 10).
+This document covers the workshop itself:
 
-- A file that names the project and declares it private (it will never be
-  published as a software package for others to install).
-- A file that pins the exact version of the package-handling tool everyone
-  must use, so two people on the project cannot quietly use different versions
-  of the same machinery.
-- A file that says "Node version 24 or newer" — Node being the engine the
-  whole thing will run on — and a second file that repeats the same number, so
-  there are two witnesses to the rule.
-- A rulebook of shared settings for how every piece of the project must
-  behave: how strictly the work is checked, which version of the JavaScript
-  language it may use, and a rule that the checking is extra-picky about
-  things like whether looking something up in a list could come back empty.
-- A list of things that must never be saved into the project's history — no
-  sawdust, no unlabelled keys, no envelopes with account numbers on the bench,
-  and now also the wood shavings and generated templates that the new desktop
-  machine produces when it is built.
-- A short front-page note explaining what the project is and pointing at the
-  planning documents.
-- A shopping list that has grown real: the record of exactly which versions of
-  the checking tool, the test runner, and the desktop toolkit everyone is
-  using. It used to be a page of blank paper; now it is a full ledger.
+- A master ledger naming the project and declaring it private (it will never be published as a
+  reusable package for others to install).
+- A stamped number on the master ledger stating the current version of the finished goods.
+- A file locking down the exact version of the package-handling machinery everyone must use, so two
+  workers on the project cannot quietly use different versions of the equipment.
+- Two files agreeing on the minimum version of the engine the whole shop runs on, acting as twin
+  witnesses to the rule.
+- A rulebook of shared settings for how strictly work is checked, which version of the language is
+  permitted, and strict warnings against careless lookups.
+- A denial list of things never saved into the workshop archives — sawdust, scratch pads, secret
+  keys, internal notes, and the metal shavings and temporary bundles generated during builds.
+- A short notice at the front door explaining what the shop makes and pointing to the blueprint.
+- A comprehensive parts ledger locking down the exact versions of every component, test runner,
+  and styling tool used across all seven stations.
+- An automated inspection line that runs the checking and testing switches whenever new work arrives
+  at the door.
+- A shipping conveyor that packages the finished goods for every major computer platform and the
+  editor without anyone building files on a personal laptop.
+- A specialized stamping tool that keeps the version number identical across all five places it is
+  written, along with its own testing routine.
+- A quiet corner holding the notes and sample files from the earliest scouting mission.
 
-## The marked-out floor spaces are filling up
+## All the marked-out floor spaces are full
 
-The floor was marked out for two families of work areas: one for the thinking
-parts (understanding usage records, storing them, working out costs), one for
-the things you actually look at and interact with. Three thinking work areas
-now stand on their marks, and the desktop app stands on one of the interaction
-marks. Each is a real working area with its own copy of the rulebook — and
-each is described in its own chapter, not this one. Two interaction marks are
-still empty: the dashboard-in-a-web-page and the panel inside the editor. The
-rule from the plan still holds: a work area gets built only when its first
-real piece of work arrives. No empty shells for dust to settle on.
+The floor was originally marked out for two families of work areas: one for the internal processing
+and handling stations, and one for the customer-facing counters. All seven marks are now occupied:
+
+- Five processing stations handle the internal work: one defines the core rules and cost math, one
+  manages the storage cabinet on disk, one harvests usage records from assistant transcripts, one
+  coordinates the harvesting and storage into clean reports, and one crafts the visual panels and
+  buttons.
+- Two customer-facing stations deliver the dashboard: a standalone window on the computer desktop,
+  and a built-in panel inside the code editor.
+
+Each station has its own copy of the shared rulebook and its own testing routine. The rule from the
+original plan held true: each work area was built only when its first real piece of work arrived.
 
 ## The rules the machines obey
 
-Every machine on the floor inherits the same rules automatically, because the
-shared rulebook predates them all. A few of those rules, in plain words:
+Every machine on the floor inherits the same rules automatically from the master rulebook:
 
-- **The checking is strict.** The rulebook is set to the pickiest settings.
-  The checker flags things like "this list might be empty" rather than letting
-  the program crash later.
-- **The room is set up for the engine it actually runs on.** The way pieces
-  are wired together matches how the Node engine really behaves, not some
-  theoretical ideal.
-- **Nothing gets baked into finished files by the checker itself.** The
-  checking exists to catch mistakes, not to produce the final product; the
-  desktop app builds its finished form a different way.
-
-And the quirk from before still holds, but it now matters less: the master
-rulebook at the top of the project is still told to check _nothing directly_.
-That is fine — it is a formality, a signature on the door — because every real
-work area has its own copy of the rulebook and does its own checking. The
-master rulebook just guarantees they all start from the same page.
+- **The checking is strict.** The rules catch mistakes early — such as looking up an item that
+  might not exist — rather than letting a machine jam during operation.
+- **The workshop is wired for how the engine actually behaves in practice.** The pieces connect
+  according to the engine's real runtime habits, not a theoretical ideal.
+- **Nothing is baked into finished goods by the checker alone.** The checker inspects quality;
+  specialized bundlers and packaging tools assemble the final products.
+- **The master rulebook at the front door checks zero files directly.** That is a deliberate
+  formality; each station enforces the rules on its own files, but all start from the same page.
 
 ## The switchboard: how everything gets turned on
 
-Here is what actually changed since the room was empty. Two switches were
-installed on the wall, and they are master switches:
+The switches mounted on the wall govern the entire floor:
 
-- One switch checks everything. It first runs the formality check at the top
-  of the room (which inspects nothing, as noted), then walks through every
-  work area on the floor and runs that area's own checking.
-- The other switch tests everything. It walks through every work area and runs
-  that area's tests.
+- The daily running switch: turns on the desktop machine for day-to-day work.
+- The checking switch: walks through the workshop, starting with the door formality and then
+  inspecting every station on the floor.
+- The testing switch: first runs the workshop's own helper tests (verifying the version-stamping
+  tool), then walks every station running its full testing routine.
+- The version-stamping lever: stamps a new version number across all five release papers
+  simultaneously, or checks that all five agree.
 
-The walk is polite about it: if a work area has no test routine, the walk
-simply steps past it without a complaint. That politeness is a double-edged
-sword — it means the switches never jam on an area that has nothing to run,
-but it also means a work area built without a testing routine would be quietly
-skipped forever. Every area on the floor today has both routines, so the
-switches currently reach everything. But nothing forces the next arrival to
-follow suit; that is a house rule enforced by people, not by the machinery.
+The testing walk still steps past any station lacking a testing routine without raising an alarm.
+That politeness means an empty bench never jams the switchboard, but it also means a station built
+without tests would be quietly ignored. Every station on the floor today provides tests, but the
+rule remains a house convention rather than an iron clamp.
+
+## The automated inspection line and the shipping conveyor
+
+Two major pieces of automated machinery now handle quality and delivery:
+
+- **The continuous inspection line:** Lives outside any single worker's laptop. Whenever someone
+  proposes a change or merges work into the main line, this line starts from scratch, installs the
+  approved parts, and runs both the checking switch and the testing switch.
+- **The shipping conveyor:** Cuts a new release on demand. It checks the entire workshop,
+  calculates the next version number, builds the standalone desktop application for three major
+  operating systems in parallel, packages the editor extension, and only if every single build
+  succeeds without error, commits the version stamp, tags history, and places all finished downloads
+  on the public counter. If a single build fails, nothing is stamped or released.
 
 ## What the reconnaissance left behind
 
-Early on, someone did some reconnaissance: they pulled real usage records from
-OMP and Cursor and wrote down exactly what those records look like. That
-investigation left sample records saved as files, a short findings note, and a
-small throwaway script that produced them. The samples did their job — the
-first real code was written to match them — and the throwaway script is still
-sitting in its corner, ready to be swept out.
+The sample records from early scouting missions (examining assistant transcripts) remain safely
+stored as reference materials. The small helper script that fetched them still sits in its corner,
+ready to be swept out whenever no longer needed.
 
 ## What is still not true — said plainly
 
-The honest ledger, updated:
+The honest ledger:
 
-- **The top-level check inspects zero files.** All the real checking happens
-  inside the work areas. A file that no work area has claimed would be checked
-  by nothing.
-- **A missing routine would be skipped, not flagged.** The master switches
-  only reach work areas that have the matching routine. All four areas comply
-  today; the fifth might not, and nothing would complain.
-- **There is no automatic formatting, no linting, no continuous-integration
-  server.** Every style and quality decision is still made by whoever writes
-  the change and whoever reviews it. The master switches are shaped so a
-  continuous-integration server could run them the day someone wants one — but
-  nobody has wanted one yet.
-- **The desktop machine needs a second toolkit.** Everything on the Node side
-  installs itself with the usual package tool. The desktop app, though, has a
-  half made of a different material entirely (the same material as many
-  native apps), and that half needs its own installer and its own way of
-  building. A new machine can run all the checks but cannot build the desktop
-  app until that second toolkit is present. The "never save this" list
-  already knows about the mess that build makes.
-- **The throwaway script still has its sharp edge.** If you run it and give it
-  a folder to write into, it writes the _raw, unredacted_ records it fetched —
-  including real usage data. There is one ignored folder set aside for exactly
-  this; use that one, or nothing.
-- **The floor markings are still trusting.** A work area folder with nothing
-  inside it is invisible to the machinery, and a work area built outside the
-  two marked families would be silently left out — of the workspace and of
-  both master switches. Nothing validates this yet.
+- **The top-level check inspects zero files directly.** All real checking happens inside the work
+  stations. A stray file outside the stations would escape inspection.
+- **The testing switch still skips any area lacking a test routine instead of complaining.** All
+  seven areas comply today, but an omission would be silent.
+- **There is still no automated broom or tidy tool.** Layout and formatting rules are not enforced
+  by an automatic tool; they depend on human review.
+- **The version check is not hooked to the daily inspection line.** The shipping conveyor verifies
+  version alignment before building, but daily checks do not; a manual edit that causes the five
+  papers to drift could sit unnoticed until release time.
+- **The desktop machine requires a second, heavy metalworking toolkit to build its outer casing.** A
+  standard setup can run all tests, but cannot build the final desktop executable without that
+  separate native equipment.
+- **The reconnaissance script still writes raw, unredacted records if pointed at a live folder.**
+  There is one ignored folder set aside for testing; use that one, or nothing.
+- **The floor markings are trusting:** Empty folders or folders placed outside the two marked
+  families are silently ignored.
 
 ## How this bench grows
 
-The next moves are sketched: add the remaining interaction work areas (which
-needs no changes to the room itself — the floor markings already cover them,
-though each must bring its own checking and testing routines), decide on
-automatic formatting and continuous integration (the switches are ready for
-the latter), and sweep out the throwaway script now that its samples have done
-their job.
+The workshop can continue to evolve cleanly: adding another station if a third entrance is ever
+planned (which requires only its own folder, manifest, and rules without changing the room layout),
+running the version-stamping tool and shipping conveyor to send out updates, adding an automated
+broom when the team decides on formatting standards, and eventually sweeping away the reconnaissance
+script now that the real stations do all the gathering.
 
-The room is no longer empty. But the rules are holding: every machine that
-arrived bolted straight on, and the next ones will too.
+The room is no longer an empty frame. The rules held firm through every delivery, and every station
+bolted straight on.

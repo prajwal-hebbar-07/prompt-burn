@@ -3,7 +3,7 @@
 Every area of Prompt Burn is explained twice: once for engineers (under
 `docs/architecture/`), and once here, in everyday words. Same number, same subject. The
 metaphor changes per document — workshop, blueprint, probe, ledger, file cabinet, harvester,
-front door — but each document holds one
+front door, showroom, switchboard, workbench — but each document holds one
 metaphor and keeps the honest parts: what is unfinished, untested, or waiting on a decision is
 stated here too, not smoothed away.
 
@@ -16,3 +16,6 @@ stated here too, not smoothed away.
 | 05  | The file cabinet — one drawer in the home folder holds every record                             | [05-the-file-cabinet.md](05-the-file-cabinet.md) | [The database](../architecture/05-database.md)             |
 | 06  | The harvester — rereads the meeting notes and logs every token, skipping what is already logged | [06-the-harvester.md](06-the-harvester.md)       | [OMP collector](../architecture/06-omp-collector.md)       |
 | 07  | The front door — a pane of glass with a back office behind it, nothing sold through it yet      | [07-the-front-door.md](07-the-front-door.md)     | [Desktop shell](../architecture/07-desktop-shell.md)       |
+| 08  | The showroom — props-only cards, tables, and controls                                           | [08-the-showroom.md](08-the-showroom.md)         | [UI components](../architecture/08-ui-components.md)       |
+| 09  | The switchboard — one coordinator behind both desks                                             | [09-the-switchboard.md](09-the-switchboard.md)   | [Usage reader](../architecture/09-usage-reader.md)         |
+| 10  | The workbench — a second entrance inside the editor                                             | [10-the-workbench.md](10-the-workbench.md)       | [VS Code extension](../architecture/10-vscode-extension.md) |
