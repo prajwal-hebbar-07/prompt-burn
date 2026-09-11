@@ -4,11 +4,10 @@ Prompt Burn is a local-only dashboard for OMP and Cursor token usage, priced as 
 pay-as-you-go cost. It lives in two shells — a Tauri desktop app and a VS Code editor tab — and
 never sends data anywhere.
 
-Product decisions live in [product.md](product.md); the build sequence is
-[implementation-plan.md](implementation-plan.md). Those two are **input documents**: they describe
+Product decisions live in [product.md](product.md). That is an **input document**: it describes
 what to build, not what exists. What exists is documented by the numbered pairs below.
 
-[release.md](release.md) is the third input document: how a version is bumped and how the
+[release.md](release.md) is the second input document: how a version is bumped and how the
 desktop `.dmg` and the VS Code `.vsix` reach a GitHub Release.
 
 ## Areas

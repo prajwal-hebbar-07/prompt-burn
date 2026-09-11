@@ -14,7 +14,7 @@ Two decisions define it:
 
 - **Home-relative on purpose.** The file sits outside every install directory so an app
   update, a reinstall, or a VS Code extension upgrade cannot delete it.
-- **`node:sqlite`, not `better-sqlite3`.** The implementation plan sketches
+- **`node:sqlite`, not `better-sqlite3`.** Early sketches suggested
   `better-sqlite3`; the code deliberately diverges and uses Node 24's built-in
   `node:sqlite` `DatabaseSync` instead, keeping the workspace dependency-free exactly as
   the spike did. This divergence is deliberate — keep it.

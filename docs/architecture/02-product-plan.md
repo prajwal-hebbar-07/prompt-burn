@@ -6,7 +6,7 @@
 
 The planning corpus predates the code and still governs it. This document covers that corpus as
 an area: what each planning document owns, how they cross-reference, the locked-decisions table
-every commit must obey, and the status of the entire implementation plan through release v1.1.0.
+every commit must obey, and the status of the implementation phases through release v1.1.0.
 The table is the contract between the product intent and the build sequence; when it changes,
 everything downstream changes with it.
 
@@ -17,7 +17,6 @@ pair (04–10) in the documentation corpus.
 Sources, in authority order (repo-relative):
 
 - `docs/product.md` — the product document. Wins on conflict.
-- `docs/implementation-plan.md` — commit-by-commit build sequence.
 - `docs/spec.md` — short implementer contract; duplicates no reasoning, points at the others.
 - `docs/release.md` — release automation, version source of truth, workflow dispatch, artifacts.
 - `docs/data-shapes.md` — data-shape spikes and scan findings (OMP, Claude Code, Cursor, limits).
@@ -25,13 +24,10 @@ Sources, in authority order (repo-relative):
 ## 2. Inventory
 
 - `README.md` — entry point. Links [product.md](../../docs/product.md) and
-  [implementation-plan.md](../../docs/implementation-plan.md).
-- `docs/product.md` — what and why. 264 lines. Links the plan, names the Paper wireframes,
+  [docs/README.md](../../docs/README.md).
+- `docs/product.md` — what and why. 264 lines. Names the Paper wireframes,
   defines the three routes (Dashboard, Projects, Settings), surfaces, metrics, local persistence,
   trust copy, and out-of-scope list.
-- `docs/implementation-plan.md` — how to build. 351 lines. 10 PR batches / 12 numbered phases,
-  40 commits plus follow-on features, locked table, mixed-period rules, schema sketch, deferred
-  list.
 - `docs/spec.md` — coding-time contract. 123 lines. Restates the locked table verbatim with three
   sources, double-counting rules for OMP vs Claude Code vs limit cards, mixed-period rules, cost
   rules, deferred list, and never-commit list.
@@ -51,9 +47,8 @@ Sources, in authority order (repo-relative):
   - `docs/fixtures/ollama-usage.json` — unauthenticated/redacted Ollama Cloud usage payload.
   - `docs/fixtures/antigravity-quota-summary.json` — Google Antigravity quota summary response.
 
-Cross-references: `product.md` links the implementation plan; `spec.md` points at product, plan,
-and data-shapes; the plan links `product.md`; `data-shapes.md` names fixtures and planning docs;
-`release.md` documents workflows and bump tooling.
+Cross-references: `spec.md` points at product and data-shapes; `data-shapes.md` names fixtures
+and planning docs; `release.md` documents workflows and bump tooling.
 
 The numbered doc pairs (01–10) sit alongside the corpus: `docs/README.md` separates the input
 planning documents from the pairs that document what exists.
@@ -61,8 +56,7 @@ planning documents from the pairs that document what exists.
 ## 3. Public surface
 
 The product-facing surface of this area is the locked-decisions list, defined in
-`docs/product.md`, restated in `docs/implementation-plan.md` (§ Locked product decisions) and
-in `docs/spec.md` (§ Locked decisions):
+`docs/product.md` and restated in `docs/spec.md` (§ Locked decisions):
 
 - **Sources** — OMP + Cursor + Claude Code. (Gemini through Antigravity arrives inside OMP as
   `source: "omp"`, provider `google-antigravity`; not a separate source).
@@ -135,7 +129,7 @@ The mixed-period contract is part of the public surface:
 
 ### Build-sequence status as of v1.1.0
 
-All 10 plan PR batches and all 12 implementation plan phases have landed, plus follow-on features
+All 10 plan PR batches and all 12 implementation phases have landed, plus follow-on features
 and releases up through v1.1.0:
 
 | Plan phase & commits | Scope and implementation state |
@@ -157,14 +151,13 @@ and releases up through v1.1.0:
 | Post-plan: Antigravity | Live Google Antigravity quota via `agy` keychain — Landed. |
 | Post-plan: Releases | Shipped production releases v1.0.0 through v1.1.0 — Landed. |
 
-Every phase of the implementation plan is complete; no planned work remains pending.
+Every phase of the planned implementation is complete; no planned work remains pending.
 
 ## 4. Flow
 
 Reading order as the repo is consumed today:
 
-1. `README.md` → `docs/product.md` (what) → `docs/implementation-plan.md` (how) →
-   `docs/release.md` (release).
+1. `README.md` → `docs/product.md` (what) → `docs/release.md` (release).
 2. `docs/spec.md` is opened separately at coding time as the implementer contract.
 3. `docs/data-shapes.md` provides empirical payload schemas, field mappings, and scan notes.
 
@@ -177,13 +170,13 @@ Claude Code source, and Google Antigravity live quota collector.
 
 Decision flow when the plan conflicts with reality:
 1. Empirical finding observed and recorded in `docs/data-shapes.md`.
-2. Planning docs (`product.md`, `implementation-plan.md`, `spec.md`) updated in tandem.
+2. Planning docs (`product.md`, `spec.md`) updated in tandem.
 3. Implementation and regression tests updated to reflect the locked decision.
 
 ## 5. Contracts and invariants
 
-- The locked table is restated across `product.md`, `implementation-plan.md`, and `spec.md`.
-  `product.md` is the tiebreaker on any conflict.
+- The locked table is restated across `product.md` and `spec.md`. `product.md` is the tiebreaker
+  on any conflict.
 - Multi-source totals are additive across OMP, Claude Code, and Cursor. No deduplication is
   performed across sources: different transcript trees represent independent work.
 - Claude Code and OMP are strictly disjoint transcript streams. Their usage and costs never
@@ -266,7 +259,7 @@ Shipped test coverage:
 
 What is NOT covered mechanically:
 
-- Consistency among the three planning copies (`product.md`, `implementation-plan.md`, `spec.md`).
+- Consistency between the two planning copies (`product.md` and `spec.md`).
 - Upstream stability of undocumented endpoints (`ollama.com/api/usage` and Google's
   `retrieveUserQuotaSummary`).
 - Verification of Claude Code transcript shapes against a local machine fixture (derived from
@@ -275,13 +268,10 @@ What is NOT covered mechanically:
 
 ## 9. Debt and traps
 
-- **Three copies of the locked table will drift.** `product.md`, `implementation-plan.md`, and
-  `spec.md` duplicate the locked decisions with no mechanical check. A change must be hand-edited
-  into all three.
+- **Two copies of the locked table will drift.** `product.md` and `spec.md` duplicate the
+  locked decisions with no mechanical check. A change must be hand-edited into both.
 - **`spec.md` is an orphan link-wise.** Nothing links to it from `README.md`; it is discoverable
   only by habit or deep reference traversal.
-- **The plan text still mentions `better-sqlite3`.** Historical sketches in `implementation-plan.md`
-  name `better-sqlite3`, while the codebase uses `node:sqlite`.
 - **Claude Code mapping is unspiked on this machine.** The collector was implemented from
   specifications and code rather than an empirical transcript file from this machine.
 - **Two provider limit endpoints are undocumented and brittle.** Ollama's `/api/usage` and
@@ -304,8 +294,7 @@ What is NOT covered mechanically:
 ## 10. Change guide
 
 - Adding or modifying a product decision: Edit the table in `docs/product.md` first (authority),
-  then mirror in `docs/implementation-plan.md` and `docs/spec.md`. Re-run or create spike tests if
-  data schemas change.
+  then mirror in `docs/spec.md`. Re-run or create spike tests if data schemas change.
 - Adding a usage source or provider limit:
   - For usage: update `Source` in `packages/core`, adjust `usage_events` CHECK constraint in
     `packages/db`, implement parser in `packages/collectors`, integrate in `packages/reader`, add

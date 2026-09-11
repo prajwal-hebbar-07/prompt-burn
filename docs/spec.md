@@ -4,7 +4,6 @@ Local-only desktop + VS Code dashboard that reads OMP, Claude Code and Cursor to
 shows what it would have cost at public pay-as-you-go rates.
 
 - **What and why:** [product.md](product.md) — the full product document. Any conflict, it wins.
-- **Build sequence:** [implementation-plan.md](implementation-plan.md) — commit-by-commit plan.
 - **Field mappings:** [data-shapes.md](data-shapes.md) — real OMP / Cursor payloads plus Claude Code's line shape, with fixtures in [`fixtures/`](fixtures).
 
 This page is the short version to keep open while coding. It duplicates no reasoning.

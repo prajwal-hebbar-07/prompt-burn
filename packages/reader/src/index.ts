@@ -1,8 +1,8 @@
 /**
- * `UsageReader` — the interface both shells implement, frozen in
- * `docs/implementation-plan.md`. The desktop sidecar and the VS Code extension
- * host both call this one implementation, so there is a single set of
- * `@prompt-burn/db` + `@prompt-burn/collectors` calls behind both dashboards.
+ * `UsageReader` — the interface both shells implement. The desktop sidecar
+ * and the VS Code extension host both call this one implementation, so there is
+ * a single set of `@prompt-burn/db` + `@prompt-burn/collectors` calls behind both
+ * dashboards.
  *
  * Every source lands here: `fetch()` runs the parallel collector pass, and
  * `getSnapshot()` aggregates the stored transcript rows — OMP's and Claude

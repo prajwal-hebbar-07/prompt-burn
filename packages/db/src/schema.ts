@@ -10,7 +10,7 @@
  * database at all.
  *
  * Applied once, when `~/.prompt-burn/db.sqlite` is created. There is no
- * migration runner (docs/implementation-plan.md): the reset path is deleting
+ * migration runner: the reset path is deleting
  * the file. Any change here needs one until a second user has the old schema on
  * disk.
  */

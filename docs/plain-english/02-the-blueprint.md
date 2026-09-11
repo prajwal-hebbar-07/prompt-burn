@@ -11,13 +11,12 @@ completed: the foundation, the framing, the living spaces, the workbench extensi
 editor, the settings controls, and the shipping line that packages the finished software are all
 built, running, and released up through version 1.1.0.
 
-The five documents, in blueprint terms: `docs/product.md` says what the building is and why.
-`docs/implementation-plan.md` says how it gets built, step by step, across all phases and
-deliveries. `docs/spec.md` is the one-page crib sheet a builder keeps open while working — it
-repeats the locked decisions but none of the reasoning. `docs/release.md` is the packaging manual
-that explains how versions are bumped and how installers are created. And `docs/data-shapes.md`
-is the site survey: someone went and inspected real log files and website responses to confirm
-the measurements the drawings rely on.
+The four documents, in blueprint terms: `docs/product.md` says what the building is and why.
+`docs/spec.md` is the one-page crib sheet a builder keeps open while working — it repeats the
+locked decisions but none of the reasoning. `docs/release.md` is the packaging manual that
+explains how versions are bumped and how installers are created. And `docs/data-shapes.md` is
+the site survey: someone went and inspected real log files and website responses to confirm the
+measurements the drawings rely on.
 
 ## Where the build stands
 

@@ -4,7 +4,7 @@ Local dashboard for AI coding token usage. It answers: **if this usage had been 
 
 This is a personal tool. Dollar labels are for the owner's own comparison, not invoices. Nothing leaves the machine.
 
-**Related docs:** [implementation plan](implementation-plan.md) (how to build). Wireframes live in Paper (`prompt-burn` / `v0-wireframes`).
+**Related docs:** Wireframes live in Paper (`prompt-burn` / `v0-wireframes`).
 
 ---
 

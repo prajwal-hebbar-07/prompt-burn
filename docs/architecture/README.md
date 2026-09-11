@@ -62,6 +62,5 @@ Reading paths:
 | 09  | [Usage reader (packages/reader)](09-usage-reader.md)                 | [The switchboard](../plain-english/09-the-switchboard.md)   |
 | 10  | [VS Code extension (apps/vscode)](10-vscode-extension.md)           | [The workbench](../plain-english/10-the-workbench.md)       |
 
-Standalone documents (not pairs): [product.md](../product.md) ·
-[implementation-plan.md](../implementation-plan.md) · [spec.md](../spec.md) ·
+Standalone documents (not pairs): [product.md](../product.md) · [spec.md](../spec.md) ·
 [release.md](../release.md) · [data-shapes.md](../data-shapes.md).
