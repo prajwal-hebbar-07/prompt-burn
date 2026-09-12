@@ -49,7 +49,6 @@ it("keeps the agy toggle and conversations path across a reopen", () => {
   // The agy keys are their own: the Claude Code toggle is untouched.
   expect(settings.claudeEnabled).toBe(true);
   second.close();
-  db.close();
 });
 
 it("keeps the path and the toggles across a reopen", () => {
