@@ -1,17 +1,21 @@
 /**
- * Incremental transcript sync: session files on disk into `usage_events`.
+ * Incremental usage sync: what the agents left on disk into `usage_events`.
  *
- * Two collectors share it — OMP's transcripts and Claude Code's. They differ
+ * Three collectors share it — OMP's transcripts, Claude Code's, and the `agy`
+ * CLI's per-conversation SQLite databases. The two transcript sources differ
  * only in where they live, how one line parses and which `source` the rows
- * carry, so the walk, the resume bookkeeping and the transaction are written
- * once here.
+ * carry, so their walk, resume bookkeeping and transaction are written once in
+ * `syncTranscripts`. Antigravity needs its own walk (`.db` files, not
+ * `.jsonl`) but reuses the same statements, the same state table and the same
+ * transaction shape.
  *
- * `omp_sync_state` remembers each file's mtime and how many bytes we have
- * consumed, keyed by absolute path — so the two sources cannot collide in it
- * even though the table kept OMP's name. A file whose mtime and size still
- * match its row is not opened at all; that is what makes the second fetch
- * cheap. A grown file resumes at its offset; a shrunk or rewritten one
- * restarts from byte 0.
+ * `omp_sync_state` remembers each file's mtime and how much of it we have
+ * consumed, keyed by absolute path — so the sources cannot collide in it even
+ * though the table kept OMP's name. A file whose mtime and offset still match
+ * its row is not opened at all; that is what makes the second fetch cheap. A
+ * grown file resumes at its offset; a shrunk or rewritten one restarts from
+ * zero. `offset` is bytes consumed for a transcript and generations consumed
+ * for a conversation database — the same "next position" idea either way.
  *
  * Rows are keyed by the parser's stable `UsageEvent.id`, so re-reading the same
  * lines (a torn tail, a restart, a rewritten file) cannot duplicate them.
@@ -19,9 +23,15 @@
  */
 
 import { readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { Source, UsageEvent } from "@prompt-burn/core";
+import {
+  defaultAgyConversationsDirectory,
+  defaultAgySummariesPath,
+  readAgyProjects,
+  scanAgyConversationFile,
+} from "./antigravity-cli.js";
 import { defaultClaudeDirectory, scanClaudeSessionFile } from "./claude-code.js";
 import { defaultSessionsDirectory, scanOmpSessionFile } from "./omp.js";
 
@@ -74,6 +84,75 @@ export function syncClaudeSessions(
   directory: string = defaultClaudeDirectory(),
 ): OmpSyncResult {
   return syncTranscripts(db, directory, "claude-code", scanClaudeSessionFile);
+}
+
+/**
+ * Same, for the `agy` CLI's conversation databases — one SQLite file per
+ * conversation, each holding protobuf generation records rather than lines.
+ *
+ * The project comes from `conversation_summaries.db`, read once per sync
+ * because it covers every conversation. The skip test is mtime alone: the
+ * offset counts generations, not bytes, so it cannot be compared against a
+ * file size that also moves with SQLite's page allocation.
+ */
+export function syncAntigravityConversations(
+  db: DatabaseSync,
+  directory: string = defaultAgyConversationsDirectory(),
+  summariesPath: string = defaultAgySummariesPath(),
+): OmpSyncResult {
+  let entries;
+  try {
+    entries = readdirSync(directory, { recursive: true, withFileTypes: true });
+  } catch {
+    // `agy` has never run here, or the configured path is gone. Not an error.
+    return { scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 };
+  }
+
+  const projects = readAgyProjects(summariesPath);
+  const selectState = db.prepare("SELECT mtime, offset FROM omp_sync_state WHERE path = ?");
+  const insertEvent = db.prepare(INSERT_EVENT);
+  const upsertState = db.prepare(UPSERT_STATE);
+  const result: OmpSyncResult = { scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 };
+
+  db.exec("BEGIN");
+  try {
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".db")) continue;
+      const path = join(entry.parentPath, entry.name);
+
+      let mtime: number;
+      try {
+        mtime = Math.floor(statSync(path).mtimeMs);
+      } catch {
+        continue; // Deleted between the walk and the stat.
+      }
+
+      const state = selectState.get(path);
+      if (state && Number(state["mtime"]) === mtime) {
+        result.skippedFiles += 1;
+        continue;
+      }
+
+      // A database holding fewer generations than the offset claims was
+      // rebuilt; `scanAgyConversationFile` restarts it from zero itself.
+      const scan = scanAgyConversationFile(
+        path,
+        projects.get(basename(entry.name, ".db")),
+        Number(state?.["offset"] ?? 0),
+      );
+      result.scannedFiles += 1;
+      for (const event of scan.events) {
+        result.insertedEvents += insert(insertEvent, "antigravity", event);
+      }
+      upsertState.run(path, mtime, scan.offset);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return result;
 }
 
 function syncTranscripts(

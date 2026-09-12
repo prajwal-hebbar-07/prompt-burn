@@ -6,6 +6,15 @@ export {
   type AntigravityUnavailable,
 } from "./antigravity.js";
 export {
+  decodeProtobufFields,
+  defaultAgyConversationsDirectory,
+  defaultAgySummariesPath,
+  readAgyProjects,
+  scanAgyConversation,
+  scanAgyConversationFile,
+  type AgyConversationScan,
+} from "./antigravity-cli.js";
+export {
   defaultCursorStatePath,
   readCursorAuth,
   type CursorAuth,
@@ -34,4 +43,9 @@ export {
 } from "./omp.js";
 export { fetchOllamaLimits, readOllamaKey } from "./ollama.js";
 export { ompAgentDatabase, readOmpLimits } from "./omp-limits.js";
-export { syncClaudeSessions, syncOmpSessions, type OmpSyncResult } from "./sync.js";
+export {
+  syncAntigravityConversations,
+  syncClaudeSessions,
+  syncOmpSessions,
+  type OmpSyncResult,
+} from "./sync.js";

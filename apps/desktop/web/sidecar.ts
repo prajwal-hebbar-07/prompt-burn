@@ -31,6 +31,18 @@ export interface FetchResult {
     insertedEvents: number;
   };
   cursor: { ok: boolean; reason?: string; error?: string; models: number };
+  /**
+   * The `agy` CLI's own turns. A transcript sync like the two above, with a
+   * `reason` when it did not run — `disabled` for the Settings toggle.
+   */
+  antigravityUsage: {
+    ok: boolean;
+    reason?: string;
+    error?: string;
+    scannedFiles: number;
+    skippedFiles: number;
+    insertedEvents: number;
+  };
   /** Provider clocks only; a failure here never flips `ok`. */
   ollama: { ok: boolean; reason?: string; error?: string };
 }

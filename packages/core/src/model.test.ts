@@ -10,6 +10,16 @@ describe("canonicalModelId", () => {
     expect(canonicalModelId("claude-opus-5-thinking-high")).toBe(canonicalModelId("claude-opus-5"));
   });
 
+  it("collapses the agy CLI's tier-resolved Gemini id onto the base model", () => {
+    // `-tiered` is Antigravity's model *selection*, not one of Google's priced
+    // service tiers, so it must meet the `gemini-3.8-flash` rate rather than
+    // surface as an unpriced model of its own.
+    expect(canonicalModelId("gemini-3.8-flash-tiered")).toBe("gemini-3.8-flash");
+    expect(canonicalModelId("gemini-3.8-flash-tiered")).toBe(
+      canonicalModelId("gemini-3.8-flash"),
+    );
+  });
+
   it("leaves the rest of the observed Cursor set alone", () => {
     // Cursor-hosted: the prefix is never stripped, it may price differently.
     expect(canonicalModelId("cursor-grok-4.6-high")).toBe("cursor-grok-4.6-high");
@@ -29,10 +39,16 @@ describe("canonicalModelId", () => {
   it("keeps a bare suffix verbatim rather than emptying it", () => {
     expect(canonicalModelId("-thinking-high")).toBe("-thinking-high");
     expect(canonicalModelId("-high-fast")).toBe("-high-fast");
+    expect(canonicalModelId("-tiered")).toBe("-tiered");
   });
 
   it("is idempotent", () => {
-    for (const raw of ["claude-opus-5-thinking-high", "cursor-grok-4.6-high-fast", "default"]) {
+    for (const raw of [
+      "claude-opus-5-thinking-high",
+      "cursor-grok-4.6-high-fast",
+      "gemini-3.8-flash-tiered",
+      "default",
+    ]) {
       const once = canonicalModelId(raw);
       expect(canonicalModelId(once)).toBe(once);
     }

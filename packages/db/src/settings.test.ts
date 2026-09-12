@@ -31,7 +31,24 @@ it("defaults to every source on and no path override", () => {
     cursorEnabled: true,
     claudeEnabled: true,
     claudePath: "",
+    antigravityEnabled: true,
+    agyPath: "",
   });
+  db.close();
+});
+
+it("keeps the agy toggle and conversations path across a reopen", () => {
+  const first = openDatabase(databasePath(home));
+  writeSettings(first, { antigravityEnabled: false, agyPath: "/tmp/agy/conversations" });
+  first.close();
+
+  const second = openDatabase(databasePath(home));
+  const settings = readSettings(second);
+  expect(settings.antigravityEnabled).toBe(false);
+  expect(settings.agyPath).toBe("/tmp/agy/conversations");
+  // The agy keys are their own: the Claude Code toggle is untouched.
+  expect(settings.claudeEnabled).toBe(true);
+  second.close();
   db.close();
 });
 
@@ -47,6 +64,8 @@ it("keeps the path and the toggles across a reopen", () => {
     cursorEnabled: false,
     claudeEnabled: true,
     claudePath: "",
+    antigravityEnabled: true,
+    agyPath: "",
   });
   second.close();
 });
@@ -79,6 +98,8 @@ it("leaves keys the patch does not mention alone", () => {
     // Never written by any of the three patches, so still the default.
     claudeEnabled: true,
     claudePath: "/tmp/claude-projects",
+    antigravityEnabled: true,
+    agyPath: "",
   });
   db.close();
 });

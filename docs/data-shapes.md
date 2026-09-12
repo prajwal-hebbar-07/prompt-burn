@@ -12,6 +12,9 @@ A second OMP scan on 2026-09-04 added Gemini through Antigravity — see
 the Antigravity provider was unlinked from OMP and the standalone `agy` CLI installed, which
 moved its quota clocks off `usage_history` and onto a direct call — see
 [Antigravity quota](#antigravity-quota--v1internalretrieveuserquotasummary-2026-09-11).
+On 2026-09-12 the CLI's own per-conversation records were read for the first time, which is what
+finally gives its turns a price rather than only a quota clock — see
+[Antigravity CLI usage](#antigravity-cli-usage--conversationsdb-gen_metadata-2026-09-12).
 
 A Claude Code section was written on 2026-09-09 from the collector code and Anthropic's
 documented transcript format — **not** from a local transcript; see
@@ -258,6 +261,82 @@ Reading notes:
 
 Fixture: [`fixtures/antigravity-quota-summary.json`](fixtures/antigravity-quota-summary.json) —
 one real response, unaltered. It carries no credential.
+
+### Antigravity CLI usage — `conversations/*.db` `gen_metadata`, 2026-09-12
+
+The quota call above is a **clock, not cost**. Until this scan the standalone `agy` CLI's turns
+reached no price at all: OMP and Claude Code each write the transcripts Prompt Burn reads, `agy`
+writes neither, and the quota response answers in fractions rather than tokens — "Quota is
+consumed proportionally to the cost of the tokens" is as close as it comes to a number worth
+pricing. `agy` does keep its own local record, and that record has tokens in it.
+
+One SQLite database per conversation at
+`~/.gemini/antigravity-cli/conversations/<conversation-id>.db`, plus an index at
+`~/.gemini/antigravity-cli/conversation_summaries.db`. Both are opened **read-only with
+`immutable=1`** — `agy` may be holding them mid-write, the same reason Cursor's `state.vscdb` is
+opened that way.
+
+`gen_metadata (idx, data, size)` carries one row per model generation. `data` is an **unframed
+protobuf message and no descriptor for it ships anywhere**, so fields are named by dotted wire
+path: `1.4.2` means field 1 → field 4 → field 2.
+
+| Our field | Source | Example / evidence |
+|-----------|--------|--------------------|
+| `UsageEvent.id` | `agy:` + conversation id + `:` + `idx` | `agy:d2a5efbb-…:17` |
+| `rawModel` | `gen_metadata` `1.19` | `gemini-3.8-flash`, on 260 of 261 rows |
+| `tokens.input` | `gen_metadata` `1.4.2` | per-request prompt count; max seen 257,827 against the 256,000 window reported at `1.9.10.4` |
+| `tokens.output` | `gen_metadata` `1.4.3` | **`1.4.3 == 1.4.9 + 1.4.10` on 257/257 rows** — thinking plus emitted text, and Google prices thinking at the output rate |
+| `tokens.cacheRead` / `cacheWrite` | nothing in the record | `0` — see the caveat below |
+| `timestamp` | `steps.metadata` `1.1`, joined on `idx` | epoch **seconds**; step 0 → `2026-09-11T10:10:31`, matching `created_at` for the same `step_index` in `brain/<id>/.system_generated/logs/transcript.jsonl` |
+| `sessionId` | the database's file name | the conversation id |
+| `project` | `conversation_summaries.workspace_uris[0]` | `file:///Users/you/dev/repo` → `/Users/you/dev/repo` |
+
+Reading notes:
+
+- **`1.17.2.*` is a mirror of `1.4.*`.** Walk it as well and every token count doubles.
+- **`1.4.5` is unidentified, and unpriced.** It ranges 8,113–259,867 and *exceeds* `1.4.2` on
+  early rows, so it is not a subset of the prompt and therefore not cached input. Naming it would
+  be a guess, and a guess here is a wrong dollar figure.
+- **Cache is the honest gap.** No cached-token count could be identified, so input prices at the
+  full input rate. Where Google served part of a prompt from context cache this **over-estimates**
+  — the opposite direction to Ollama's peak-window under-estimate, and recorded for the same
+  reason.
+- Every `gen_metadata.idx` exists in `steps.idx` (zero missing across 49 databases), so the
+  timestamp join is total. A row that still resolves no timestamp is **skipped**, never given a
+  fake one: `period = 'event'` rows may not carry the empty string, by `CHECK`.
+- Rows stay keyed `(source, model)` like every other source. An `agy` turn and an
+  OMP-routed Gemini turn are two different turns in two different trees, so they are two rows and
+  never dedupe — the same rule that keeps OMP and Claude Code apart.
+- `1.19` carries the model id per generation, while the trajectory config at `3.28` carries an
+  effort variant (`gemini-3.8-flash-high`). The per-generation field is the one read.
+- **`agy` is not Gemini-only.** Raw ids across the 1,713 priceable generations:
+  `gemini-3.8-flash` 1,435, `gemini-3.8-flash-tiered` 103, `claude-sonnet-4-6` 119,
+  `claude-opus-4-6-thinking` 56. Antigravity serves a third-party pool beside Gemini, and the
+  CLI reports those models under the vendor's own ids.
+- **`-tiered` is model selection, not a price tier.** The shipped `agy` binary carries
+  `TieredModelConfig` with `GetFlash` / `GetFlashLite` / `GetPro` accessors, used for "subagent
+  model resolution", so the suffix says *how the model was chosen*, not which of Google's priced
+  service tiers (Standard / Batch / Flex / Priority) served it. Those rows also carry the same
+  `1.9.10.4` context window as the plain id — 256,000, against 160,000 on this account's Claude
+  rows. So `canonicalModelId` collapses `-tiered` onto `gemini-3.8-flash`: same model, same
+  rate, one row, and one row to close when the 2027-01-01 doubling lands.
+- **`-thinking` keeps its own price row**, as `claude-4.5-haiku-thinking` already does: the
+  suffix is a mode rather than a rate, and only ids actually observed are bundled. There is no
+  bare `claude-opus-4-6` row, because nothing has reported one.
+- **Rates, read 2026-09-12.** `claude-sonnet-4-6` $3 / $15 with $0.30 cache hits and $3.75
+  5-minute cache writes; `claude-opus-4-6-thinking` $5 / $25 with $0.50 and $6.25 — Anthropic's
+  published table, global routing, no Batch discount and no `inference_geo: "us"` 1.1x. Provider
+  is `anthropic`: the pool is Google's, the rate card is Anthropic's, and this app estimates
+  public PAYG cost rather than what a subscription pool bills.
+- **No fixture.** A conversation database is the user's own prompts and the model's replies.
+  Tests build synthetic databases with hand-encoded protobuf blobs; nothing from `~/.gemini` is
+  committed, redacted or otherwise.
+
+Scale on this machine, 2026-09-12: 49 conversation databases, **1,713 priceable generations,
+12,647,926 input and 1,454,502 output tokens**. With the 4.6 pair bundled and `-tiered`
+collapsed, **every row prices**: about **$20.01** total — $13.69 Gemini (including the tiered
+rows), $3.01 Sonnet 4.6, $3.31 thinking Opus 4.6. None of it was visible to the dashboard
+before this source existed.
 
 ### Ollama Cloud usage — `/api/usage`, 2026-09-05
 

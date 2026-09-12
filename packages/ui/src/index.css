@@ -3,10 +3,13 @@
 
 /*
  * Design tokens from Paper (`prompt-burn` / `v0-designs`). Amber is brand and
- * actions; teal is OMP; violet is Cursor. The semantic success/warning/error/
- * info colours are never source identity, and a source colour is always paired
- * with a text label wherever a source is shown. Provider-claude / antigravity /
- * ollama exist only for Usage-limits tiles and are not source identity.
+ * actions; teal is OMP; violet is Cursor; rose is the Antigravity CLI source.
+ * The semantic success/warning/error/info colours are never source identity,
+ * and a source colour is always paired with a text label wherever a source is
+ * shown. Provider-claude / antigravity / ollama exist only for Usage-limits
+ * tiles and are not source identity — `--color-source-antigravity` is the
+ * source one, deliberately a different hue from the provider blue so the
+ * Antigravity cost subtotal cannot be mistaken for the Antigravity quota card.
  *
  * These are the light values. Dark is one class — `.theme-dark` below rebinds
  * the same names, so no component carries a `dark:` variant.
@@ -28,9 +31,13 @@
   --color-source-omp-subtle: #f0fdfa;
   --color-source-cursor: #6d28d9;
   --color-source-cursor-subtle: #f5f3ff;
+  /* The standalone `agy` CLI's own priced turns, not Google's quota clocks. */
+  --color-source-antigravity: #be185d;
+  --color-source-antigravity-subtle: #fdf2f8;
   /* Usage-limits tiles, and — for `claude` alone — the Claude Code source
      identity, which reuses this terracotta rather than a token pair of its own.
-     OMP and Cursor keep their own teal/violet. */
+     OMP, Cursor and Antigravity keep their own source tokens; in particular
+     `provider-antigravity` is the quota tile's blue and never a source pill. */
   --color-provider-claude: #c15f3c;
   --color-provider-claude-subtle: #fdf0ea;
   --color-provider-antigravity: #2563eb;
@@ -155,6 +162,8 @@
   --color-source-omp-subtle: #102a27;
   --color-source-cursor: #a78bfa;
   --color-source-cursor-subtle: #241b3a;
+  --color-source-antigravity: #f472b6;
+  --color-source-antigravity-subtle: #331523;
   --color-provider-claude: #e7a88a;
   --color-provider-claude-subtle: #2a1c18;
   --color-provider-antigravity: #7aa2f7;

@@ -17,12 +17,21 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import type { CursorSnapshot, ProviderLimits } from "@prompt-burn/core";
+import {
+  defaultAgyConversationsDirectory,
+  defaultAgySummariesPath,
+} from "./antigravity-cli.js";
 import { fetchAntigravityLimits, readAntigravityAuth } from "./antigravity.js";
 import { readCursorAuth, type CursorAuthUnavailable } from "./cursor-auth.js";
 import { fetchCursorCycle } from "./cursor.js";
 import { fetchOllamaLimits, readOllamaKey } from "./ollama.js";
 import { ompAgentDatabase } from "./omp-limits.js";
-import { syncClaudeSessions, syncOmpSessions, type OmpSyncResult } from "./sync.js";
+import {
+  syncAntigravityConversations,
+  syncClaudeSessions,
+  syncOmpSessions,
+  type OmpSyncResult,
+} from "./sync.js";
 
 export interface CollectOptions {
   /** Prompt Burn's database — transcript rows land here; Cursor data never does. */
@@ -41,10 +50,19 @@ export interface CollectOptions {
    * reaches into the developer's own credentials.
    */
   antigravitySecret?: () => string;
+  /**
+   * The `agy` CLI's per-conversation records; default
+   * `~/.gemini/antigravity-cli/conversations`, with the workspace map beside
+   * it. Both injectable so a test never reads the developer's own `~/.gemini`.
+   */
+  agyConversationsDirectory?: string;
+  agySummariesPath?: string;
   /** Settings toggle. A disabled source is not read at all; default on. */
   ompEnabled?: boolean;
   cursorEnabled?: boolean;
   claudeEnabled?: boolean;
+  /** The `agy` CLI as a usage source — not the quota card, which has no toggle. */
+  antigravityUsageEnabled?: boolean;
 }
 
 export interface CollectResult {
@@ -112,6 +130,19 @@ export interface CollectResult {
     /** Present only when this pass fetched them. */
     limits?: ProviderLimits;
   };
+  /**
+   * The `agy` CLI's own turns, priced like any other transcript source. Kept
+   * apart from `antigravity` above, which is the quota card: one is cost, the
+   * other is a provider clock, and they fail independently.
+   */
+  antigravityUsage: {
+    ok: boolean;
+    /** `disabled` is the Settings toggle; `sync_failed` is a throw in the scan. */
+    reason?: "disabled" | "sync_failed";
+    error?: string;
+    /** Absent when the source is disabled or its sync threw. */
+    sync?: OmpSyncResult;
+  };
 }
 
 const NO_SYNC: OmpSyncResult = { scannedFiles: 0, skippedFiles: 0, insertedEvents: 0 };
@@ -125,9 +156,12 @@ export async function collectAllSources(options: CollectOptions): Promise<Collec
     cursorStatePath,
     fetchImpl,
     antigravitySecret,
+    agyConversationsDirectory,
+    agySummariesPath,
     ompEnabled = true,
     cursorEnabled = true,
     claudeEnabled = true,
+    antigravityUsageEnabled = true,
   } = options;
 
   // Both network calls start before the local syncs so their round trips
@@ -152,6 +186,14 @@ export async function collectAllSources(options: CollectOptions): Promise<Collec
   // untouched.
   const omp = sync(() => syncOmpSessions(db, ompDirectory), ompEnabled);
   const claudeCode = sync(() => syncClaudeSessions(db, claudeDirectory), claudeEnabled);
+  // The `agy` CLI's conversations. Its own result, its own failure mode: a
+  // throw here is one source's problem, never the pass's.
+  const antigravityUsage = collectAgyUsage(
+    db,
+    agyConversationsDirectory ?? defaultAgyConversationsDirectory(),
+    agySummariesPath ?? defaultAgySummariesPath(),
+    antigravityUsageEnabled,
+  );
 
   return {
     omp,
@@ -159,6 +201,7 @@ export async function collectAllSources(options: CollectOptions): Promise<Collec
     cursor: await cursor,
     ollama: await ollama,
     antigravity: await antigravity,
+    antigravityUsage,
   };
 }
 
@@ -169,6 +212,25 @@ function sync(run: () => OmpSyncResult, enabled: boolean): CollectResult["omp"] 
     return { ok: true, sync: run() };
   } catch (error) {
     return { ok: false, error: message(error), sync: NO_SYNC };
+  }
+}
+
+/**
+ * The `agy` sync as a result. Unlike the transcript syncs above it carries no
+ * zeroed counters when it did not run: `reason` says why, and the absent
+ * `sync` says nothing was scanned rather than claiming a clean empty pass.
+ */
+function collectAgyUsage(
+  db: DatabaseSync,
+  directory: string,
+  summariesPath: string,
+  enabled: boolean,
+): CollectResult["antigravityUsage"] {
+  if (!enabled) return { ok: false, reason: "disabled" };
+  try {
+    return { ok: true, sync: syncAntigravityConversations(db, directory, summariesPath) };
+  } catch (error) {
+    return { ok: false, reason: "sync_failed", error: message(error) };
   }
 }
 

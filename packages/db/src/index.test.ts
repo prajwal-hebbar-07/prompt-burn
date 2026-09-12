@@ -247,4 +247,83 @@ describe("openDatabase", () => {
     expect(third.prepare("SELECT COUNT(*) AS n FROM usage_events").get()?.["n"]).toBe(2);
     third.close();
   });
+
+  it("widens the source CHECK again for the agy CLI, keeping every row and index", () => {
+    const path = databasePath(fakeHome());
+    const first = openDatabase(path);
+    // Rewind to the three-source shape shipped before agy was a usage source.
+    first.exec(`
+      DROP TABLE usage_events;
+      CREATE TABLE usage_events (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL CHECK (source IN ('omp', 'cursor', 'claude-code')),
+        period TEXT NOT NULL CHECK (period IN ('event', 'cycle')),
+        timestamp TEXT NOT NULL, model TEXT NOT NULL, raw_model TEXT NOT NULL,
+        input INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0,
+        cache_read INTEGER NOT NULL DEFAULT 0, cache_write INTEGER NOT NULL DEFAULT 0,
+        session_id TEXT, project TEXT,
+        CHECK ((period = 'cycle') = (timestamp = '')));
+      CREATE INDEX usage_events_timestamp ON usage_events (timestamp);
+      CREATE INDEX usage_events_source_model ON usage_events (source, model);
+      CREATE INDEX usage_events_project ON usage_events (project);
+      INSERT INTO usage_events VALUES
+        ('claude-code:m:r', 'claude-code', 'event', '2026-09-04T09:00:00Z', 'm', 'm', 2, 105, 0, 0, 's1', '/w/api');
+      INSERT INTO omp_sync_state (path, mtime, offset) VALUES ('/w/api/a.jsonl', 1, 400);`);
+    // A file that stopped at 'claude-code' cannot hold an agy row at all.
+    expect(() =>
+      first.exec(
+        `INSERT INTO usage_events (id, source, period, timestamp, model, raw_model)
+         VALUES ('agy:c1:0', 'antigravity', 'event', '2026-09-11T10:10:31Z', 'gemini-3.8-flash', 'gemini-3.8-flash')`,
+      ),
+    ).toThrow();
+    first.close();
+
+    const second = openDatabase(path);
+    second.exec(
+      `INSERT INTO usage_events (id, source, period, timestamp, model, raw_model, project)
+       VALUES ('agy:c1:0', 'antigravity', 'event', '2026-09-11T10:10:31Z', 'gemini-3.8-flash', 'gemini-3.8-flash', '/w/dotfiles')`,
+    );
+    // The rebuild copies, it does not reset: the Claude Code row, its project
+    // and the sync state all survive, so no transcript is re-read for nothing.
+    expect(second.prepare("SELECT id, source, project FROM usage_events ORDER BY id").all()).toEqual(
+      [
+        { id: "agy:c1:0", source: "antigravity", project: "/w/dotfiles" },
+        { id: "claude-code:m:r", source: "claude-code", project: "/w/api" },
+      ],
+    );
+    expect(second.prepare("SELECT COUNT(*) AS n FROM omp_sync_state").get()?.["n"]).toBe(1);
+    const indexes = second
+      .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'usage_events'")
+      .all()
+      .map((row) => row["name"]);
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        "usage_events_timestamp",
+        "usage_events_source_model",
+        "usage_events_project",
+      ]),
+    );
+    // A source nobody collects is still rejected — the CHECK was widened, not
+    // dropped.
+    expect(() =>
+      second.exec(
+        `INSERT INTO usage_events (id, source, period, timestamp, model, raw_model)
+         VALUES ('x:1', 'copilot', 'event', '2026-09-11T10:10:31Z', 'm', 'm')`,
+      ),
+    ).toThrow();
+    // An index only this test creates: the rebuild drops the table, so it would
+    // not survive a second one. Its presence after the reopen below is the
+    // proof that the already-widened file is left alone.
+    second.exec("CREATE INDEX usage_events_probe ON usage_events (raw_model)");
+    second.close();
+
+    const third = openDatabase(path);
+    expect(third.prepare("SELECT COUNT(*) AS n FROM usage_events").get()?.["n"]).toBe(2);
+    expect(
+      third
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND name = 'usage_events_probe'")
+        .get()?.["name"],
+    ).toBe("usage_events_probe");
+    third.close();
+  });
 });

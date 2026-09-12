@@ -54,6 +54,8 @@ let root: string;
 let sessions: string;
 let claudeProjects: string;
 let statePath: string;
+let agyConversations: string;
+let agySummaries: string;
 let dbPath: string;
 let db: DatabaseSync;
 
@@ -106,6 +108,12 @@ beforeEach(() => {
     `${CLAUDE_LINE}\n`,
   );
 
+  // Injected and empty, for the reason the transcript directories are: the
+  // default reaches into the developer's own `~/.gemini`.
+  agyConversations = join(root, "agy-conversations");
+  mkdirSync(agyConversations, { recursive: true });
+  agySummaries = join(root, "conversation_summaries.db");
+
   statePath = join(root, "state.vscdb");
   const state = new DatabaseSync(statePath);
   state.exec("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)");
@@ -137,6 +145,8 @@ describe("collectAllSources", () => {
       cursorStatePath: statePath,
       fetchImpl: stubFetch(),
       antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
     });
 
     expect(result.omp).toEqual({
@@ -169,6 +179,8 @@ describe("collectAllSources", () => {
       cursorStatePath: join(root, "absent", "state.vscdb"),
       fetchImpl: stubFetch(),
       antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
     });
 
     expect(result.omp.ok).toBe(true);
@@ -185,6 +197,8 @@ describe("collectAllSources", () => {
       cursorStatePath: statePath,
       fetchImpl: stubFetch(500),
       antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
     });
 
     expect(result.omp.sync.insertedEvents).toBe(2);
@@ -205,6 +219,8 @@ describe("collectAllSources", () => {
       cursorStatePath: statePath,
       fetchImpl: stubFetch(),
       antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
     });
 
     expect(result.omp.ok).toBe(false);
@@ -244,6 +260,8 @@ describe("collectAllSources", () => {
         return new Response("{}");
       }) as unknown as typeof fetch,
       antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
     });
 
     expect(called).toBe(0);
@@ -260,6 +278,8 @@ describe("collectAllSources", () => {
       cursorStatePath: statePath,
       fetchImpl: stubFetch(),
       antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
       claudeEnabled: false,
     });
 
@@ -300,6 +320,8 @@ describe("collectAllSources", () => {
           ? new Response(QUOTA)
           : new Response(AGGREGATES)) as unknown as typeof fetch,
       antigravitySecret: secret,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
       ompEnabled: false,
     });
 
@@ -319,10 +341,81 @@ describe("collectAllSources", () => {
       cursorStatePath: statePath,
       fetchImpl: stubFetch(),
       antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
     });
 
     expect(result.antigravity).toMatchObject({ ok: false, reason: "signed_out" });
     expect(result.antigravity.limits).toBeUndefined();
     expect(result.omp.ok).toBe(true);
+  });
+
+  it("reads no agy conversation while the usage toggle is off", async () => {
+    const result = await collectAllSources({
+      db,
+      ompDirectory: sessions,
+      claudeDirectory: claudeProjects,
+      cursorStatePath: statePath,
+      fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
+      antigravityUsageEnabled: false,
+    });
+
+    // No scan at all, so no counters to report — and not an error either.
+    expect(result.antigravityUsage).toEqual({ ok: false, reason: "disabled" });
+    // The quota card is a different source with a different credential: the
+    // usage toggle does not reach it.
+    expect(result.antigravity).toMatchObject({ ok: false, reason: "signed_out" });
+    expect(result.omp.sync.insertedEvents).toBe(2);
+  });
+
+  it("walks the agy conversations directory it was pointed at", async () => {
+    // A file `agy` did not write: the walk counts it, the scan takes nothing
+    // out of it, and neither is a failure. Proof the directory was read at
+    // all — the conversation format itself is `antigravity-cli`'s own test.
+    writeFileSync(join(agyConversations, "d2a5efbb.db"), "not a database");
+
+    const result = await collectAllSources({
+      db,
+      ompDirectory: sessions,
+      claudeDirectory: claudeProjects,
+      cursorStatePath: statePath,
+      fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
+    });
+
+    expect(result.antigravityUsage).toEqual({
+      ok: true,
+      sync: { scannedFiles: 1, skippedFiles: 0, insertedEvents: 0 },
+    });
+  });
+
+  it("keeps every other source when the agy sync throws", async () => {
+    // A closed handle is the cheapest real sync failure: the scan's own
+    // `prepare` throws, and the pass must carry that as one source's result.
+    db.close();
+
+    const result = await collectAllSources({
+      db,
+      ompDirectory: sessions,
+      claudeDirectory: claudeProjects,
+      cursorStatePath: statePath,
+      fetchImpl: stubFetch(),
+      antigravitySecret: NO_AGY,
+      agyConversationsDirectory: agyConversations,
+      agySummariesPath: agySummaries,
+    });
+
+    expect(result.antigravityUsage).toMatchObject({ ok: false, reason: "sync_failed" });
+    expect(result.antigravityUsage.error).toEqual(expect.any(String));
+    expect(result.antigravityUsage.sync).toBeUndefined();
+    // The network sources never touched that handle, and answered anyway.
+    expect(result.cursor.ok).toBe(true);
+    expect(result.cursor.cycle).toBeDefined();
+    expect(result.antigravity).toMatchObject({ ok: false, reason: "signed_out" });
   });
 });

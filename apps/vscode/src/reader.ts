@@ -22,6 +22,8 @@ export interface HostReaderOptions {
   ompDirectory?: string;
   /** Claude Code projects directory. Injected by tests only. */
   claudeDirectory?: string;
+  /** `agy` conversations directory. Injected by tests only. */
+  agyDirectory?: string;
   /** Cursor `state.vscdb` path. Injected by tests only. */
   cursorStatePath?: string;
   /** HTTP for the Cursor pass. Injected by tests only. */

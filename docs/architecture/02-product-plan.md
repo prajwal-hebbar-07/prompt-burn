@@ -119,9 +119,10 @@ The product-facing surface of this area is the locked-decisions list, defined in
 The mixed-period contract is part of the public surface:
 - When Cursor answered for the window: `mixedPeriod: false`, grand total sums all sources, hero
   subtitle names the period (e.g. `Estimated total · Today`).
-- When Cursor could not answer: `mixedPeriod: true`, grand total covers OMP + Claude Code only,
-  Cursor cycle total is shown on its own subtotal row (`Cursor (cycle to date · not in total)`),
-  and hero subtitle states `OMP + Claude Code: Today · Cursor: cycle to date (not in total)`.
+- When Cursor could not answer: `mixedPeriod: true`, grand total covers OMP + Claude Code +
+  Antigravity only, Cursor cycle total is shown on its own subtotal row
+  (`Cursor (cycle to date · not in total)`),
+  and hero subtitle states `OMP + Claude Code + Antigravity: Today · Cursor: cycle to date (not in total)`.
 - All-time: `mixedPeriod: false`, Cursor cycle is counted in the total because scopes do not
   clash.
 - Empty Cursor window: returns 200 `{}` and is treated as zero usage (not cycle fallback), so

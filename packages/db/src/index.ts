@@ -50,7 +50,7 @@ export function databasePath(home: string = homedir()): string {
  * Opens the database, creating the directory, the file and the schema on first
  * run, topping up the bundled prices, and running the two additive migrations
  * an older file needs: `usage_events.project`, and a `source` CHECK that
- * admits `'claude-code'`.
+ * admits `'claude-code'` and `'antigravity'`.
  *
  * There is still no migration runner. Both migrations are idempotent and
  * lossless: the column one keeps every row and gains a NULL project, and
@@ -85,26 +85,33 @@ function addProjectColumn(db: DatabaseSync): void {
 }
 
 /**
- * Lets a database created before Claude Code was a source store its rows.
+ * Lets a database created before Claude Code or the Antigravity CLI were
+ * sources store their rows.
  *
  * SQLite cannot alter a CHECK constraint, so this is the documented rebuild:
  * new table, copy, drop, rename, indexes back — in one transaction, with
- * foreign keys off (there are none, but the rebuild recipe requires it). No-op
- * once the stored DDL already names `claude-code`, so it costs one
- * `sqlite_schema` read per open after the first.
+ * foreign keys off (there are none, but the rebuild recipe requires it). It has
+ * run twice now: once widening `('omp', 'cursor')` to admit `'claude-code'`,
+ * and now widening either of those to the four-source list that also admits
+ * `'antigravity'`. The guard tests for the newest source, so a file that
+ * stopped at the three-source CHECK is still rebuilt. No-op once the stored DDL
+ * names `antigravity`, so it costs one `sqlite_schema` read per open after that.
+ *
+ * The CHECK below is the same text as the one in `schema.ts`; a fifth source
+ * means editing both.
  */
 function widenSourceCheck(db: DatabaseSync): void {
   const ddl = db
     .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'usage_events'")
     .get() as { sql?: string } | undefined;
-  if (ddl?.sql === undefined || ddl.sql.includes("claude-code")) return;
+  if (ddl?.sql === undefined || ddl.sql.includes("antigravity")) return;
 
   db.exec(`
     PRAGMA foreign_keys = OFF;
     BEGIN;
     CREATE TABLE usage_events_new (
       id          TEXT PRIMARY KEY,
-      source      TEXT NOT NULL CHECK (source IN ('omp', 'cursor', 'claude-code')),
+      source      TEXT NOT NULL CHECK (source IN ('omp', 'cursor', 'claude-code', 'antigravity')),
       period      TEXT NOT NULL CHECK (period IN ('event', 'cycle')),
       timestamp   TEXT NOT NULL,
       model       TEXT NOT NULL,

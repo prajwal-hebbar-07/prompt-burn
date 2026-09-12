@@ -101,12 +101,12 @@ formatting utilities. The stylesheet `@prompt-burn/ui/index.css` is exported sep
 - `fetchedAgoLabel(iso, now)`: Relative timestamp formatting (`"Fetched just now"`,
   `"Fetched N min ago"`).
 - `emptyStateMessage(snapshot)`: Determines whether an empty period means `"No usage data yet"` or
-  `"No OMP, Claude Code or Cursor usage for this period"`.
+  `"No OMP, Claude Code, Antigravity or Cursor usage for this period"`.
 - `formatEstimatedTotal(snapshot)`: Returns exact total, approximate floor (`≈$X.XX`), or em
   dash (`—`).
 - `heroSubtitle(snapshot)`: Constructs scoped subtitle, explicitly distinguishing mixed periods.
 - `pricedSubtotal(rows, source?)`: Sums priced rows and tallies unpriced models (`PricedSubtotal`).
-- `sourceShares(snapshot, omp, claudeCode, cursor)`: Computes percentage widths for split meter.
+- `sourceShares(snapshot, omp, claudeCode, antigravity, cursor)`: Computes percentage widths for split meter.
 - `fetchErrorMessage(pass)`: Synthesizes user-facing error strings naming failed and OK sources.
 - `formatCents(cents)`: Formats fractional cents as USD (`"$12.35"`).
 - `formatCost(cents)`: Formats cents or returns `"—"` if null (`UNKNOWN_COST`).
@@ -318,7 +318,7 @@ The package includes 10 test files executed via Vitest:
 
 - **Adding a new data source:**
   1. Add color tokens in `src/index.css` (both `@theme` and `.theme-dark`).
-  2. Add the source pill definition in `src/ModelTable.tsx` (`PILLS`).
+  2. Add the source pill definition in `src/ModelTable.tsx` (`SOURCE_PILLS`).
   3. If the source produces timestamped events, append it to `TIMESTAMPED` in `src/Dashboard.tsx`.
   4. Add source controls, path overrides, and health status indicators in `src/Settings.tsx`,
      updating `SourceSettings`.

@@ -35,11 +35,21 @@ function claudeEvent(id: string, model: string, project?: string): UsageEvent {
   return { ...event(id, model, project), source: "claude-code" };
 }
 
-const snapshot = (events: UsageEvent[], claudeEvents: UsageEvent[] = []) =>
+/** The same shape again, from an `agy` conversation's workspace path. */
+function agyEvent(id: string, model: string, project?: string): UsageEvent {
+  return { ...event(id, model, project), source: "antigravity" };
+}
+
+const snapshot = (
+  events: UsageEvent[],
+  claudeEvents: UsageEvent[] = [],
+  antigravityEvents: UsageEvent[] = [],
+) =>
   buildDashboardSnapshot({
     period: { kind: "all_time" },
     ompEvents: events,
     claudeEvents,
+    antigravityEvents,
     cursor: CURSOR,
     priceCents: (_model, tokens) => tokens.output,
   });
@@ -147,15 +157,40 @@ describe("Projects", () => {
       cli.querySelector('[data-testid="model-row-claude-code-claude-opus-5"]'),
     ).not.toBeNull();
     expect(screen.getByTestId("projects-note").textContent).toContain(
-      "Projects are OMP and Claude Code working directories",
+      "Projects are OMP, Claude Code and Antigravity working directories",
     );
   });
 
-  it("says so when the period holds no OMP or Claude Code usage at all", () => {
+  it("attributes an agy conversation to its workspace, pill and all", () => {
+    render(
+      <Projects
+        snapshot={snapshot(
+          [event("1", "claude-opus-5", "/w/api")],
+          [],
+          [agyEvent("2", "gemini-3.8-flash", "/w/agy")],
+        )}
+      />,
+    );
+
+    const card = screen.getByTestId("project-/w/agy");
+    expect(
+      card.querySelector('[data-testid="model-row-antigravity-gemini-3.8-flash"]'),
+    ).not.toBeNull();
+    // Colour with wording, and the source token — never the quota tile's blue.
+    expect(card.textContent).toContain("Antigravity");
+    expect(card.innerHTML).toContain("text-source-antigravity");
+    expect(card.innerHTML).not.toContain("provider-antigravity");
+    // Cursor's absence is still explained, unchanged.
+    expect(screen.getByTestId("projects-note").textContent).toContain(
+      "Cursor reports none, so it is not here",
+    );
+  });
+
+  it("says so when the period holds no attributable usage at all", () => {
     render(<Projects snapshot={snapshot([])} />);
 
     expect(screen.getByTestId("projects-empty").textContent).toBe(
-      "No OMP or Claude Code usage for this period, so there is nothing to break down by project",
+      "No OMP, Claude Code or Antigravity usage for this period, so there is nothing to break down by project",
     );
   });
 });

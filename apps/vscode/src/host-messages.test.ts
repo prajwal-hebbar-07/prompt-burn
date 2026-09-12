@@ -17,6 +17,8 @@ const STORED: AppSettings = {
   cursorEnabled: false,
   claudeEnabled: true,
   claudePath: "/tmp/claude-projects",
+  antigravityEnabled: true,
+  agyPath: "/tmp/agy-conversations",
 };
 
 function stubReader() {

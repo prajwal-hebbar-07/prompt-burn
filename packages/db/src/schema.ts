@@ -19,7 +19,10 @@ export const SCHEMA_SQL = `
 -- new or corrected rate re-prices history without rewriting a single row.
 CREATE TABLE usage_events (
   id          TEXT PRIMARY KEY,
-  source      TEXT NOT NULL CHECK (source IN ('omp', 'cursor', 'claude-code')),
+  -- The four usage sources: OMP, Cursor, the Claude Code CLI, and the
+  -- standalone Antigravity CLI (agy). Widening this list means editing it here
+  -- *and* in the rebuild DDL in index.ts — SQLite cannot alter a CHECK.
+  source      TEXT NOT NULL CHECK (source IN ('omp', 'cursor', 'claude-code', 'antigravity')),
   -- 'event' rows are timestamped and obey calendar filters. 'cycle' rows are
   -- Cursor Pro aggregates: real tokens, no timestamp, never split into days.
   period      TEXT NOT NULL CHECK (period IN ('event', 'cycle')),
@@ -32,7 +35,7 @@ CREATE TABLE usage_events (
   cache_read  INTEGER NOT NULL DEFAULT 0,
   cache_write INTEGER NOT NULL DEFAULT 0,
   session_id  TEXT,
-  -- Absolute cwd of the OMP / Claude Code session; NULL for sources with none.
+  -- Absolute cwd of the OMP / Claude Code / agy session; NULL for the rest.
   project     TEXT,
   CHECK ((period = 'cycle') = (timestamp = ''))
 );
@@ -59,10 +62,10 @@ CREATE TABLE price_entries (
 
 CREATE INDEX price_entries_model ON price_entries (model, effective_from);
 
--- Incremental transcript sync — OMP's and Claude Code's, keyed by absolute
--- path, so the two never collide. Skip a file whose mtime and size are
--- unchanged. Named before Claude Code was a source; renaming it would cost a
--- migration that buys nothing.
+-- Incremental transcript sync — OMP's, Claude Code's and agy's, keyed by
+-- absolute path, so the three never collide. Skip a file whose mtime and size
+-- are unchanged. Named before Claude Code was a source; renaming it would cost
+-- a migration that buys nothing.
 CREATE TABLE omp_sync_state (
   path   TEXT PRIMARY KEY,
   mtime  INTEGER NOT NULL,

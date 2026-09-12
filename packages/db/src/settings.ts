@@ -25,6 +25,13 @@ export interface AppSettings {
    */
   claudeEnabled: boolean;
   claudePath: string;
+  /**
+   * The standalone Antigravity CLI (`agy`), whose per-conversation SQLite
+   * databases are a usage source of their own — separate from the Antigravity
+   * limits clocks. The path overrides the conversations directory.
+   */
+  antigravityEnabled: boolean;
+  agyPath: string;
 }
 
 /** Every source on, no path override — what the Settings screen shows today. */
@@ -34,6 +41,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cursorEnabled: true,
   claudeEnabled: true,
   claudePath: "",
+  antigravityEnabled: true,
+  agyPath: "",
 };
 
 const KEYS = {
@@ -42,6 +51,8 @@ const KEYS = {
   cursorEnabled: "cursor_enabled",
   claudeEnabled: "claude_enabled",
   claudePath: "claude_path",
+  antigravityEnabled: "antigravity_enabled",
+  agyPath: "agy_path",
 } as const satisfies Record<keyof AppSettings, string>;
 
 /** Stored settings, with a default for every key nobody has written yet. */
@@ -58,6 +69,11 @@ export function readSettings(db: DatabaseSync): AppSettings {
     cursorEnabled: readBoolean(stored.get(KEYS.cursorEnabled), DEFAULT_SETTINGS.cursorEnabled),
     claudeEnabled: readBoolean(stored.get(KEYS.claudeEnabled), DEFAULT_SETTINGS.claudeEnabled),
     claudePath: stored.get(KEYS.claudePath) ?? DEFAULT_SETTINGS.claudePath,
+    antigravityEnabled: readBoolean(
+      stored.get(KEYS.antigravityEnabled),
+      DEFAULT_SETTINGS.antigravityEnabled,
+    ),
+    agyPath: stored.get(KEYS.agyPath) ?? DEFAULT_SETTINGS.agyPath,
   };
 }
 

@@ -1,7 +1,7 @@
 /**
- * The Projects route: every OMP or Claude Code working directory that burned
- * tokens in the selected period, biggest spender first, each with the models it
- * used.
+ * The Projects route: every OMP, Claude Code or Antigravity working directory
+ * that burned tokens in the selected period, biggest spender first, each with
+ * the models it used.
  *
  * Designed for visual clarity:
  * - An SVG Donut / Ring chart at the top shows macro spend distribution across
@@ -13,22 +13,25 @@
  *
  * Cursor reports no working directory at all — a cycle-to-date aggregate
  * belongs to no directory — so it is absent here by construction; the callout
- * states that out loud.
+ * states that out loud. The `agy` CLI does record one (its conversation summary
+ * carries the workspace path), so Antigravity rows are attributed like OMP's
+ * and Claude Code's, each chip carrying its source pill.
  */
 
 import type { DashboardSnapshot, ProjectUsage } from "@prompt-burn/core";
 import { formatCost, formatTokens } from "./format.js";
+import { SOURCE_PILLS } from "./ModelTable.js";
 
 /** Usage from a transcript that carried no `cwd` — real work, no owner. */
 export const UNATTRIBUTED = "No project";
 
 /** Nothing attributed yet: no timestamped events, or none in this period. */
 const NO_PROJECTS =
-  "No OMP or Claude Code usage for this period, so there is nothing to break down by project";
+  "No OMP, Claude Code or Antigravity usage for this period, so there is nothing to break down by project";
 
 /** Cursor cannot appear on this screen, and the screen has to admit it. */
 const CURSOR_NOTE =
-  "Projects are OMP and Claude Code working directories · Cursor reports none, so it is not here";
+  "Projects are OMP, Claude Code and Antigravity working directories · Cursor reports none, so it is not here";
 
 /** Color sequence for charts and indicators. */
 export const CHART_PALETTE = [
@@ -285,7 +288,7 @@ function ProjectCard({ usage, all }: ProjectCardProps) {
           {modelSegments.map((seg) => (
             <div
               key={`${seg.source}:${seg.model}`}
-              title={`${seg.model}: ${seg.share.toFixed(1)}% (${formatCost(seg.cents)})`}
+              title={`${SOURCE_PILLS[seg.source].label} · ${seg.model}: ${seg.share.toFixed(1)}% (${formatCost(seg.cents)})`}
               className={`relative flex h-full items-center justify-center overflow-hidden rounded-sm px-1.5 text-table font-semibold text-white transition-all ${seg.palette.bg}`}
               style={{ width: `${Math.max(seg.share, 1.5)}%` }}
             >
@@ -312,6 +315,14 @@ function ProjectCard({ usage, all }: ProjectCardProps) {
                 <span className={`size-2 shrink-0 rounded-full ${seg.palette.bg}`} aria-hidden="true" />
                 <span className="truncate font-mono text-small font-semibold text-foreground">
                   {seg.model}
+                </span>
+                {/* Which tool spent it: colour and wording from the shared
+                    source map, so Antigravity reads the same here as in the
+                    by-model board. */}
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-table font-medium ${SOURCE_PILLS[seg.source].className}`}
+                >
+                  {SOURCE_PILLS[seg.source].label}
                 </span>
               </div>
               <span className="font-mono text-small font-semibold tabular-nums text-brand">

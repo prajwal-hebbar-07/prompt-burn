@@ -40,7 +40,7 @@ Single entry point: `@prompt-burn/core` → `packages/core/src/index.ts` (both `
 Types (all exported from `index.ts`):
 
 ```ts
-type Source = "omp" | "cursor" | "claude-code";
+type Source = "omp" | "cursor" | "claude-code" | "antigravity";
 
 interface TokenCounts {
   input: number;
@@ -241,9 +241,10 @@ Four processing steps inside the package:
 2. **Model normalization** (`model.ts`). `canonicalModelId` runs two normalization stages:
    first, Anthropic dated snapshot suffixes matching `-\d{8}$` (e.g. `claude-sonnet-4-5-20250929`
    written by Claude Code) are stripped to match OMP and price catalog ids; second, named
-   effort/speed suffixes (`-thinking-high` → `""`, `-high-fast` → `"-high"`) are collapsed. A
-   bare date or bare suffix with no base model is preserved verbatim. Unknown strings, OMP ids,
-   the `cursor-` prefix, and `default` (Auto) pass through unchanged.
+   effort/speed/tier-resolution suffixes (`-thinking-high` → `""`, `-high-fast` → `"-high"`,
+   `-tiered` → `""`) are collapsed. A bare date or bare suffix with no base model is preserved
+   verbatim. Unknown strings, OMP ids, the `cursor-` prefix, and `default` (Auto) pass through
+   unchanged.
 3. **Per-source rollups and pricing** (`aggregate.ts`). `partsOf` wraps events into priced parts
    retaining `timestamp` and optional `project`. `rollup` groups parts by `${source}\0${model}`,
    sums tokens, and queries the host-supplied `priceCents(model, tokens, timestamp)`. Events price
@@ -341,9 +342,9 @@ configuration exist and both are about _tests_, not runtime:
   `today` spanning local midnights and rolling into the new year; `range` handling `start === end`
   as a single day, inclusive end day conversion, and non-`YYYY-MM-DD` rejection with `RangeError`;
   `all_time` passing all events through regardless of timestamp.
-- **`model.test.ts`** (5 tests) — collapsing named suffixes (`-thinking-high`, `-high-fast`);
-  leaving untouched Cursor-hosted prefixes, `-medium`, and `default` (Auto); passing through OMP
-  ids and unknown strings; preserving bare suffixes verbatim; idempotence.
+- **`model.test.ts`** (6 tests) — collapsing named suffixes (`-thinking-high`, `-high-fast`,
+  `-tiered`); leaving untouched Cursor-hosted prefixes, `-medium`, and `default` (Auto); passing
+  through OMP ids and unknown strings; preserving bare suffixes verbatim; idempotence.
 - **`aggregate.test.ts`** (19 tests) — with fixed injected `now` (2 Sep 2026, 18:00 IST):
   - Cycle aggregates: OMP period filtering while Cursor cycle remains identical; combining
     subtotals without deduplication; `mixedPeriod` flag across periods with `cycleLabel`;
@@ -397,7 +398,7 @@ configuration exist and both are about _tests_, not runtime:
 
 ## 10. Change guide
 
-- **Adding a usage source:** extend `Source` (`"omp" | "cursor" | "claude-code"`), update
+- **Adding a usage source:** extend `Source` (`"omp" | "cursor" | "claude-code" | "antigravity"`), update
   `DashboardSnapshot` subtotals, update `SnapshotInput` to accept events/snapshots, update
   `enabled` defaults, and incorporate the source into `rollup` and `models` concatenation.
 - **Adding a period kind:** extend `PeriodFilter`, add a branch to `periodBounds`'s switch, and

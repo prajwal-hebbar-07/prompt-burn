@@ -21,14 +21,14 @@ This page is the short version to keep open while coding. It duplicates no reaso
 | Cursor Pro | Per-model aggregates, never events. Calendar filters **do** apply: the dashboard API narrows them with `startDate` / `endDate`, so Today / This month / Date range ask Cursor for that window. All time cannot be asked (Cursor refuses a window spanning its own backend boundaries) and shows the billing cycle, labelled **"Cycle to date"**. |
 | Cursor Enterprise | Optional `crsr_` admin key unlocks per-event timestamps and calendar filters. Not implemented — leave the type union open. |
 | Filters | Today, This month (calendar month, not rolling 30 days), All time, Date range (single day = same start and end). Device timezone. Inclusive end day in UI; exclusive next-day 00:00 in code. |
-| Combined total | Always shown. Every **switched-on** source keeps its own subtotal row, even at zero; a source switched off in Settings has no row, no meter segment and no events at all — `DashboardSnapshot.enabled` carries the toggles to the UI. No dedupe across OMP + Claude Code + Cursor. |
+| Combined total | Always shown. Every **switched-on** source keeps its own subtotal row, even at zero; a source switched off in Settings has no row, no meter segment and no events at all — `DashboardSnapshot.enabled` carries the toggles to the UI. No dedupe across OMP + Claude Code + Antigravity + Cursor. |
 | By-model table | Rows keyed by `(source, model)`. The same model on two sources is deliberately two rows. |
 | Usage limits | Provider clocks, quoted: Claude's 5-hour / 7-day per account from OMP's `usage_history` (the account clock — Anthropic has already counted Claude Code's turns in it), Ollama Cloud's session / weekly from the undocumented `GET ollama.com/api/usage`, Antigravity's two pools from the undocumented `POST cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` against `agy`'s own keychain session, Cursor's included-pool percentages from `/api/usage-summary`. Never priced, never period-filtered, never summed with anything, never per-tool. A provider that has not answered has no card; an Ollama or Antigravity failure never fails the fetch. |
 | Fetch | On open + manual button. No background timers. Spinner while fetching; **keep previous data**. Relative "Fetched N min ago". On error: keep old data + banner. |
 | Persistence | SQLite at `~/.prompt-burn/db.sqlite`. Outside install dirs so updates/reinstalls keep data. |
 | Prices | Usage stores tokens only. Cost is derived from `price_entries` with `effective_from` / `effective_until`. Adding a price retroactively prices old events. Ship bundled Claude + Ollama Cloud + Google Gemini rates. Unknown models surface in Settings. |
 | Transcript cache | Incremental sync keyed on session-file mtime / offset, in `omp_sync_state`. One table for both transcript sources, keyed by absolute path — the name predates Claude Code and is kept rather than migrated. |
-| Settings keys | `omp_enabled` / `omp_path`, `cursor_enabled`, `claude_enabled` / `claude_path` in the `settings` table; an empty path means the collector default. Switching a source off hides it from the dashboard as well as skipping its sync — stored rows stay in the database and come back when it is switched on. |
+| Settings keys | `omp_enabled` / `omp_path`, `cursor_enabled`, `claude_enabled` / `claude_path`, `antigravity_enabled` / `agy_path` in the `settings` table; an empty path means the collector default. Switching a source off hides it from the dashboard as well as skipping its sync — stored rows stay in the database and come back when it is switched on. |
 | VS Code | Opens as an **editor tab** (full width), not a sidebar. |
 | Trust | Local only. Never persist Cursor auth tokens in our DB. |
 
@@ -42,15 +42,20 @@ This page is the short version to keep open while coding. It duplicates no reaso
 > so those turns price like any other model. Seeds apply on database create only: an existing
 > `db.sqlite` needs a delete, or a Settings insert, to pick the row up.
 
-> **Antigravity's *limits* are a fourth fetch, its usage is not.** Unlinking the provider from
-> OMP stops `usage_history` gaining `google-antigravity` rows, so the clocks come straight from
-> Google — see
+> **Antigravity is two things: a limits fetch, and now a usage source too.** Unlinking the
+> provider from OMP stops `usage_history` gaining `google-antigravity` rows, so the clocks come
+> straight from Google — see
 > [data-shapes.md § Antigravity quota](data-shapes.md#antigravity-quota--v1internalretrieveuserquotasummary-2026-09-11).
 > The credential is `agy`'s keychain item, so the card survives OMP being switched off, and a
 > fetched card replaces any `usage_history` rows for the same provider. The quota is
-> account-level, so it already counts whatever the standalone CLI burned. Those CLI **turns**
-> are still not a usage source: they live in `~/.gemini/antigravity-cli/conversations/*.db`,
-> are not read, and so are missing from the cost estimate.
+> account-level, so it already counts whatever the standalone CLI burned — which is precisely why
+> it is a clock and never a cost. Those CLI **turns** are now their own source, `antigravity`,
+> read from the per-conversation SQLite databases under
+> `~/.gemini/antigravity-cli/conversations/*.db` — see
+> [data-shapes.md § Antigravity CLI usage](data-shapes.md#antigravity-cli-usage--conversationsdb-gen_metadata-2026-09-12).
+> Its input prices at the full input rate because no cached-token count is exposed anywhere in
+> that record, so this one source **over-estimates** wherever Google served part of a prompt
+> from context cache. That bias is recorded, not silent.
 
 ## Double counting: OMP, Claude Code, and the limit cards
 
@@ -83,14 +88,16 @@ on hand is the billing cycle. Then:
 - OMP total = filtered
 - Claude Code total = filtered, exactly like OMP's — its events are timestamped, so it is never
   the source of a mixed period
+- Antigravity CLI total = filtered for the same reason: every `agy` generation carries a real
+  timestamp, joined from its conversation's `steps` row
 - Cursor total = cycle-to-date, **unchanged** — never shrunk to the period
-- Grand total = OMP + Claude Code, both filtered, **only**. A 30-day cycle is not part of one
-  day's cost, so it is excluded rather than added, and its unpriced rows cannot blank the
-  number either
+- Grand total = OMP + Claude Code + Antigravity, all filtered, **only**. A 30-day cycle is not
+  part of one day's cost, so it is excluded rather than added, and its unpriced rows cannot
+  blank the number either
 - Cursor's cycle figure stays on its own subtotal row, labelled `Cursor (cycle to date · not in
   total)`
 - The hero **must** name both scopes and say which one the number is, e.g.
-  `OMP + Claude Code: Today · Cursor: cycle to date (not in total)`
+  `OMP + Claude Code + Antigravity: Today · Cursor: cycle to date (not in total)`
 
 All time is the one period where a cycle total is counted: the scopes do not clash there, so
 `mixedPeriod` is false and Cursor is in the sum.

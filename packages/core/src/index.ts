@@ -11,10 +11,11 @@ export { canonicalModelId } from "./model.js";
 export { buildDashboardSnapshot, CURSOR_CYCLE_LABEL, type SnapshotInput } from "./aggregate.js";
 
 /**
- * Usage origin. Rows are never deduped across sources: OMP, Cursor and Claude
- * Code keep separate transcripts, so the same model on two of them is two rows.
+ * Usage origin. Rows are never deduped across sources: OMP, Cursor, Claude
+ * Code and the standalone `agy` CLI keep separate transcripts, so the same
+ * model on two of them is two rows.
  */
-export type Source = "omp" | "cursor" | "claude-code";
+export type Source = "omp" | "cursor" | "claude-code" | "antigravity";
 
 /**
  * Token counts for one event or aggregate. Cache keys are optional because the
@@ -65,9 +66,10 @@ export interface ModelAggregate {
 }
 
 /**
- * One project's OMP usage for the selected period: its models, its tokens and
- * its estimate. A project is an OMP working directory (`cwd` off the session
- * header); `null` is the bucket for transcripts that named none.
+ * One project's usage for the selected period: its models, its tokens and its
+ * estimate. A project is a working directory — OMP's and Claude Code's `cwd`,
+ * the workspace an `agy` conversation ran in; `null` is the bucket for
+ * transcripts that named none.
  *
  * Cursor never appears here — its cycle totals carry no directory.
  */
@@ -75,7 +77,7 @@ export interface ProjectUsage {
   project: string | null;
   tokens: TokenCounts;
   estimatedCents: number | null;
-  /** Same row shape as `DashboardSnapshot.models`, always `source: "omp"`. */
+  /** Same row shape as `DashboardSnapshot.models`, keyed by `(source, model)`. */
   models: Array<ModelAggregate & { source: Source; estimatedCents: number | null }>;
 }
 
@@ -228,6 +230,18 @@ export interface DashboardSnapshot {
    * Zeroed, and off the screen, while `enabled["claude-code"]` is false.
    */
   claudeCode: SourceTotals;
+  /**
+   * The standalone `agy` CLI's own turns, priced from the per-conversation
+   * records it writes under `~/.gemini/antigravity-cli`. Its own subtotal
+   * because it is its own tool: an OMP-routed Gemini turn and an `agy` turn
+   * are different turns in different trees, and neither is deduped against
+   * the other. Zeroed, and off the screen, while `enabled.antigravity` is
+   * false.
+   *
+   * Not the Antigravity **quota card** in `limits`: that is Google's own
+   * clock on a subscription window and is never cost. This is cost.
+   */
+  antigravity: SourceTotals;
   cursor: SourceTotals & {
     mode: CursorSnapshot["mode"];
     /**

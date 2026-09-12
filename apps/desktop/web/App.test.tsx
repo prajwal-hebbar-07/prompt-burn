@@ -85,6 +85,8 @@ beforeEach(() => {
       cursorEnabled: true,
       claudeEnabled: true,
       claudePath: "~/.claude/projects/",
+      antigravityEnabled: true,
+      agyPath: "~/.gemini/antigravity-cli/conversations/",
     },
     prices: [],
   };
@@ -334,6 +336,8 @@ it("loads the stored settings, saves edits, and re-prices without fetching", asy
     cursorEnabled: false,
     claudeEnabled: false,
     claudePath: "/stored/claude",
+    antigravityEnabled: true,
+    agyPath: "/stored/agy",
   };
   sidecar.snapshot = snapshotWithUnpriced("mystery-model");
   render(<App />);
@@ -361,6 +365,8 @@ it("loads the stored settings, saves edits, and re-prices without fetching", asy
       cursorEnabled: false,
       claudeEnabled: false,
       claudePath: "/stored/claude",
+      antigravityEnabled: true,
+      agyPath: "/stored/agy",
     }),
   );
 

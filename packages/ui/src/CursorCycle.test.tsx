@@ -146,7 +146,7 @@ describe("the empty bodies", () => {
     );
 
     expect(screen.getByTestId("empty-state").textContent).toBe(
-      "No OMP, Claude Code or Cursor usage for this period",
+      "No OMP, Claude Code, Antigravity or Cursor usage for this period",
     );
     expect(screen.getByTestId("estimated-total").textContent).toBe("$0.00");
   });

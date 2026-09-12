@@ -1,8 +1,9 @@
 /**
- * `createUsageReader` over every source, in-process and offline: injected OMP
- * and Claude Code directories, injected synthetic `state.vscdb`, injected
- * `fetch` serving the spike fixtures. No real Cursor install, no live API, no
- * real `~/.prompt-burn`, and no read of the machine's own `~/.claude`.
+ * `createUsageReader` over every source, in-process and offline: injected OMP,
+ * Claude Code and `agy` directories, injected synthetic `state.vscdb`,
+ * injected `fetch` serving the spike fixtures. No real Cursor install, no live
+ * API, no real `~/.prompt-burn`, and no read of the machine's own `~/.claude`
+ * or `~/.gemini`.
  *
  * The settings cases use the reader's own `saveSettings` / `addPrice`, which is
  * the path both shells drive, so a stored path or toggle is proved through the
@@ -97,6 +98,7 @@ const OMP_CENTS = 2.421775;
 let root: string;
 let sessions: string;
 let claudeProjects: string;
+let agyConversations: string;
 let statePath: string;
 let db: DatabaseSync;
 /** Flipped by a test to make the Cursor call fail mid-session. */
@@ -122,6 +124,7 @@ function reader(cursorStatePath = statePath) {
   return createUsageReader(db, {
     ompDirectory: sessions,
     claudeDirectory: claudeProjects,
+    agyDirectory: agyConversations,
     cursorStatePath,
     fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
       if (String(url).endsWith("/api/usage-summary")) return new Response(SUMMARY, { status });
@@ -150,6 +153,10 @@ beforeEach(() => {
     join(claudeProjects, "-Users-example-claude-project", "session.jsonl"),
     `${CLAUDE_LINE}\n`,
   );
+  // Injected and empty: `agy`'s own conversation format is the collector's
+  // test, and the developer's `~/.gemini` is nobody's.
+  agyConversations = join(root, "agy-conversations");
+  mkdirSync(agyConversations, { recursive: true });
 
   statePath = join(root, "state.vscdb");
   const state = new DatabaseSync(statePath);
@@ -224,7 +231,12 @@ it("hides Claude Code entirely once the toggle is off, without losing the rows",
   expect(hidden.models.some((row) => row.source === "claude-code")).toBe(false);
   // The dashboard is told it is off, so it drops the row rather than drawing a
   // $0.00 line for a source the user switched away.
-  expect(hidden.enabled).toEqual({ omp: true, "claude-code": false, cursor: true });
+  expect(hidden.enabled).toEqual({
+    omp: true,
+    "claude-code": false,
+    cursor: true,
+    antigravity: true,
+  });
   // Nothing was deleted: switching it back on shows the stored rows again,
   // with no re-sync needed.
   await host.saveSettings({ claudeEnabled: true });
@@ -345,6 +357,7 @@ it("degrades Cursor without failing the pass when there is no local session", as
     { source: "omp", available: true, detail: sessions },
     { source: "claude-code", available: true, detail: claudeProjects },
     { source: "cursor", available: false, detail: expect.stringContaining("No Cursor state at") },
+    { source: "antigravity", available: true, detail: agyConversations },
   ]);
 
   const result = await host.fetch();
@@ -375,7 +388,11 @@ it("fetches through the stored paths and reports them from discover", async () =
     antigravitySecret: NO_AGY,
     now: () => NOW,
   });
-  await host.saveSettings({ ompPath: sessions, claudePath: claudeProjects });
+  await host.saveSettings({
+    ompPath: sessions,
+    claudePath: claudeProjects,
+    agyPath: agyConversations,
+  });
 
   expect(await host.getSettings()).toEqual({
     ompEnabled: true,
@@ -383,6 +400,8 @@ it("fetches through the stored paths and reports them from discover", async () =
     cursorEnabled: true,
     claudeEnabled: true,
     claudePath: claudeProjects,
+    antigravityEnabled: true,
+    agyPath: agyConversations,
   });
   expect((await host.discover()).slice(0, 2)).toEqual([
     { source: "omp", available: true, detail: sessions },
@@ -399,6 +418,7 @@ it("does not fetch a source the settings switched off", async () => {
   const host = createUsageReader(db, {
     ompDirectory: sessions,
     claudeDirectory: claudeProjects,
+    agyDirectory: agyConversations,
     cursorStatePath: statePath,
     fetchImpl: (async (url: string | URL | Request) => {
       calls.push(String(url));
@@ -407,7 +427,12 @@ it("does not fetch a source the settings switched off", async () => {
     antigravitySecret: NO_AGY,
     now: () => NOW,
   });
-  await host.saveSettings({ ompEnabled: false, cursorEnabled: false, claudeEnabled: false });
+  await host.saveSettings({
+    ompEnabled: false,
+    cursorEnabled: false,
+    claudeEnabled: false,
+    antigravityEnabled: false,
+  });
 
   const result = await host.fetch();
   // No source ran, and none of them counts as a failure: the pass is clean.
@@ -418,18 +443,27 @@ it("does not fetch a source the settings switched off", async () => {
     cursor: { ok: false, reason: "disabled", models: 0 },
     // Ollama's key lives in OMP's credential store, so the OMP toggle owns it.
     ollama: { ok: false, reason: "disabled" },
+    // Disabled is disabled at the source: the conversations directory is not
+    // even walked, so there are no counters to report.
+    antigravityUsage: { ok: false, reason: "disabled" },
   });
   expect(result.error).toBeUndefined();
   expect(calls).toEqual([]);
   const snapshot = await host.getSnapshot({ kind: "all_time" });
   expect(snapshot.omp.tokens.input).toBe(0);
   expect(snapshot.claudeCode.tokens.input).toBe(0);
-  expect(snapshot.enabled).toEqual({ omp: false, "claude-code": false, cursor: false });
+  expect(snapshot.enabled).toEqual({
+    omp: false,
+    "claude-code": false,
+    cursor: false,
+    antigravity: false,
+  });
   expect(snapshot.models).toEqual([]);
   expect(await host.discover()).toEqual([
     { source: "omp", available: false, detail: "Disabled in Settings" },
     { source: "claude-code", available: false, detail: "Disabled in Settings" },
     { source: "cursor", available: false, detail: "Disabled in Settings" },
+    { source: "antigravity", available: false, detail: "Disabled in Settings" },
   ]);
 });
 
@@ -446,6 +480,8 @@ it("never persists a Cursor token or a crsr_ key while saving settings", async (
     "cursorEnabled",
     "claudeEnabled",
     "claudePath",
+    "antigravityEnabled",
+    "agyPath",
   ]);
 });
 
@@ -492,4 +528,137 @@ it("prices a cycle aggregate on the next snapshot after Settings adds a rate", a
   // Auto was the last unpriced model in the fixture, so the subtotal resolves:
   // 7565.98 grok-4.6 + 1059.582 opus + 2011.9 auto + 112.34 grok-4.5 + 12.1815 sol.
   expect(after.cursor.estimatedCents).toBeCloseTo(10_761.9835, 4);
+});
+
+/**
+ * Rows straight into the database: how `agy`'s own conversation files are read
+ * is `@prompt-burn/collectors`' test. What matters here is the read side — the
+ * snapshot join, the price lookup and the toggle.
+ */
+function insertEvent(
+  id: string,
+  source: string,
+  model: string,
+  tokens: { input: number; output: number },
+  project: string,
+): void {
+  db.prepare(
+    `INSERT INTO usage_events
+       (id, source, period, timestamp, model, raw_model, input, output, session_id, project)
+     VALUES (?, ?, 'event', '2026-09-02T08:00:00.000Z', ?, ?, ?, ?, 'd2a5efbb', ?)`,
+  ).run(id, source, model, model, tokens.input, tokens.output, project);
+}
+
+/** 1M in at $0.75/Mtok + 0.1M out at $3.75/Mtok, the bundled Gemini rate. */
+const AGY_CENTS = 112.5;
+
+it("counts agy turns in the by-model table, their subtotal and the total", async () => {
+  insertEvent(
+    "agy:d2a5efbb:0",
+    "antigravity",
+    "gemini-3.8-flash",
+    { input: 1_000_000, output: 100_000 },
+    "/w/dotfiles",
+  );
+
+  // No fetch: Cursor has answered nothing, so the combined figure is the
+  // stored rows alone and the `agy` cost is the whole of it.
+  const snapshot = await reader().getSnapshot({ kind: "all_time" });
+
+  expect(snapshot.antigravity).toEqual({
+    estimatedCents: AGY_CENTS,
+    tokens: { input: 1_000_000, output: 100_000, cacheRead: 0, cacheWrite: 0 },
+  });
+  expect(snapshot.models).toContainEqual({
+    source: "antigravity",
+    model: "gemini-3.8-flash",
+    tokens: { input: 1_000_000, output: 100_000, cacheRead: 0, cacheWrite: 0 },
+    estimatedCents: AGY_CENTS,
+  });
+  expect(snapshot.estimatedCents).toBeCloseTo(AGY_CENTS, 9);
+  // The conversation's workspace is a project row like any transcript's cwd.
+  expect(snapshot.projects.map((entry) => entry.project)).toContain("/w/dotfiles");
+});
+
+it("keeps an OMP Gemini turn and an agy turn on one model as two rows", async () => {
+  insertEvent(
+    "omp:sess:1",
+    "omp",
+    "gemini-3.8-flash",
+    { input: 2_000_000, output: 0 },
+    "/w/dotfiles",
+  );
+  insertEvent(
+    "agy:d2a5efbb:0",
+    "antigravity",
+    "gemini-3.8-flash",
+    { input: 1_000_000, output: 100_000 },
+    "/w/dotfiles",
+  );
+
+  const snapshot = await reader().getSnapshot({ kind: "all_time" });
+
+  // Two tools, two trees, two turns: an OMP-routed Gemini call and an `agy`
+  // one are never deduped into a single row.
+  expect(
+    snapshot.models.filter((row) => row.model === "gemini-3.8-flash").map((row) => row.source),
+  ).toEqual(["omp", "antigravity"]);
+  expect(snapshot.estimatedCents).toBeCloseTo(150 + AGY_CENTS, 9);
+});
+
+it("hides agy entirely once the toggle is off, without losing the rows", async () => {
+  insertEvent(
+    "agy:d2a5efbb:0",
+    "antigravity",
+    "gemini-3.8-flash",
+    { input: 1_000_000, output: 100_000 },
+    "/w/dotfiles",
+  );
+  const host = reader();
+  await host.saveSettings({ antigravityEnabled: false });
+
+  const hidden = await host.getSnapshot({ kind: "all_time" });
+  expect(hidden.antigravity).toEqual({
+    estimatedCents: 0,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  });
+  expect(hidden.models.some((row) => row.source === "antigravity")).toBe(false);
+  expect(hidden.enabled.antigravity).toBe(false);
+
+  // Nothing was deleted: switching it back on shows the stored rows again.
+  await host.saveSettings({ antigravityEnabled: true });
+  const shown = await host.getSnapshot({ kind: "all_time" });
+  expect(shown.antigravity.estimatedCents).toBeCloseTo(AGY_CENTS, 9);
+});
+
+it("reports an agy sync failure without blanking the sources that answered", async () => {
+  // Its own database, missing the table every sync resumes from: the OMP and
+  // Claude walks return before they touch it (their directories are absent),
+  // the `agy` walk does not, and its `prepare` throws mid-pass.
+  const broken = openDatabase(databasePath(join(root, "broken")));
+  broken.exec("DROP TABLE omp_sync_state");
+  const host = createUsageReader(broken, {
+    ompDirectory: join(root, "absent-omp"),
+    claudeDirectory: join(root, "absent-claude"),
+    agyDirectory: agyConversations,
+    cursorStatePath: statePath,
+    fetchImpl: (async (url: string | URL | Request) =>
+      String(url).endsWith("/api/usage-summary")
+        ? new Response(SUMMARY)
+        : new Response(AGGREGATES)) as unknown as typeof fetch,
+    antigravitySecret: NO_AGY,
+    now: () => NOW,
+  });
+
+  const result = await host.fetch();
+
+  expect(result.antigravityUsage).toMatchObject({ ok: false, reason: "sync_failed" });
+  expect(result.ok).toBe(false);
+  expect(result.error).toContain("Antigravity failed:");
+  // Every other source reported exactly what it found, unaffected.
+  expect(result.error).not.toContain("OMP failed");
+  expect(result.omp).toMatchObject({ ok: true, scannedFiles: 0, insertedEvents: 0 });
+  expect(result.claudeCode).toMatchObject({ ok: true, insertedEvents: 0 });
+  expect(result.cursor).toMatchObject({ ok: true, models: 6 });
+  broken.close();
 });

@@ -111,6 +111,38 @@ describe("ModelTable", () => {
     expect(rowsOf(screen.getByTestId("model-table"))[0]?.[2]).toBe("Claude Code");
   });
 
+  it("gives Antigravity its own pill, distinct from Claude's and Cursor's", () => {
+    render(
+      <ModelTable
+        rows={[
+          ...snapshot({ "cursor:claude-opus-5": 900 }).models,
+          {
+            source: "claude-code",
+            model: "claude-opus-5",
+            tokens: { input: 10, output: 20, cacheRead: 0, cacheWrite: 0 },
+            estimatedCents: 1_500,
+          },
+          {
+            source: "antigravity",
+            model: "gemini-3.8-flash",
+            // The `agy` record exposes no cached-token count of its own.
+            tokens: { input: 50_000, output: 4_000 },
+            estimatedCents: 500,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("model-row-antigravity-gemini-3.8-flash")).toBeTruthy();
+    const pill = screen.getByText("Antigravity");
+    expect(pill.className).toContain("text-source-antigravity");
+    // Never the Usage-limits quota token: that blue is not source identity.
+    expect(pill.className).not.toContain("provider-antigravity");
+    // And its own colour, not one already spoken for by another source.
+    const others = [screen.getByText("Claude Code"), screen.getAllByText("Cursor")[0]!];
+    for (const other of others) expect(other.className).not.toBe(pill.className);
+  });
+
   it("shows compact token columns and per-row costs, priced rows first", () => {
     render(
       <ModelTable

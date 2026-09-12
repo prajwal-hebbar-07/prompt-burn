@@ -15,8 +15,17 @@
 import type { DashboardSnapshot, Source, TokenCounts } from "@prompt-burn/core";
 import { UNKNOWN_COST, formatCost, formatTokens } from "./format.js";
 
-/** Source identity is a color *and* a label, never a color alone. */
-const PILLS: Record<Source, { label: string; className: string; bar: string }> = {
+/**
+ * Source identity is a color *and* a label, never a color alone.
+ *
+ * Antigravity here is the standalone `agy` CLI's own priced turns, and it takes
+ * the `source-antigravity` rose — not `provider-antigravity`, which belongs to
+ * the Usage-limits quota tile and is not source identity.
+ *
+ * Exported because the Projects lane labels its chips from the same map: one
+ * colour and one wording per source across both screens.
+ */
+export const SOURCE_PILLS: Record<Source, { label: string; className: string; bar: string }> = {
   omp: {
     label: "OMP",
     className: "bg-source-omp-subtle text-source-omp ring-1 ring-source-omp/30",
@@ -26,6 +35,12 @@ const PILLS: Record<Source, { label: string; className: string; bar: string }> =
     label: "Claude Code",
     className: "bg-provider-claude-subtle text-provider-claude ring-1 ring-provider-claude/30",
     bar: "bg-provider-claude",
+  },
+  antigravity: {
+    label: "Antigravity",
+    className:
+      "bg-source-antigravity-subtle text-source-antigravity ring-1 ring-source-antigravity/30",
+    bar: "bg-source-antigravity",
   },
   cursor: {
     label: "Cursor",
@@ -135,7 +150,7 @@ export function ModelTable({ rows }: ModelTableProps) {
                 className="mt-1.5 block h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-surface-subtle"
               >
                 <span
-                  className={`animate-bar block h-full origin-left rounded-full ${PILLS[source].bar} ${
+                  className={`animate-bar block h-full origin-left rounded-full ${SOURCE_PILLS[source].bar} ${
                     estimatedCents === null ? "opacity-40" : ""
                   }`}
                   style={{ width: `${share({ source, model, tokens, estimatedCents })}%` }}
@@ -144,9 +159,9 @@ export function ModelTable({ rows }: ModelTableProps) {
             </td>
             <td className="py-3">
               <span
-                className={`rounded-full px-2 py-0.5 text-table font-medium ${PILLS[source].className}`}
+                className={`rounded-full px-2 py-0.5 text-table font-medium ${SOURCE_PILLS[source].className}`}
               >
-                {PILLS[source].label}
+                {SOURCE_PILLS[source].label}
               </span>
             </td>
             {numericCells(tokens).map((cell, cellIndex) => (

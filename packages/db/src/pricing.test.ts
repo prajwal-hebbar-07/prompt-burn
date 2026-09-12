@@ -248,3 +248,44 @@ describe("gemini through antigravity", () => {
     expect(resolvePrice(db, "gemini-3.8-pro", at)).toBeNull();
   });
 });
+
+describe("the agy CLI's third-party pool", () => {
+  // Antigravity serves Claude models beside Gemini, and the `agy` CLI reports
+  // them under Anthropic's own ids. They are priced at Anthropic's public
+  // rates: the pool is Google's, the rate card is not.
+  const at = "2026-09-11T10:10:31Z";
+
+  it("prices Sonnet 4.6 and thinking Opus 4.6 at Anthropic's published rates", () => {
+    expect(resolvePrice(db, "claude-sonnet-4-6", at)).toMatchObject({
+      provider: "anthropic",
+      inputPerMtok: 3,
+      outputPerMtok: 15,
+      cacheReadPerMtok: 0.3,
+      cacheWritePerMtok: 3.75,
+    });
+    expect(resolvePrice(db, "claude-opus-4-6-thinking", at)).toMatchObject({
+      provider: "anthropic",
+      inputPerMtok: 5,
+      outputPerMtok: 25,
+      cacheReadPerMtok: 0.5,
+      cacheWritePerMtok: 6.25,
+    });
+  });
+
+  it("prices a tier-resolved Gemini row through the base model's rate", () => {
+    // The collector stores the canonical id, so a `gemini-3.8-flash-tiered`
+    // generation lands on this row rather than on nothing at all. The id
+    // mapping itself is core's (`canonicalModelId`), tested there — this
+    // package stays dependency-free and asserts only the rate it resolves.
+    const rate = resolvePrice(db, "gemini-3.8-flash", at);
+    expect(rate).toMatchObject({ provider: "google-antigravity", inputPerMtok: 0.75 });
+    expect(estimateCents(rate, { input: 1_000_000, output: 0 })).toBeCloseTo(75, 9);
+  });
+
+  it("bundles only the ids that were actually observed", () => {
+    // No bare `claude-opus-4-6`: nothing has reported one, and inventing rows
+    // for unseen ids is how a price table starts lying.
+    expect(resolvePrice(db, "claude-opus-4-6", at)).toBeNull();
+    expect(resolvePrice(db, "claude-sonnet-4-6-thinking", at)).toBeNull();
+  });
+});

@@ -18,18 +18,24 @@
 import type { DashboardSnapshot } from "@prompt-burn/core";
 
 /** Source labels in banner order, as the reader also writes them. */
-const LABELS = ["OMP", "Claude Code", "Cursor"] as const;
+const LABELS = ["OMP", "Claude Code", "Antigravity", "Cursor"] as const;
 
 /** Shown when a host set `status: "error"` without a message of its own. */
 const FALLBACK = "Fetch failed";
 
 /**
- * One fetch pass, as both shells receive it. `omp` / `claudeCode` / `cursor`
- * are absent when the call itself threw and no source ever reported.
+ * One fetch pass, as both shells receive it. `omp` / `claudeCode` /
+ * `antigravityUsage` / `cursor` are absent when the call itself threw and no
+ * source ever reported.
+ *
+ * `antigravityUsage` is the `agy` CLI's priced turns — the reader's separate
+ * `antigravity` key is the quota-clock fetch behind the Usage-limits card, and
+ * a quota clock that did not answer is not a usage failure.
  */
 export interface FetchPass {
   omp?: { ok: boolean };
   claudeCode?: { ok: boolean };
+  antigravityUsage?: { ok: boolean };
   cursor?: { ok: boolean };
   /**
    * The reader's own text: ` · `-joined `OMP failed: …` /
@@ -53,6 +59,7 @@ export function fetchErrorMessage(pass: FetchPass): string {
   const succeeded: Record<(typeof LABELS)[number], boolean | undefined> = {
     OMP: pass.omp?.ok,
     "Claude Code": pass.claudeCode?.ok,
+    Antigravity: pass.antigravityUsage?.ok,
     Cursor: pass.cursor?.ok,
   };
 
@@ -70,7 +77,7 @@ export function fetchErrorMessage(pass: FetchPass): string {
   // The headline already names the sources; the detail keeps only the reasons.
   const reasons = detail
     .split(" · ")
-    .map((line) => line.replace(/^(?:OMP|Claude Code|Cursor) failed: /, ""))
+    .map((line) => line.replace(/^(?:OMP|Claude Code|Antigravity|Cursor) failed: /, ""))
     .filter((line) => line !== "")
     .join(" · ");
 

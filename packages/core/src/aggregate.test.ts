@@ -408,3 +408,89 @@ describe("buildDashboardSnapshot per-project rollups", () => {
     ]);
   });
 });
+
+describe("buildDashboardSnapshot with agy CLI events", () => {
+  /** What an `agy` turn carries beyond a transcript event's usual fields. */
+  const agy = {
+    source: "antigravity" as const,
+    sessionId: "d2a5efbb",
+    /** `agy` records the workspace its conversation ran in. */
+    project: "/w/dotfiles",
+  };
+
+  /** One cent per output token, for every model and every tool alike. */
+  const priceCents = (_model: string, tokens: { output: number }) => tokens.output;
+
+  const ompGemini = ompEvent("2026-09-02T09:00:00.000", "gemini-3.8-flash", 5, 50);
+  const agyToday: UsageEvent = {
+    ...ompEvent("2026-09-02T10:00:00.000", "gemini-3.8-flash", 7, 70),
+    ...agy,
+    id: "agy:d2a5efbb:12",
+  };
+  const agyYesterday: UsageEvent = {
+    ...ompEvent("2026-09-01T10:00:00.000", "gemini-3.8-flash", 1, 10),
+    ...agy,
+    id: "agy:d2a5efbb:3",
+  };
+
+  const today = buildDashboardSnapshot({
+    period: { kind: "today" },
+    ompEvents: [ompGemini],
+    antigravityEvents: [agyToday, agyYesterday],
+    // Emptied and cycle-wide: out of the combined figure, so the number below
+    // is exactly the two timestamped sources.
+    cursor: { ...CURSOR_CYCLE, models: [] },
+    now: NOW,
+    priceCents,
+  });
+
+  it("counts agy turns in their own subtotal, the table and the combined total", () => {
+    // Yesterday's turn is filtered out with everything else's: the CLI's rows
+    // take the same calendar period.
+    expect(today.antigravity).toEqual({
+      estimatedCents: 70,
+      tokens: { input: 7, output: 70, cacheRead: 100, cacheWrite: 10 },
+    });
+    expect(today.models).toContainEqual({
+      source: "antigravity",
+      model: "gemini-3.8-flash",
+      tokens: { input: 7, output: 70, cacheRead: 100, cacheWrite: 10 },
+      estimatedCents: 70,
+    });
+    expect(today.estimatedCents).toBe(120);
+    // The conversation's workspace is a project row like any other cwd.
+    expect(today.projects.map((entry) => entry.project)).toContain("/w/dotfiles");
+    // Nothing was said about toggles, so the source is on, as every other is.
+    expect(today.enabled.antigravity).toBe(true);
+  });
+
+  it("keeps an OMP Gemini turn and an agy turn on one model as two rows", () => {
+    // Two tools, two trees, two turns: merging them would invent a saving.
+    expect(
+      today.models.filter((row) => row.model === "gemini-3.8-flash").map((row) => row.source),
+    ).toEqual(["omp", "antigravity"]);
+  });
+
+  it("zeroes the subtotal and drops the rows while the source is off", () => {
+    const off = buildDashboardSnapshot({
+      period: { kind: "today" },
+      ompEvents: [ompGemini],
+      // Switched off is switched off at the host: no events arrive either.
+      antigravityEvents: [],
+      enabled: { antigravity: false },
+      cursor: { ...CURSOR_CYCLE, models: [] },
+      now: NOW,
+      priceCents,
+    });
+
+    expect(off.antigravity).toEqual({
+      estimatedCents: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    });
+    expect(off.models.some((row) => row.source === "antigravity")).toBe(false);
+    expect(off.enabled.antigravity).toBe(false);
+    // The other sources are untouched by the toggle.
+    expect(off.estimatedCents).toBe(50);
+    expect(off.omp.estimatedCents).toBe(50);
+  });
+});

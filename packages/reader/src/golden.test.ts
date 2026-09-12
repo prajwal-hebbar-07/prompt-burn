@@ -7,9 +7,10 @@
  * mapping, alias, merge, mixed-period or null-poison regression changes one of
  * these literals and fails here.
  *
- * Offline and hermetic: temp OMP directory, temp `~/.prompt-burn`, a synthetic
- * `state.vscdb`, and an injected `fetch` that answers from the committed
- * redacted fixtures. Nothing reads a real home directory or cursor.com.
+ * Offline and hermetic: temp OMP, Claude Code and `agy` directories, temp
+ * `~/.prompt-burn`, a synthetic `state.vscdb`, and an injected `fetch` that
+ * answers from the committed redacted fixtures. Nothing reads a real home
+ * directory or cursor.com.
  *
  * Expected costs come from the vendors' published rates in
  * `packages/db/src/prices.ts`, computed by hand — never from OMP's own
@@ -153,10 +154,16 @@ const NO_CLAUDE_CODE: DashboardSnapshot["claudeCode"] = {
   tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 };
 
+/** Same for the `agy` CLI: an injected empty conversations directory. */
+const NO_ANTIGRAVITY: DashboardSnapshot["antigravity"] = {
+  estimatedCents: 0,
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+};
+
 const ALL_TIME: DashboardSnapshot = {
   period: { kind: "all_time" },
   // Every toggle on: the shape a default install renders.
-  enabled: { omp: true, "claude-code": true, cursor: true },
+  enabled: { omp: true, "claude-code": true, cursor: true, antigravity: true },
   // One project — the transcript's `cwd` — holding both OMP rows and neither
   // Cursor row: Cursor reports no directory.
   projects: [
@@ -175,6 +182,7 @@ const ALL_TIME: DashboardSnapshot = {
     tokens: { input: 4161, output: 260, cacheRead: 224_913, cacheWrite: 463 },
   },
   claudeCode: NO_CLAUDE_CODE,
+  antigravity: NO_ANTIGRAVITY,
   cursor: CURSOR_SLICE,
   models: [OMP_OPUS, OMP_GEMINI, ...CURSOR_ROWS],
   // All-time is the one period a cycle-to-date Cursor total does not clash with.
@@ -201,7 +209,7 @@ const CURSOR_WINDOW_ROW: DashboardSnapshot["models"][number] = {
  */
 const TODAY: DashboardSnapshot = {
   period: { kind: "today" },
-  enabled: { omp: true, "claude-code": true, cursor: true },
+  enabled: { omp: true, "claude-code": true, cursor: true, antigravity: true },
   // Today keeps only the Gemini turn, so the project shrinks with it.
   projects: [
     {
@@ -217,6 +225,7 @@ const TODAY: DashboardSnapshot = {
     tokens: { input: 4159, output: 155, cacheRead: 187_535, cacheWrite: 0 },
   },
   claudeCode: NO_CLAUDE_CODE,
+  antigravity: NO_ANTIGRAVITY,
   cursor: {
     estimatedCents: 463.7984,
     tokens: { input: 675_956, output: 45_332, cacheRead: 6_028_160, cacheWrite: 0 },
@@ -251,6 +260,7 @@ let root: string;
 let db: DatabaseSync;
 let sessions: string;
 let claudeProjects: string;
+let agyConversations: string;
 let statePath: string;
 
 beforeEach(() => {
@@ -267,6 +277,11 @@ beforeEach(() => {
   // business, and an inherited `CLAUDE_CONFIG_DIR` cannot reach it either.
   claudeProjects = join(root, "claude-projects");
   mkdirSync(claudeProjects, { recursive: true });
+
+  // Likewise for `agy`: an empty directory, so the golden never depends on
+  // whatever conversations this machine's `~/.gemini` happens to hold.
+  agyConversations = join(root, "agy-conversations");
+  mkdirSync(agyConversations, { recursive: true });
 
   statePath = join(root, "state.vscdb");
   const state = new DatabaseSync(statePath);
@@ -304,6 +319,7 @@ async function snapshots(
   const reader = createUsageReader(db, {
     ompDirectory: sessions,
     claudeDirectory: claudeProjects,
+    agyDirectory: agyConversations,
     cursorStatePath: statePath,
     // Cursor aggregates carry no timestamp and price at "now"; the bundled
     // rates are open-ended from 1970, so this is the rate in force.

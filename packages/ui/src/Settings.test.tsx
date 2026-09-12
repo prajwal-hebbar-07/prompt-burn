@@ -219,6 +219,9 @@ describe("Settings", () => {
     const claudeInput = screen.getByRole("textbox", { name: "Claude Code projects path" });
     await user.clear(claudeInput);
     await user.type(claudeInput, "/custom/claude/projects");
+    const agyInput = screen.getByRole("textbox", { name: "Antigravity conversations path" });
+    await user.clear(agyInput);
+    await user.type(agyInput, "/custom/agy/conversations");
     expect(onSave).not.toHaveBeenCalled();
 
     await user.click(screen.getByTestId("save-sources"));
@@ -228,9 +231,32 @@ describe("Settings", () => {
       ompPath: "/custom/omp/path",
       claudeEnabled: false,
       claudePath: "/custom/claude/projects",
+      antigravityEnabled: true,
+      agyPath: "/custom/agy/conversations",
       cursorEnabled: false,
     });
     expect(screen.getByTestId("save-state").textContent).toContain("Saved");
+  });
+
+  it("switches the agy CLI source off without touching the quota card's clock", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(<Settings onSave={onSave} />);
+
+    const section = screen.getByTestId("settings-antigravity");
+    // Named as the CLI, so it cannot read as a switch for the limits card.
+    expect(section.textContent).toContain("Antigravity (agy CLI)");
+    expect(section.textContent).toContain("not the Antigravity usage limits card");
+    expect(section.textContent).toContain("~/.gemini/antigravity-cli/conversations/");
+
+    await user.click(screen.getByRole("checkbox", { name: "Enable Antigravity" }));
+    await user.click(screen.getByTestId("save-sources"));
+
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({
+      antigravityEnabled: false,
+      // The path override is untouched by the toggle.
+      agyPath: "~/.gemini/antigravity-cli/conversations/",
+    });
   });
 
   it("adds a rate for one unknown model, with blank cache fields left unknown", async () => {

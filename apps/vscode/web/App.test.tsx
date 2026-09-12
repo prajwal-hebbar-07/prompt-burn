@@ -121,6 +121,8 @@ beforeEach(() => {
       cursorEnabled: true,
       claudeEnabled: true,
       claudePath: "~/.claude/projects/",
+      antigravityEnabled: true,
+      agyPath: "~/.gemini/antigravity-cli/conversations/",
     },
     prices: [],
   };
@@ -205,6 +207,8 @@ it("saves the source settings the tab loaded, over the same channel", async () =
     cursorEnabled: true,
     claudeEnabled: true,
     claudePath: "/stored/claude",
+    antigravityEnabled: true,
+    agyPath: "/stored/agy",
   };
   render(<App />);
   await waitFor(() => expect(host.methods).toContain("getSettings"));
@@ -228,6 +232,8 @@ it("saves the source settings the tab loaded, over the same channel", async () =
       cursorEnabled: false,
       claudeEnabled: false,
       claudePath: "/stored/claude",
+      antigravityEnabled: true,
+      agyPath: "/stored/agy",
     }),
   );
   // Same database file as the desktop window; the tab only sends the values.

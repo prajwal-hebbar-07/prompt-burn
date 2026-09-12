@@ -24,6 +24,8 @@ export interface FetchOutcome {
   error?: string;
   omp: { ok: boolean };
   claudeCode: { ok: boolean };
+  /** The `agy` CLI's own turns — the usage source, not the quota card. */
+  antigravityUsage: { ok: boolean };
   cursor: { ok: boolean };
 }
 

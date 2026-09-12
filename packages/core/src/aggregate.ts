@@ -1,6 +1,6 @@
 /**
- * Rolls transcript events (OMP, Claude Code) and a Cursor snapshot into the
- * `DashboardSnapshot` fields the UI renders.
+ * Rolls transcript events (OMP, Claude Code, the `agy` CLI) and a Cursor
+ * snapshot into the `DashboardSnapshot` fields the UI renders.
  *
  * Two scopes meet here. Transcript events are timestamped and obey the calendar
  * period; Cursor aggregates are timestamp-free, so they are used exactly as
@@ -43,6 +43,14 @@ export interface SnapshotInput {
    * source switched off — leaves its subtotal at zero.
    */
   claudeEvents?: readonly UsageEvent[];
+  /**
+   * The standalone `agy` CLI's own turns, read out of its per-conversation
+   * records. Same shape and same calendar filtering as OMP's, and never
+   * deduped against an OMP-routed Gemini turn: two tools, two trees, two
+   * turns. Omitted — or empty, when Settings has the source switched off —
+   * leaves its subtotal at zero.
+   */
+  antigravityEvents?: readonly UsageEvent[];
   cursor: CursorSnapshot;
   /**
    * The Settings toggles, as the host read them. Anything unnamed defaults to
@@ -163,7 +171,8 @@ function rollup(parts: readonly PricedPart[], priceCents?: PriceCents) {
 
 /**
  * Per-project rollups, biggest spender first, over every event source that
- * records a working directory — OMP and Claude Code. Cursor is absent by
+ * records a working directory — OMP, Claude Code and the `agy` CLI, whose
+ * conversations name the workspace they ran in. Cursor is absent by
  * construction: a cycle-to-date aggregate belongs to no directory and
  * splitting it would be invention.
  *
@@ -216,7 +225,15 @@ function rollupProjects(
  * sources are never deduped.
  */
 export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot {
-  const { period, ompEvents, claudeEvents = [], cursor, now, priceCents } = input;
+  const {
+    period,
+    ompEvents,
+    claudeEvents = [],
+    antigravityEvents = [],
+    cursor,
+    now,
+    priceCents,
+  } = input;
 
   const ompParts = partsOf("omp", filterEventsByPeriod(ompEvents, period, now));
   const omp = rollup(ompParts, priceCents);
@@ -225,6 +242,14 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
   // same calendar period and land in the combined total unconditionally.
   const claudeParts = partsOf("claude-code", filterEventsByPeriod(claudeEvents, period, now));
   const claudeCode = rollup(claudeParts, priceCents);
+
+  // The `agy` CLI's turns are timestamped too, so they take the same calendar
+  // period and the same unconditional place in the combined total.
+  const antigravityParts = partsOf(
+    "antigravity",
+    filterEventsByPeriod(antigravityEvents, period, now),
+  );
+  const antigravity = rollup(antigravityParts, priceCents);
 
   // Enterprise events are timestamped, so they take the same period as OMP.
   // Pro cycle aggregates have no timestamps and are used exactly as fetched.
@@ -251,20 +276,33 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
     period,
     // Same calendar scope as everything else on the screen: the projects are
     // rolled from the period-filtered events, never from the whole history.
-    projects: rollupProjects([...ompParts, ...claudeParts], priceCents),
+    projects: rollupProjects([...ompParts, ...claudeParts, ...antigravityParts], priceCents),
     // Only what the period covers. Cursor out of scope means the timestamped
     // sources alone here; its own subtotal still carries the cycle number.
     estimatedCents: mixedPeriod
-      ? addCents(omp.totals.estimatedCents, claudeCode.totals.estimatedCents)
-      : addCents(
+      ? addCents(
           addCents(omp.totals.estimatedCents, claudeCode.totals.estimatedCents),
+          antigravity.totals.estimatedCents,
+        )
+      : addCents(
+          addCents(
+            addCents(omp.totals.estimatedCents, claudeCode.totals.estimatedCents),
+            antigravity.totals.estimatedCents,
+          ),
           cursorRollup.totals.estimatedCents,
         ),
     // Unnamed is on: a caller that knows nothing about toggles — a mock
     // snapshot, a test — gets every source on screen, as before.
-    enabled: { omp: true, "claude-code": true, cursor: true, ...input.enabled },
+    enabled: {
+      omp: true,
+      "claude-code": true,
+      cursor: true,
+      antigravity: true,
+      ...input.enabled,
+    },
     omp: omp.totals,
     claudeCode: claudeCode.totals,
+    antigravity: antigravity.totals,
     cursor: {
       ...cursorRollup.totals,
       mode: cursor.mode,
@@ -282,7 +320,7 @@ export function buildDashboardSnapshot(input: SnapshotInput): DashboardSnapshot 
           }
         : {}),
     },
-    models: [...omp.rows, ...claudeCode.rows, ...cursorRollup.rows],
+    models: [...omp.rows, ...claudeCode.rows, ...antigravity.rows, ...cursorRollup.rows],
     mixedPeriod,
     // Provider clocks are not calendar data: they never move with `period`.
     limits: [...(input.limits ?? [])],

@@ -25,7 +25,7 @@ Two decisions define it:
 | --------------------------------- | -------- | ------------------------------------------------- |
 | `packages/db/src/index.ts`        | Module   | open/create, migrations, price seeding, exports   |
 | `packages/db/src/schema.ts`       | Module   | `SCHEMA_SQL` inlined, applied on file creation    |
-| `packages/db/src/prices.ts`       | Module   | `BUNDLED_PRICES` (22 rows), `SEED_EFFECTIVE_FROM` |
+| `packages/db/src/prices.ts`       | Module   | `BUNDLED_PRICES` (24 rows), `SEED_EFFECTIVE_FROM` |
 | `packages/db/src/pricing.ts`      | Module   | `resolvePrice`, `estimateCents`, insert helper    |
 | `packages/db/src/settings.ts`     | Module   | `readSettings`, `writeSettings`, AppSettings      |
 | `packages/db/src/events.ts`       | Module   | `loadUsageEvents` — stored rows as `UsageEvent`s  |
@@ -46,7 +46,7 @@ Exports of `@prompt-burn/db` (all from `src/index.ts`, which re-exports `prices.
 | `databasePath`        | `(home = homedir()) => string`  | db path; `home` injectable for tests |
 | `openDatabase`        | `(path = databasePath()) => db` | See §4; creates, migrates, and seeds |
 | `seedBundledPrices`   | `(db: DatabaseSync) => void`    | Inserts `BUNDLED_PRICES` on open     |
-| `BUNDLED_PRICES`      | `readonly BundledPrice[]`       | 22 vendor rows across 6 groups       |
+| `BUNDLED_PRICES`      | `readonly BundledPrice[]`       | 24 vendor rows across 6 groups       |
 | `SEED_EFFECTIVE_FROM` | `"1970-01-01T00:00:00Z"`        | Backdates bundled rows; prices logs  |
 | `SCHEMA_SQL`          | `string`                        | Inlined DDL for file creation        |
 | `resolvePrice`        | `(db, model, ts) => PriceRate?` | Valid rate; null for cycle rows      |
@@ -146,9 +146,10 @@ rows carry no `effective_until` and are backdated to 1970 because they are the c
 published rates with no history; a future rate change closes the row and inserts a new one
 with a real date.
 
-The 22 bundled prices span six vendor groups:
-- **Anthropic:** 4 standard models (`claude-opus-5`, `claude-sonnet-5`, `claude-sonnet-4-5`,
-  `claude-haiku-4-5`) with 5-minute cache write and 0.1x cache read rates.
+The 24 bundled prices span six vendor groups:
+- **Anthropic:** 6 standard models (`claude-opus-5`, `claude-sonnet-5`, `claude-sonnet-4-5`,
+  `claude-haiku-4-5`, plus `claude-sonnet-4-6` and `claude-opus-4-6-thinking` as the `agy` CLI
+  reports Antigravity's third-party pool) with 5-minute cache write and 0.1x cache read rates.
 - **Ollama Cloud:** 11 models (`glm-5.3`, `glm-5.3-flash`, `deepseek-v4-pro`,
   `deepseek-v4-flash`, `kimi-k3`, `kimi-k2.7-code`, `minimax-m3`, `qwen3.5:397b`,
   `gpt-oss:120b`, `gpt-oss:20b`, `gemma4`). Standard non-peak rates; cache write is `0` because
@@ -222,7 +223,7 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
 (`mkdtempSync`) — tests never touch a real `~/.prompt-burn`:
 
 - `index.test.ts`: `databasePath` resolves under the home and contains no install dir;
-  first open creates the four tables, seeds exactly `BUNDLED_PRICES.length` (22) rows, and
+  first open creates the four tables, seeds exactly `BUNDLED_PRICES.length` (24) rows, and
   spot-checks Anthropic, Ollama, deepseek-standard-rate, `qwen3.5` NULL rate, Gemini via
   Antigravity, and `gemma4`; reopening an existing file keeps its data, does not re-apply the
   schema, and tops missing bundled prices back up without duplicating a hand-added rate; the
@@ -250,19 +251,23 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
 
 ## 9. Debt and traps
 
-- **No migration runner is deliberate, and there are now two hand-written migrations.**
+- **No migration runner is deliberate, and there are still two hand-written migrations.**
   `addProjectColumn` and `widenSourceCheck` in `index.ts` run on every open of an existing
-  file and each guard themselves (a `pragma_table_info` read, a `sqlite_schema` DDL read). Two
-  is the point at which the runner `schema.ts`'s header asks for starts to look cheap: a third
-  hand-rolled one, especially another CHECK-widening rebuild, should be the trigger.
+  file and each guard themselves (a `pragma_table_info` read, a `sqlite_schema` DDL read).
+  `widenSourceCheck` has now widened the source list **twice** — for Claude Code, then for the
+  `agy` CLI — by moving its guard to the newest source name rather than by adding a third
+  migration, so a file stopped at either older CHECK still rebuilds exactly once. That keeps the
+  count at two, but it is the same rebuild growing a third responsibility: a genuinely new
+  migration, or a fourth widening, is the trigger for the runner `schema.ts`'s header asks for.
 - **`widenSourceCheck` rebuilds a table.** New table, copy, drop, rename — the documented
   SQLite recipe, but a rebuild all the same: any object the recipe forgets to recreate is
   silently lost, which is why the test asserts the rows, the `project` column, the sync state
   and all three indexes after it runs. Adding a trigger or view over `usage_events` without
   adding it to that block would drop it on the next open of an old file.
-- **A fourth source means touching the CHECK twice.** `SCHEMA_SQL` and the rebuild's inline
-  DDL in `widenSourceCheck` both spell out `source IN ('omp', 'cursor', 'claude-code')`. They
-  have to agree, and nothing enforces that they do.
+- **A fifth source means touching the CHECK twice.** `SCHEMA_SQL` and the rebuild's inline
+  DDL in `widenSourceCheck` both spell out
+  `source IN ('omp', 'cursor', 'claude-code', 'antigravity')`. They have to agree, and nothing
+  enforces that they do.
 - **Schema shape carries product invariants.** The `period`/`timestamp` CHECK encodes
   "cycle aggregates have no moment in time"; the `raw_model` column preserves pre-canonical
   names; `session_id` is nullable because Cursor cycle rows have no session. Dropping any of
@@ -273,6 +278,11 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
 - **Ollama's peak-window pricing is not modelled.** deepseek's doubled 12:00–18:00 UTC
   Mon–Fri rate is not in the table, so peak-hour usage under-estimates by 2x. Recorded in
   `prices.ts`, accepted for now.
+- **The `agy` CLI's cached input is not modelled.** Its per-generation record exposes no
+  cached-token count that could be identified, so Antigravity CLI input prices at the full
+  input rate and over-estimates wherever Google served part of a prompt from context cache —
+  the opposite direction to the Ollama bias above. Recorded in `docs/data-shapes.md` with the
+  field evidence.
 - **Seeding is idempotent by `(model, provider, effective_from)`, not by intent.** It runs on
   every open, so a bundled row deleted by hand comes back; closing it with `effective_until`
   is the way to retire one. Calling `seedBundledPrices` directly is safe.

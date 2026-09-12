@@ -10,19 +10,29 @@
  */
 
 /**
- * Thinking / effort / speed suffixes named in `docs/data-shapes.md`, in match
- * order. They collapse a Cursor row onto the base model so it can meet the OMP
- * row and the price entry for the same model.
+ * Thinking / effort / speed / tier-resolution suffixes named in
+ * `docs/data-shapes.md`, in match order. They collapse a row onto the base
+ * model so it can meet the row from another source and the price entry for the
+ * same model.
  *
- * Only these two. `-medium` in `gpt-5.6-sol-medium` is not on the list and is
- * left alone, and the `cursor-` prefix is never stripped: those are
- * Cursor-hosted variants that may have no public rate of their own.
+ * `-medium` in `gpt-5.6-sol-medium` is not on the list and is left alone, and
+ * the `cursor-` prefix is never stripped: those are Cursor-hosted variants that
+ * may have no public rate of their own.
  */
 const SUFFIX_RULES: ReadonlyArray<readonly [suffix: string, replacement: string]> = [
   // claude-opus-5-thinking-high -> claude-opus-5
   ["-thinking-high", ""],
   // cursor-grok-4.6-high-fast -> cursor-grok-4.6-high
   ["-high-fast", "-high"],
+  // gemini-3.8-flash-tiered -> gemini-3.8-flash. The `agy` CLI writes this id
+  // when a model is resolved through Antigravity's tiered-model config, which
+  // the shipped binary describes as `TieredModelConfig` with `GetFlash` /
+  // `GetFlashLite` / `GetPro` accessors, used for "subagent model resolution".
+  // It selects *which* model, so it is not one of Google's priced service tiers
+  // (Standard / Batch / Flex / Priority) — and the rows carry the same 256,000
+  // context window as the plain id, against 160,000 on this account's Claude
+  // rows. Same model, same rate, one row.
+  ["-tiered", ""],
 ];
 
 /**

@@ -53,7 +53,7 @@ Exports of `@prompt-burn/reader` (all exported directly from `packages/reader/sr
 - **`ReaderHealth`**: one source's health status reported by `discover()`:
   ```ts
   export interface ReaderHealth {
-    source: "omp" | "cursor" | "claude-code";
+    source: "omp" | "cursor" | "claude-code" | "antigravity";
     available: boolean;
     detail?: string;
   }

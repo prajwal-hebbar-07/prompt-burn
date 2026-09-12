@@ -1,6 +1,6 @@
 /**
- * Settings screen: sources (OMP + Claude Code + Cursor), pricing (bundled
- * rates + unknown models), and about (local SQLite database path).
+ * Settings screen: sources (OMP + Claude Code + Antigravity + Cursor), pricing
+ * (bundled rates + unknown models), and about (local SQLite database path).
  *
  * Props only, like the rest of this package: the toggles and the paths are view
  * state until `onSave` fires, and `onAddPrice` hands one hand-entered rate to
@@ -26,14 +26,16 @@ export interface PriceRate {
 }
 
 /**
- * What the host persists for the three sources. `ompPath` and `claudePath` are
- * real directories; blank means the collector's own default.
+ * What the host persists for the four sources. `ompPath`, `claudePath` and
+ * `agyPath` are real directories; blank means the collector's own default.
  */
 export interface SourceSettings {
   ompEnabled: boolean;
   ompPath: string;
   claudeEnabled: boolean;
   claudePath: string;
+  antigravityEnabled: boolean;
+  agyPath: string;
   cursorEnabled: boolean;
 }
 
@@ -51,7 +53,7 @@ export interface NewPriceInput {
 }
 
 export interface SourceHealth {
-  source: "omp" | "cursor" | "claude-code";
+  source: "omp" | "cursor" | "claude-code" | "antigravity";
   available: boolean;
   detail?: string;
 }
@@ -70,6 +72,10 @@ export interface SettingsProps {
   claudeEnabled?: boolean;
   /** Claude Code projects path override; defaults to `~/.claude/projects/` */
   claudePath?: string;
+  /** Antigravity CLI (`agy`) enabled state; defaults to true */
+  antigravityEnabled?: boolean;
+  /** `agy` conversations path override; defaults to the collector's own */
+  agyPath?: string;
   /** Cursor enabled state; defaults to true */
   cursorEnabled?: boolean;
   /** Optional crsr_ key placeholder/value */
@@ -86,6 +92,7 @@ export interface SettingsProps {
 
 const DEFAULT_OMP_PATH = "~/.omp/agent/sessions/";
 const DEFAULT_CLAUDE_PATH = "~/.claude/projects/";
+const DEFAULT_AGY_PATH = "~/.gemini/antigravity-cli/conversations/";
 const DEFAULT_DB_PATH = "~/.prompt-burn/db.sqlite";
 
 function formatRate(dollars: number | null | undefined): string {
@@ -146,6 +153,8 @@ export function Settings({
   ompEnabled: initialOmpEnabled = true,
   claudeEnabled: initialClaudeEnabled = true,
   claudePath: initialClaudePath = DEFAULT_CLAUDE_PATH,
+  antigravityEnabled: initialAntigravityEnabled = true,
+  agyPath: initialAgyPath = DEFAULT_AGY_PATH,
   cursorEnabled: initialCursorEnabled = true,
   cursorKey: initialCursorKey = "",
   health = [],
@@ -159,6 +168,8 @@ export function Settings({
   const [ompPath, setOmpPath] = useState(initialOmpPath);
   const [claudeEnabled, setClaudeEnabled] = useState(initialClaudeEnabled);
   const [claudePath, setClaudePath] = useState(initialClaudePath);
+  const [antigravityEnabled, setAntigravityEnabled] = useState(initialAntigravityEnabled);
+  const [agyPath, setAgyPath] = useState(initialAgyPath);
   const [cursorEnabled, setCursorEnabled] = useState(initialCursorEnabled);
   const [cursorKey, setCursorKey] = useState(initialCursorKey);
   const [saved, setSaved] = useState(false);
@@ -169,7 +180,15 @@ export function Settings({
   const price = pricing === null ? null : parseDraft(pricing, draft);
 
   function save(): void {
-    onSave?.({ ompEnabled, ompPath, claudeEnabled, claudePath, cursorEnabled });
+    onSave?.({
+      ompEnabled,
+      ompPath,
+      claudeEnabled,
+      claudePath,
+      antigravityEnabled,
+      agyPath,
+      cursorEnabled,
+    });
     setSaved(true);
   }
 
@@ -186,6 +205,11 @@ export function Settings({
   };
 
   const claudeHealth = health.find((h) => h.source === "claude-code") ?? {
+    available: true,
+    detail: "Available",
+  };
+
+  const antigravityHealth = health.find((h) => h.source === "antigravity") ?? {
     available: true,
     detail: "Available",
   };
@@ -325,6 +349,69 @@ export function Settings({
               Health:{" "}
               <span data-testid="claude-health" className="text-foreground-secondary">
                 {claudeHealth.detail ?? (claudeHealth.available ? "Available" : "Unavailable")}
+              </span>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-6" />
+
+          {/* Antigravity: the standalone `agy` CLI's own priced turns. This is
+              not the Antigravity quota card on the dashboard — that one is
+              Google's provider clock and this toggle does not touch it. */}
+          <div data-testid="settings-antigravity" className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true" className="size-2 rounded-full bg-source-antigravity" />
+                <span className="text-body font-medium">Antigravity (agy CLI)</span>
+              </div>
+              <label className="flex items-center gap-2 text-small font-medium cursor-pointer">
+                <input
+                  type="checkbox"
+                  aria-label="Enable Antigravity"
+                  checked={antigravityEnabled}
+                  onChange={(e) => {
+                    setAntigravityEnabled(e.target.checked);
+                    setSaved(false);
+                  }}
+                  className="rounded-control border-border text-brand focus:ring-brand"
+                />
+                <span>{antigravityEnabled ? "Enabled" : "Disabled"}</span>
+              </label>
+            </div>
+
+            <p className="text-table text-foreground-muted">
+              The standalone agy CLI records every generation in its own conversation database,
+              so its turns are priced here like any other source. This is not the Antigravity
+              usage limits card: that one is Google's own quota clock and stays whatever this
+              toggle says. Disabled, this source is skipped on every sync and hidden from the
+              dashboard.
+            </p>
+
+            <div>
+              <label className="block text-small text-foreground-secondary">
+                Conversations directory
+                <input
+                  type="text"
+                  aria-label="Antigravity conversations path"
+                  placeholder={DEFAULT_AGY_PATH}
+                  value={agyPath}
+                  onChange={(e) => {
+                    setAgyPath(e.target.value);
+                    setSaved(false);
+                  }}
+                  className="mt-1 w-full rounded-control border border-border px-3 py-1.5 font-mono text-small text-foreground"
+                />
+              </label>
+              <span className="mt-1 block text-table text-foreground-muted">
+                Default: {DEFAULT_AGY_PATH}
+              </span>
+            </div>
+
+            <div className="text-small text-foreground-muted">
+              Health:{" "}
+              <span data-testid="agy-health" className="text-foreground-secondary">
+                {antigravityHealth.detail ??
+                  (antigravityHealth.available ? "Available" : "Unavailable")}
               </span>
             </div>
           </div>

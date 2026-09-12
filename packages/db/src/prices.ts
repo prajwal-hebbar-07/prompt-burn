@@ -3,7 +3,10 @@
  *
  * USD per million tokens, straight from the vendors' public price pages:
  * - Claude — https://platform.claude.com/docs/en/about-claude/pricing
- *   (5-minute cache writes; cache hits are the 0.1x column), read 2026-09-04.
+ *   (5-minute cache writes; cache hits are the 0.1x column), read 2026-09-04,
+ *   and the 4.6 pair re-read 2026-09-12 for the `agy` CLI's third-party pool.
+ *   Global/standard routing: the 1.1x `inference_geo: "us"` multiplier and the
+ *   50% Batch discount are both off the table here, like every other vendor.
  * - Ollama Cloud — https://ollama.com/pricing, per-model input / cached-input /
  *   output, read 2026-09-04. Standard rates, not the deepseek peak window.
  *   Ollama Cloud is priced like any other vendor here; OMP reporting
@@ -49,6 +52,19 @@ export const BUNDLED_PRICES: readonly BundledPrice[] = [
   price("claude-sonnet-5", "anthropic", 2, 10, 0.2, 2.5),
   price("claude-sonnet-4-5", "anthropic", 3, 15, 0.3, 3.75),
   price("claude-haiku-4-5", "anthropic", 1, 5, 0.1, 1.25),
+  // Claude through Antigravity's "Claude and GPT models" pool, as the `agy` CLI
+  // reports it. Priced at Anthropic's own public rates — the same choice made
+  // for Gemini through Antigravity and for the Cursor-side models below: this
+  // estimates PAYG cost, never what Google's subscription pool actually bills.
+  // `provider` is the vendor that runs the model, so `anthropic`, not
+  // `google-antigravity`.
+  price("claude-sonnet-4-6", "anthropic", 3, 15, 0.3, 3.75),
+  // Opus 4.6 rates, under the id `agy` writes. `-thinking` is a mode, not a
+  // price tier — the same reasoning as the `claude-4.5-haiku-thinking` row
+  // below, and the reason this is its own row rather than a suffix rule. Only
+  // the id actually observed is bundled: no bare `claude-opus-4-6` row, because
+  // nothing has reported one.
+  price("claude-opus-4-6-thinking", "anthropic", 5, 25, 0.5, 6.25),
   // Ollama Cloud: input / output / cached input. Standard rates — deepseek's
   // peak window (12:00-18:00 UTC, Mon-Fri, double price) is not modelled, so
   // peak-hour deepseek usage under-estimates by 2x.

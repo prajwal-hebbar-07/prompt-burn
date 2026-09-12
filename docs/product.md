@@ -240,7 +240,7 @@ Until explicitly asked:
 | State | What the user sees |
 |-------|---------------------|
 | Never fetched | Empty / `$0` or em dash, **Fetch data**, `Not fetched yet` |
-| Fetched, zero usage for period | `$0.00`, “No OMP or Cursor usage for this period” |
+| Fetched, zero usage for period | `$0.00`, “No OMP, Claude Code, Antigravity or Cursor usage for this period” |
 | Fetching | Spinner; **previous numbers stay** |
 | Partial failure | Banner naming which source failed; remaining data stays |
 | Unknown model price | `—` in cost cell; Settings lists the model |

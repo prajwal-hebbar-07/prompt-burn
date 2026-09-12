@@ -5,11 +5,12 @@
  * dashboards.
  *
  * Every source lands here: `fetch()` runs the parallel collector pass, and
- * `getSnapshot()` aggregates the stored transcript rows — OMP's and Claude
- * Code's — together with Cursor's numbers for that same period, asking Cursor
- * for the period's own window when the period is bounded and falling back to
- * the cached cycle when it cannot answer. Partial success is normal — a failed
- * source keeps its previous data while the others' new data is applied.
+ * `getSnapshot()` aggregates the stored transcript rows — OMP's, Claude
+ * Code's and the `agy` CLI's — together with Cursor's numbers for that same
+ * period, asking Cursor for the period's own window when the period is
+ * bounded and falling back to the cached cycle when it cannot answer. Partial
+ * success is normal — a failed source keeps its previous data while the
+ * others' new data is applied.
  *
  * A source switched off in Settings is neither collected nor shown: its stored
  * rows stay in the database, out of the snapshot, until it is switched back on.
@@ -18,6 +19,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import {
   buildDashboardSnapshot,
@@ -39,6 +41,7 @@ import {
 } from "@prompt-burn/db";
 import {
   collectAllSources,
+  defaultAgyConversationsDirectory,
   defaultClaudeDirectory,
   defaultCursorStatePath,
   defaultSessionsDirectory,
@@ -53,7 +56,7 @@ export type { AppSettings, DashboardSnapshot, NewPriceEntry, PeriodFilter };
 
 /** One source's availability, as `discover()` reports it to the UI. */
 export interface ReaderHealth {
-  source: "omp" | "cursor" | "claude-code";
+  source: "omp" | "cursor" | "claude-code" | "antigravity";
   /** Is this source collectable on this machine right now? */
   available: boolean;
   /** Human-readable detail: a directory path, or why it is unavailable. */
@@ -82,6 +85,25 @@ export interface FetchResult {
    * the endpoint behind them is undocumented.
    */
   ollama: { ok: boolean; reason?: string; error?: string };
+  /**
+   * The `agy` CLI's own turns. A transcript sync like OMP's, so it reports the
+   * same counters — and `reason: "disabled"` when the toggle is off, which is
+   * not a failure. Distinct from the Antigravity quota card below: one is
+   * cost, the other is a provider clock.
+   */
+  antigravityUsage: {
+    ok: boolean;
+    reason?: string;
+    error?: string;
+    scannedFiles: number;
+    skippedFiles: number;
+    insertedEvents: number;
+  };
+  /**
+   * Antigravity's quota clocks. Never flips `ok`, for Ollama's reason: a card,
+   * not usage, read straight off Google's own endpoint.
+   */
+  antigravity: { ok: boolean; reason?: string; error?: string };
 }
 
 /** Before the first Cursor fetch: an empty cycle, never a faked timestamp. */
@@ -130,6 +152,8 @@ export function createUsageReader(
     ompDirectory?: string;
     claudeDirectory?: string;
     cursorStatePath?: string;
+    /** The `agy` CLI's conversations directory; injectable for the same reason. */
+    agyDirectory?: string;
     fetchImpl?: typeof fetch;
     /** `agy`'s raw keychain secret; injectable so tests stay off the keychain. */
     antigravitySecret?: () => string;
@@ -140,6 +164,7 @@ export function createUsageReader(
     ompDirectory,
     claudeDirectory,
     cursorStatePath,
+    agyDirectory,
     fetchImpl,
     antigravitySecret,
     now = () => new Date(),
@@ -176,6 +201,7 @@ export function createUsageReader(
       ...stored,
       ompPath: stored.ompPath || ompDirectory || defaultSessionsDirectory(),
       claudePath: stored.claudePath || claudeDirectory || defaultClaudeDirectory(),
+      agyPath: stored.agyPath || agyDirectory || defaultAgyConversationsDirectory(),
     };
   }
 
@@ -222,7 +248,15 @@ export function createUsageReader(
 
   return {
     async discover() {
-      const { ompEnabled, ompPath, cursorEnabled, claudeEnabled, claudePath } = sources();
+      const {
+        ompEnabled,
+        ompPath,
+        cursorEnabled,
+        claudeEnabled,
+        claudePath,
+        antigravityEnabled,
+        agyPath,
+      } = sources();
       const statePath = cursorStatePath ?? defaultCursorStatePath();
       // A disabled source is not probed at all: Cursor's database is not even
       // opened to look for a token.
@@ -244,22 +278,44 @@ export function createUsageReader(
           // Never the token: only where it came from, or why there is none.
           detail: auth === undefined ? DISABLED_DETAIL : auth.ok ? statePath : auth.detail,
         },
+        // Appended last so an index-based read of the Cursor entry keeps
+        // working. Availability is the conversations directory existing: `agy`
+        // creates it on first run, so its absence means the CLI never ran here.
+        {
+          source: "antigravity",
+          available: antigravityEnabled && existsSync(agyPath),
+          detail: antigravityEnabled ? agyPath : DISABLED_DETAIL,
+        },
       ];
     },
 
     async fetch() {
       const at = now().toISOString();
-      const { ompEnabled, ompPath, cursorEnabled, claudeEnabled, claudePath } = sources();
+      const {
+        ompEnabled,
+        ompPath,
+        cursorEnabled,
+        claudeEnabled,
+        claudePath,
+        antigravityEnabled,
+        agyPath,
+      } = sources();
       const result = await collectAllSources({
         db,
         ompDirectory: ompPath,
         claudeDirectory: claudePath,
         cursorStatePath,
+        agyConversationsDirectory: agyPath,
+        // The workspace map `agy` writes beside the conversations directory.
+        // Derived rather than configured separately: one override moves both,
+        // and a test pointed at a temp directory never reaches `~/.gemini`.
+        agySummariesPath: join(dirname(agyPath), "conversation_summaries.db"),
         fetchImpl,
         ...(antigravitySecret ? { antigravitySecret } : {}),
         ompEnabled,
         cursorEnabled,
         claudeEnabled,
+        antigravityUsageEnabled: antigravityEnabled,
       });
       const cycle = result.cursor.cycle;
       if (cycle) cursorCycle = cycle;
@@ -276,10 +332,15 @@ export function createUsageReader(
         errors.push(`Claude Code failed: ${result.claudeCode.error ?? "unknown error"}`);
       }
       if (cursorFailed) errors.push(`Cursor failed: ${result.cursor.error ?? "unknown error"}`);
+      // Disabled is not a failure; a throw inside the scan is.
+      const agyFailed = result.antigravityUsage.reason === "sync_failed";
+      if (agyFailed) {
+        errors.push(`Antigravity failed: ${result.antigravityUsage.error ?? "unknown error"}`);
+      }
 
       return {
         at,
-        ok: result.omp.ok && result.claudeCode.ok && !cursorFailed,
+        ok: result.omp.ok && result.claudeCode.ok && !cursorFailed && !agyFailed,
         ...(errors.length > 0 ? { error: errors.join(" · ") } : {}),
         omp: {
           ok: result.omp.ok,
@@ -290,6 +351,22 @@ export function createUsageReader(
           ok: result.claudeCode.ok,
           ...(result.claudeCode.error === undefined ? {} : { error: result.claudeCode.error }),
           ...result.claudeCode.sync,
+        },
+        antigravityUsage: {
+          ok: result.antigravityUsage.ok,
+          ...(result.antigravityUsage.reason === undefined
+            ? {}
+            : { reason: result.antigravityUsage.reason }),
+          ...(result.antigravityUsage.error === undefined
+            ? {}
+            : { error: result.antigravityUsage.error }),
+          // Absent when the source never ran: zeros, the same shape the other
+          // syncs report for a pass that scanned nothing.
+          ...(result.antigravityUsage.sync ?? {
+            scannedFiles: 0,
+            skippedFiles: 0,
+            insertedEvents: 0,
+          }),
         },
         cursor: {
           ok: result.cursor.ok,
@@ -312,7 +389,7 @@ export function createUsageReader(
 
     async getSnapshot(period: PeriodFilter) {
       const at = now().toISOString();
-      const { ompEnabled, ompPath, cursorEnabled, claudeEnabled } = sources();
+      const { ompEnabled, ompPath, cursorEnabled, claudeEnabled, antigravityEnabled } = sources();
       return buildDashboardSnapshot({
         period,
         // Switched off means off the screen, not just unsynced: no events, no
@@ -320,8 +397,14 @@ export function createUsageReader(
         // moment the toggle does.
         ompEvents: ompEnabled ? loadUsageEvents(db, "omp") : [],
         claudeEvents: claudeEnabled ? loadUsageEvents(db, "claude-code") : [],
+        antigravityEvents: antigravityEnabled ? loadUsageEvents(db, "antigravity") : [],
         cursor: cursorEnabled ? await cursorForPeriod(period) : EMPTY_CURSOR_CYCLE,
-        enabled: { omp: ompEnabled, "claude-code": claudeEnabled, cursor: cursorEnabled },
+        enabled: {
+          omp: ompEnabled,
+          "claude-code": claudeEnabled,
+          cursor: cursorEnabled,
+          antigravity: antigravityEnabled,
+        },
         now: now(),
         // Provider clocks. The OMP ones are re-read out of OMP's own agent
         // database on every snapshot — OMP refreshes them while it works, and

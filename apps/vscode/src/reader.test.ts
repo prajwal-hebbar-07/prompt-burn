@@ -34,6 +34,7 @@ let root: string;
 let home: string;
 let sessions: string;
 let claudeProjects: string;
+let agyConversations: string;
 
 /** A host reader whose Cursor side has nothing to read. */
 function hostReader() {
@@ -43,6 +44,8 @@ function hostReader() {
     // Injected, and deliberately empty: the machine's own `~/.claude` is not
     // this test's business.
     claudeDirectory: claudeProjects,
+    // Same for `agy`: an empty temp directory, never the real `~/.gemini`.
+    agyDirectory: agyConversations,
     cursorStatePath: join(root, "absent", "state.vscdb"),
     // No `agy` session: exit status 44 is `security`'s "item not found".
     antigravitySecret: () => {
@@ -59,6 +62,8 @@ beforeEach(() => {
   writeFileSync(join(sessions, "session.jsonl"), `${HEADER}\n${FIXTURE_LINE}\n`);
   claudeProjects = join(root, "claude-projects");
   mkdirSync(claudeProjects, { recursive: true });
+  agyConversations = join(root, "agy-conversations");
+  mkdirSync(agyConversations, { recursive: true });
 });
 
 afterEach(() => {

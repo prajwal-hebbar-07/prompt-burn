@@ -9,6 +9,7 @@ export {
   pricedSubtotal,
   sourceShares,
   type PricedSubtotal,
+  type SourceShares,
 } from "./Dashboard.js";
 export {
   FetchErrorBanner,
@@ -25,7 +26,7 @@ export {
   formatTokens,
   tokenLine,
 } from "./format.js";
-export { ModelTable, rankRows, type ModelTableProps } from "./ModelTable.js";
+export { ModelTable, SOURCE_PILLS, rankRows, type ModelTableProps } from "./ModelTable.js";
 export { PeriodBar, type PeriodBarProps, formatRangeLabel, periodLabel } from "./PeriodBar.js";
 export { Projects, UNATTRIBUTED, projectLabel, type ProjectsProps } from "./Projects.js";
 export {

@@ -2,12 +2,18 @@
  * The Dashboard route body: the hero score panel, then provider clocks, then
  * the by-model board.
  *
- * Combined estimate, then all three source subtotals — always all three, never
+ * Combined estimate, then all four source subtotals — always all four, never
  * deduped, never re-derived here. Cursor answers for the period itself when it
  * can; when all it has is a whole billing cycle (`mixedPeriod`) its cost stays
  * on its own row, out of the hero number, and both the subtitle and that row
- * say so. OMP and Claude Code are timestamped, so they are never out of scope
- * that way. The cycle's own dates are the cycle banner's job, not this card's.
+ * say so. OMP, Claude Code and Antigravity are timestamped, so they are never
+ * out of scope that way. The cycle's own dates are the cycle banner's job, not
+ * this card's.
+ *
+ * The Antigravity row is the standalone `agy` CLI's own priced turns, and it is
+ * not the Antigravity card in the Usage limits panel below: that one is Google's
+ * quota clock, unpriced and unfiltered. They carry different colours on purpose
+ * — `source-antigravity` here, `provider-antigravity` there.
  *
  * One unpriced model used to blank the whole number: `estimatedCents` is null
  * when any included row has no rate, and the hero showed `—` even with dollars
@@ -28,7 +34,7 @@ import { periodLabel } from "./PeriodBar.js";
 import { UsageLimits } from "./UsageLimits.js";
 
 /** Product's exact sentence for a successful fetch with nothing in it. */
-const NO_USAGE = "No OMP, Claude Code or Cursor usage for this period";
+const NO_USAGE = "No OMP, Claude Code, Antigravity or Cursor usage for this period";
 
 /** Before the first successful fetch there is nothing to be zero about. */
 const NOT_FETCHED = "No usage data yet";
@@ -44,7 +50,7 @@ export interface PricedSubtotal {
  * period and are always inside the hero number. Cursor is the odd one out: a
  * whole-cycle answer can sit outside the period entirely.
  */
-const TIMESTAMPED: readonly Source[] = ["omp", "claude-code"];
+const TIMESTAMPED: readonly Source[] = ["omp", "claude-code", "antigravity"];
 
 /**
  * Adds up the rows that price, optionally for one source or a set of them.
@@ -95,7 +101,12 @@ export function formatEstimatedTotal(snapshot: DashboardSnapshot): string {
  * whatever the previous snapshot had — this only decides the empty body.
  */
 export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
-  const tokens = [snapshot.omp.tokens, snapshot.claudeCode.tokens, snapshot.cursor.tokens];
+  const tokens = [
+    snapshot.omp.tokens,
+    snapshot.claudeCode.tokens,
+    snapshot.antigravity.tokens,
+    snapshot.cursor.tokens,
+  ];
   const used =
     snapshot.models.length > 0 ||
     tokens.some((t) => t.input + t.output + (t.cacheRead ?? 0) + (t.cacheWrite ?? 0) > 0);
@@ -108,8 +119,9 @@ export function emptyStateMessage(snapshot: DashboardSnapshot): string | null {
  * `Estimated total · OMP + Claude Code: Today · Cursor: cycle to date (not in
  * total)` when all Cursor had was its billing cycle. Locked in product.md and
  * spec.md — every mixed period names both scopes, and says which one the
- * number is. OMP and Claude Code share the first scope because both are
- * timestamped and both are in the number.
+ * number is. OMP, Claude Code and Antigravity share the first scope because
+ * all three are timestamped and all three are in the number; Cursor is the
+ * only source that can be stuck on a cycle.
  */
 export function heroSubtitle(snapshot: DashboardSnapshot): string {
   const period = periodLabel(snapshot.period);
@@ -120,6 +132,7 @@ export function heroSubtitle(snapshot: DashboardSnapshot): string {
   const scope = [
     snapshot.enabled.omp ? "OMP" : null,
     snapshot.enabled["claude-code"] ? "Claude Code" : null,
+    snapshot.enabled.antigravity ? "Antigravity" : null,
   ]
     .filter((label) => label !== null)
     .join(" + ");
@@ -132,37 +145,53 @@ function tokenWeight(tokens: DashboardSnapshot["omp"]["tokens"]): number {
   return tokens.input + tokens.output + (tokens.cacheRead ?? 0) + (tokens.cacheWrite ?? 0);
 }
 
+/** One meter's worth of segments, in the order they are drawn. */
+export interface SourceShares {
+  omp: number;
+  claudeCode: number;
+  antigravity: number;
+  cursor: number;
+}
+
 /**
  * How wide each segment of the split meter is. Spend decides it; with no priced
  * row anywhere the meter falls back to token volume so the bar still says which
  * source did the work.
  *
  * A Cursor cycle that is out of the period is out of the meter too — it is not
- * part of the number the meter divides. Claude Code is timestamped, so it is
- * never excluded that way.
+ * part of the number the meter divides. Claude Code and Antigravity are
+ * timestamped, so they are never excluded that way.
  */
 export function sourceShares(
   snapshot: DashboardSnapshot,
   omp: number | null,
   claudeCode: number | null,
+  antigravity: number | null,
   cursor: number | null,
-): { omp: number; claudeCode: number; cursor: number } {
-  const split = (a: number, b: number, c: number) => {
-    const total = a + b + c;
-    if (total <= 0) return { omp: 0, claudeCode: 0, cursor: 0 };
-    return { omp: (a / total) * 100, claudeCode: (b / total) * 100, cursor: (c / total) * 100 };
+): SourceShares {
+  const split = (parts: SourceShares): SourceShares => {
+    const total = parts.omp + parts.claudeCode + parts.antigravity + parts.cursor;
+    if (total <= 0) return { omp: 0, claudeCode: 0, antigravity: 0, cursor: 0 };
+    return {
+      omp: (parts.omp / total) * 100,
+      claudeCode: (parts.claudeCode / total) * 100,
+      antigravity: (parts.antigravity / total) * 100,
+      cursor: (parts.cursor / total) * 100,
+    };
   };
-  const spend = split(
-    Math.max(omp ?? 0, 0),
-    Math.max(claudeCode ?? 0, 0),
-    snapshot.mixedPeriod ? 0 : Math.max(cursor ?? 0, 0),
-  );
-  if (spend.omp + spend.claudeCode + spend.cursor > 0) return spend;
-  return split(
-    tokenWeight(snapshot.omp.tokens),
-    tokenWeight(snapshot.claudeCode.tokens),
-    snapshot.mixedPeriod ? 0 : tokenWeight(snapshot.cursor.tokens),
-  );
+  const spend = split({
+    omp: Math.max(omp ?? 0, 0),
+    claudeCode: Math.max(claudeCode ?? 0, 0),
+    antigravity: Math.max(antigravity ?? 0, 0),
+    cursor: snapshot.mixedPeriod ? 0 : Math.max(cursor ?? 0, 0),
+  });
+  if (spend.omp + spend.claudeCode + spend.antigravity + spend.cursor > 0) return spend;
+  return split({
+    omp: tokenWeight(snapshot.omp.tokens),
+    claudeCode: tokenWeight(snapshot.claudeCode.tokens),
+    antigravity: tokenWeight(snapshot.antigravity.tokens),
+    cursor: snapshot.mixedPeriod ? 0 : tokenWeight(snapshot.cursor.tokens),
+  });
 }
 
 interface SubtotalRowProps {
@@ -206,11 +235,13 @@ export function Dashboard({ snapshot }: DashboardProps) {
   const combined = pricedSubtotal(snapshot.models, snapshot.mixedPeriod ? TIMESTAMPED : undefined);
   const ompPriced = pricedSubtotal(snapshot.models, "omp");
   const claudePriced = pricedSubtotal(snapshot.models, "claude-code");
+  const antigravityPriced = pricedSubtotal(snapshot.models, "antigravity");
   const cursorPriced = pricedSubtotal(snapshot.models, "cursor");
   const shares = sourceShares(
     snapshot,
     snapshot.omp.estimatedCents ?? ompPriced.cents,
     snapshot.claudeCode.estimatedCents ?? claudePriced.cents,
+    snapshot.antigravity.estimatedCents ?? antigravityPriced.cents,
     snapshot.cursor.estimatedCents ?? cursorPriced.cents,
   );
   const approximate = snapshot.estimatedCents === null && combined.cents !== null;
@@ -261,6 +292,7 @@ export function Dashboard({ snapshot }: DashboardProps) {
             simply not on this screen. */}
         <div
           aria-hidden="true"
+          data-testid="source-meter"
           className="relative mt-5 flex h-2.5 gap-1 overflow-hidden rounded-full bg-surface-subtle"
         >
           {snapshot.enabled.omp ? (
@@ -273,6 +305,12 @@ export function Dashboard({ snapshot }: DashboardProps) {
             <span
               className="animate-bar h-full origin-left rounded-full bg-provider-claude"
               style={{ width: `${shares.claudeCode}%` }}
+            />
+          ) : null}
+          {snapshot.enabled.antigravity ? (
+            <span
+              className="animate-bar h-full origin-left rounded-full bg-source-antigravity"
+              style={{ width: `${shares.antigravity}%` }}
             />
           ) : null}
           {snapshot.enabled.cursor ? (
@@ -300,6 +338,17 @@ export function Dashboard({ snapshot }: DashboardProps) {
               text={costText(snapshot.claudeCode.estimatedCents, claudePriced)}
             />
           ) : null}
+          {snapshot.enabled.antigravity ? (
+            // The `agy` CLI's own turns. The Usage-limits card of the same name
+            // is Google's quota clock, not this cost — hence the different
+            // colour and the caption in that panel.
+            <SubtotalRow
+              testId="antigravity-subtotal"
+              label="Antigravity (agy CLI)"
+              dotClass="bg-source-antigravity"
+              text={costText(snapshot.antigravity.estimatedCents, antigravityPriced)}
+            />
+          ) : null}
           {snapshot.enabled.cursor ? (
             <SubtotalRow
               testId="cursor-subtotal"
@@ -314,7 +363,12 @@ export function Dashboard({ snapshot }: DashboardProps) {
           data-testid="token-breakdown"
           className="relative mt-3 font-mono text-small leading-small text-foreground-muted"
         >
-          {tokenLine(snapshot.omp.tokens, snapshot.claudeCode.tokens, snapshot.cursor.tokens)}
+          {tokenLine(
+            snapshot.omp.tokens,
+            snapshot.claudeCode.tokens,
+            snapshot.antigravity.tokens,
+            snapshot.cursor.tokens,
+          )}
         </p>
       </section>
       {/* Subscription windows sit under the score and above the by-model board.
