@@ -35,7 +35,7 @@ competing schemas, or transcript reparsing.
 | `vitest.config.mts` | Config | Test configuration for host unit tests and webview DOM tests |
 | `src/ids.ts` | TS Module | Manifest constants decoupled from the `vscode` module |
 | `src/ids.test.ts` | Test | Asserts `package.json` manifest synchrony with `src/ids.ts` constants |
-| `src/reader.ts` | TS Module | `createHostReader`: opens DB and creates `UsageReader` |
+| `src/reader.ts` | TS Module | `createHostReader`: opens DB, creates the shared `UsageReader` |
 | `src/reader.test.ts` | Test | Host reader integration test against temporary directories |
 | `src/host-messages.ts` | TS Module | `respond`: host postMessage dispatch without VS Code APIs |
 | `src/host-messages.test.ts` | Test | Unit tests for `respond` protocol against a stubbed reader |
@@ -79,13 +79,20 @@ export type HostResponse =
   | { id: number; ok: false; error: string };
 ```
 
-- `fetch`: Runs collector passes across all configured sources (OMP, Claude Code, Cursor) and
-  returns `FetchResult`. Errors are returned in the response payload; the handler never throws.
+- `fetch`: Runs collector passes across all configured sources (OMP, Claude Code, the
+  Antigravity `agy` CLI, Cursor) and returns `FetchResult`. Errors are returned in the response
+  payload; the handler never throws.
 - `getSnapshot`: Re-aggregates stored database records for the requested `PeriodFilter`. Contacts
   no external APIs and performs no disk sweeps.
 - `getSettings`: Retrieves effective `AppSettings` (source toggles and transcript path overrides).
 - `saveSettings`: Persists updated settings to SQLite and returns the fresh configuration.
 - `addPrice`: Inserts a `NewPriceEntry` into `price_entries` for retroactive pricing.
+
+The webview narrows the `fetch` answer to `FetchOutcome` (`web/host.ts`): the pass timestamp,
+the combined `ok` verdict, an optional `error`, and one `{ ok }` verdict per source — `omp`,
+`claudeCode`, `antigravityUsage` (the `agy` CLI's own turns — the usage source, not the quota
+card behind the Usage-limits tile), and `cursor`. The reader's separate quota-clock verdict for
+Antigravity is dropped here; quota limits reach the UI through the snapshot, not the pass.
 
 ### Webview Security Surface
 
@@ -116,7 +123,7 @@ flowchart TD
     H --> I["src/extension.ts onDidReceiveMessage"]
     I --> J["src/host-messages.ts respond()"]
     J --> K["Lazy createHostReader() -> ~/.prompt-burn/db.sqlite"]
-    K --> L["collectAllSources(): OMP + Claude Code + Cursor"]
+    K --> L["collectAllSources(): OMP + Claude Code + Antigravity + Cursor"]
     L --> M["Return HostResponse -> postMessage back to webview"]
     M --> N["web/host.ts resolves Promise for request id"]
     N --> O["App.tsx updates DashboardSnapshot & renders AppShell"]
@@ -134,9 +141,12 @@ flowchart TD
 - **Zero filesystem/network access in webview:** The webview bundle never imports `@prompt-burn/db`,
   `@prompt-burn/reader`, `@prompt-burn/collectors`, SQLite, or Node `fs`. All operations requiring
   disk, database, or network I/O must pass through `postMessage` to the host.
-- **Snapshot persistence on fetch failure:** When a fetch fails (all collectors fail or throw), the
-  existing snapshot total remains visible on screen. Only `fetch.status = "error"` and
-  `fetch.error` are updated, triggering the error banner. The total never drops to $0 or blanks out.
+- **Snapshot persistence on fetch failure:** When a fetch fails — every one of OMP, Claude Code
+  and Cursor reports failure, or the call itself throws — the existing snapshot total remains
+  visible on screen. Only `fetch.status = "error"` and `fetch.error` are updated, raising the error
+  banner. Partial success still lands: sources that worked contribute new rows, failed sources
+  keep their previous ones, and the banner names both. The total never drops to $0 or blanks out.
+  (Antigravity's verdict is not part of the all-failed short-circuit — see §9.)
 - **No background polling or auto-refresh:** The extension runs a fetch pass once when the tab
   mounts, and subsequently only when the user manually clicks "Fetch data". Period changes and
   settings updates re-query existing records in SQLite without re-running collectors.
@@ -168,17 +178,19 @@ Configuration is managed across manifest definitions, build scripts, and local S
   - Fixes output filenames to `webview.js` and `webview.css` for deterministic loading by
     `dashboardHtml`.
 - **Runtime User Settings:**
-  - Source toggles (`ompEnabled`, `claudeEnabled`, `cursorEnabled`) and custom path overrides
-    (`ompPath`, `claudePath`) are stored in `~/.prompt-burn/db.sqlite` (`settings` table) and read
-    on demand by `UsageReader`.
+  - Source toggles (`ompEnabled`, `claudeEnabled`, `cursorEnabled`, `antigravityEnabled`) and
+    custom path overrides (`ompPath`, `claudePath`, `agyPath`) are stored in
+    `~/.prompt-burn/db.sqlite` (`settings` table) and read on demand by `UsageReader`.
 
 ## 7. Boundaries and dependencies
 
 - **Host Boundary:**
   - Inbound: Triggered by VS Code command execution or editor document resolution.
-  - Outbound: Reads/writes `~/.prompt-burn/db.sqlite`; reads OMP sessions (`~/.omp/agent/sessions/`)
-    and Claude Code projects (`~/.claude/projects/`); reads Cursor SQLite database (`state.vscdb`);
-    calls Cursor HTTP API (`api2.cursor.sh` / Cursor backend).
+  - Outbound: Reads/writes `~/.prompt-burn/db.sqlite`; reads OMP sessions, Claude Code projects
+    and `agy` conversations (~/.omp/agent/sessions/, ~/.claude/projects/,
+    ~/.gemini/antigravity-cli/conversations/); reads Cursor's `state.vscdb`; calls the Cursor HTTP
+    API (`cursor.com`); reads the macOS keychain via `security` for the Antigravity quota pass
+    (both injectable through `HostReaderOptions` for tests).
 - **Webview Boundary:**
   - Sandbox: Sandboxed iframe with strict CSP; communicates exclusively via `postMessage`.
   - Mount target: `#root` element inside `dashboardHtml`.
@@ -198,17 +210,24 @@ Four test suites cover the package across Node and jsdom environments:
 - **`src/ids.test.ts` (Node):** Validates manifest `package.json` against `src/ids.ts`. Ensures
   command names, view types, URI patterns, tab titles, and entrypoint paths match.
 - **`src/reader.test.ts` (Node):** Tests `createHostReader` against isolated temporary directories
-  with synthetic OMP transcripts and missing Cursor state. Verifies that SQLite initialization and
-  collector execution function correctly without touching real user files.
+  with a synthetic OMP transcript, empty Claude Code and `agy` directories, a keychain stub that
+  throws macOS `security`'s exit status 44, and missing Cursor state. Verifies SQLite
+  initialization, that OMP rows reach the snapshot through the shared database file, and that
+  `discover()` reports each source's location — OMP, Claude Code, Cursor — without exposing a
+  token.
 - **`src/host-messages.test.ts` (Node):** Tests `respond()` dispatch logic against a stubbed
-  `UsageReader`. Verifies all 5 request methods, arguments, and error trapping (`ok: false`).
-- **`web/App.test.tsx` (jsdom):** Drives the React UI against a simulated `acquireVsCodeApi` mock:
+  `UsageReader` (settings fixture carries `antigravityEnabled`/`agyPath`). Verifies all 5 request
+  methods, arguments, and error trapping (`ok: false`).
+- **`web/App.test.tsx` (jsdom):** Drives the React UI against a simulated `acquireVsCodeApi` mock
+  faked at the `postMessage` boundary (the real `web/host.ts` request-id plumbing runs):
   - Asserts fetch-on-open and initial total display.
   - Asserts manual "Fetch data" button triggers re-fetch.
   - Asserts in-flight spinner does not blank the existing total.
-  - Asserts failed fetch leaves prior snapshot intact and renders error banner.
+  - Asserts a fully failed fetch keeps the prior snapshot, skips the re-read, and renders the
+    multi-source error banner (`OMP failed · Claude Code failed · Cursor failed — …`).
   - Asserts period filter changes re-query snapshot without re-fetching.
-  - Asserts settings modifications write through to the host.
+  - Asserts settings modifications — including the Antigravity toggle and path — write through
+    to the host.
 
 ### What is NOT covered
 
@@ -228,6 +247,19 @@ Four test suites cover the package across Node and jsdom environments:
   from `apps/desktop/web/App.tsx` almost verbatim (noted in code: `ponytail: this policy is
   duplicated from apps/desktop/web/App.tsx because the two shells differ only in transport`). If a
   third shell is added, state handling must be extracted to a shared container.
+- **All-failed short-circuit ignores Antigravity:** `web/App.tsx` treats a pass as completely
+  failed when `omp`, `claudeCode` and `cursor` are all `!ok` — `antigravityUsage` is never
+  consulted (line 59). If exactly Antigravity succeeds while the other three fail, the new `agy`
+  rows are stored but the snapshot is not re-read; the banner even credits "Antigravity OK" while
+  the rescued numbers stay invisible until the next fetch. The same blind spot exists in
+  `apps/desktop/web/App.tsx` — fix both or neither. The jsdom fake host in `web/App.test.tsx`
+  omits `antigravityUsage` from its answers, so no test exercises this path.
+- **`FetchOutcome` declares what the tests never send:** `web/host.ts` types
+  `antigravityUsage` as required on every fetch answer, but the jsdom fake host in
+  `web/App.test.tsx` omits it from all fetch results, and `fetchErrorMessage`'s `FetchPass`
+  (`packages/ui/src/FetchBanner.tsx`) types it optional to match. TypeScript does not catch this
+  because the fake answers flow through an untyped `postMessage` boundary; the first shell to
+  trust the declared shape against a real host answer is where a missing key would surface.
 - **Extension host activation untested in CI:** Because `vscode` is a runtime-injected module,
   `src/extension.ts` is omitted from automated Vitest suites. Verification relies on manual runs in
   an Extension Development Host (`code --extensionDevelopmentPath=apps/vscode`).

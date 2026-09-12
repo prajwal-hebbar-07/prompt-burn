@@ -15,18 +15,20 @@ telegram to an outside service, and how to turn piles of raw numbers into a clea
 ## The morning roll call
 
 When you launch an app or press refresh, the switchboard sounds the roll call. It sends runners to
-gather local diaries from your computer's disk, and it places outside telephone calls to retrieve
-billing statements and subscription meters.
+gather local diaries from your computer's disk — from the main assistant, the editor companion,
+and the command-line chat tool — and it places outside telephone calls to retrieve billing
+statements and subscription meters.
 
 If an outside wire goes dead — for instance, if an external service is temporarily unreachable —
 the switchboard does not panic or cancel the harvest. It accepts whatever reports arrived safely,
 files the local diary entries into the central cabinets, and notes the bad line on its tally sheet.
 The good numbers appear on your screen immediately. An error on one line never prevents the rest of
 your data from showing up.
-
 And if you have simply never signed into a service or don't have it installed, the switchboard
 treats that as normal everyday business, not an emergency. It reports that the line is quiet and
-moves on.
+moves on. The same goes for the command-line chat tool: if its folder has never been created on
+this machine, the switchboard notes that it has simply never been used here, and carries on with
+the rest of the roll call.
 
 ## Answering the big question: "What did we spend today?"
 
@@ -84,13 +86,17 @@ not free.
 Beyond token counts, the switchboard tracks the health and limits of your subscriptions — how many
 hours remain on a quota, or when a weekly allowance resets.
 
+Each card is pinned under the mailbox the subscription was signed up with, taken from the sign-up
+record the service itself keeps. So if you hold two subscriptions with the same company, the board
+shows them under their two different email addresses instead of two identical, confusable labels.
+
 Sometimes, both an old local log and a live outside line report on the very same subscription. The
 switchboard knows better than to pin two competing cards to the bulletin board for one account.
 The fresh, live report always takes priority, and the aging local note is quietly removed.
 
 ## Shared settings between two doors
 
-If you flip a switch at the desktop front door — say, turning off an assistant you aren't currently
+If you flip a switch at the desktop front door — turning off an assistant you aren't currently
 using — the switchboard records that choice in the central ledger.
 
 When you walk over to the editor front door, the assistant is already turned off there too. Its

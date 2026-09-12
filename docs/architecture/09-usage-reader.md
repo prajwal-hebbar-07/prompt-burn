@@ -17,10 +17,11 @@ The package fulfills four core responsibilities:
   collectors (`@prompt-burn/collectors`), commits transcript events transactionally into SQLite,
   caches remote cycles and provider limits in memory, and handles partial source failures without
   aborting successful sources.
-- **Snapshot assembly (`getSnapshot(period)`):** combines stored transcript events (OMP and Claude
-  Code) from SQLite with Cursor's windowed or cycle numbers, resolves multi-source provider limits
-  (deduplicating live Antigravity limits against OMP's cached rows), and injects a dynamic
-  point-in-time pricing callback to produce a complete `DashboardSnapshot`.
+- **Snapshot assembly (`getSnapshot(period)`):** combines stored transcript events (OMP, Claude
+  Code, and the Antigravity `agy` CLI) from SQLite with Cursor's windowed or cycle numbers,
+  resolves multi-source provider limits (deduplicating live Antigravity limits against OMP's
+  cached rows), and injects a dynamic point-in-time pricing callback to produce a complete
+  `DashboardSnapshot`.
 - **Health discovery (`discover()`):** inspects local directory paths and credential availability
   for each source, reporting availability and safe diagnostic details without leaking access
   tokens.
@@ -62,7 +63,9 @@ Exports of `@prompt-burn/reader` (all exported directly from `packages/reader/sr
   ```ts
   export interface FetchResult {
     at: string;
+    /** Every source that could run did. Partial success is `false` with data applied. */
     ok: boolean;
+    /** Combined per-source failure text, e.g. "Cursor failed: …". */
     error?: string;
     omp: {
       ok: boolean;
@@ -79,12 +82,27 @@ Exports of `@prompt-burn/reader` (all exported directly from `packages/reader/sr
       insertedEvents: number;
     };
     cursor: { ok: boolean; reason?: string; error?: string; models: number };
+    /** Ollama Cloud's clocks. Never flips `ok`: they are a panel, not usage. */
     ollama: { ok: boolean; reason?: string; error?: string };
-    antigravity?: { ok: boolean; reason?: string; error?: string };
+    /**
+     * The `agy` CLI's own turns. A transcript sync like OMP's, so it reports the
+     * same counters — and `reason: "disabled"` when the toggle is off, which is
+     * not a failure.
+     */
+    antigravityUsage: {
+      ok: boolean;
+      reason?: string;
+      error?: string;
+      scannedFiles: number;
+      skippedFiles: number;
+      insertedEvents: number;
+    };
+    /** Antigravity's quota clocks. Never flips `ok`, for Ollama's reason. */
+    antigravity: { ok: boolean; reason?: string; error?: string };
   }
   ```
-  *(Note: `antigravity` is present on the runtime return object from `fetch()`, though omitted from
-  the interface definition in `src/index.ts`; see §9).*
+  `antigravityUsage` (cost) and `antigravity` (quota card) are distinct: they fail independently
+  and only `sync_failed` in the former marks the pass as failed.
 - **`UsageReader`**: the frozen contract implemented by `createUsageReader`:
   ```ts
   export interface UsageReader {
@@ -105,6 +123,7 @@ Exports of `@prompt-burn/reader` (all exported directly from `packages/reader/sr
   - `ompDirectory?: string`: override directory for OMP transcript files.
   - `claudeDirectory?: string`: override directory for Claude Code projects.
   - `cursorStatePath?: string`: override path to Cursor's `state.vscdb`.
+  - `agyDirectory?: string`: override directory for the `agy` CLI's conversations.
   - `fetchImpl?: typeof fetch`: custom HTTP fetch implementation (used for offline tests).
   - `antigravitySecret?: () => string`: supplier of `agy` keychain secret for quota fetches.
   - `now?: () => Date`: custom clock injection (defaults to `() => new Date()`).
@@ -127,14 +146,14 @@ flowchart TD
         CAS --> ST[Update cursorCycle, ollamaLimits, antigravityLimits]
         ST --> CLR[cursorWindows.clear: invalidate stale cached windows]
         CLR --> CHK{Critical sources succeeded?}
-        CHK -- OMP or Claude or fatal Cursor failed --> F_ERR[ok = false, format error summary]
-        CHK -- All ok or Cursor benignly degraded --> F_OK[ok = true]
+        CHK -- OMP / Claude / fatal Cursor / agy sync_failed --> F_ERR[ok = false]
+        CHK -- All ok or benignly degraded --> F_OK[ok = true]
         F_ERR & F_OK --> RET_F[Return FetchResult]
     end
 
     subgraph getSnapshot Pass
         GS[reader.getSnapshot period] --> S2[sources: readSettings db]
-        S2 --> EV[loadUsageEvents db for enabled transcript sources]
+        S2 --> EV[loadUsageEvents db for omp / claude-code / antigravity when enabled]
         S2 --> CP[cursorForPeriod period]
         CP --> PB{periodBounds start, end?}
         PB -- null or start &gt;= end --> RET_CYC[Return cached cursorCycle]
@@ -155,9 +174,12 @@ flowchart TD
 
 - **Path override precedence:** The path used for transcript parsing and SQLite checks follows a
   strict three-tiered priority:
-  1. Stored override in the database `settings` table (`stored.ompPath` or `stored.claudePath`).
-  2. Factory option passed to `createUsageReader` (`ompDirectory` or `claudeDirectory`).
-  3. Default location from collectors (`defaultSessionsDirectory()` or `defaultClaudeDirectory()`).
+  1. Stored override in the database `settings` table (`stored.ompPath`, `stored.claudePath`, or
+     `stored.agyPath`).
+  2. Factory option passed to `createUsageReader` (`ompDirectory`, `claudeDirectory`, or
+     `agyDirectory`).
+  3. Default location from collectors (`defaultSessionsDirectory()`, `defaultClaudeDirectory()`,
+     or `defaultAgyConversationsDirectory()`).
 - **Concurrent multi-shell settings awareness:** The internal `sources()` helper re-reads
   `readSettings(db)` on **every** invocation of `discover()`, `fetch()`, `getSnapshot()`, and
   `getSettings()`. Because the desktop sidecar and VS Code extension host share the same database
@@ -171,17 +193,21 @@ flowchart TD
     mark `FetchResult.ok` as `false`. They represent normal machine states where Cursor is absent or
     dormant.
   - Cursor outcomes of `expired` or `unreadable` represent actionable errors and mark `ok: false`.
-  - Ollama Cloud and Antigravity failures never mark `FetchResult.ok` as `false`; quota clocks are
-    supplementary panels rather than primary usage records.
+  - An `agy` transcript sync outcome of `disabled` is likewise not a failure; `sync_failed` (a
+    throw inside the scan) is, and marks `ok: false` with `Antigravity failed: …` in the error
+    summary.
+  - Ollama Cloud and Antigravity quota failures never mark `FetchResult.ok` as `false`; quota
+    clocks are supplementary panels rather than primary usage records.
 - **Switched-off source behavior:** A source disabled in settings (`ompEnabled = false`,
-  `claudeEnabled = false`, or `cursorEnabled = false`) is suppressed across the entire pipeline:
+  `claudeEnabled = false`, `cursorEnabled = false`, or `antigravityEnabled = false`) is suppressed
+  across the entire pipeline:
   - `discover()` does not probe it (Cursor's `state.vscdb` is not even opened) and reports
     `detail: "Disabled in Settings"`.
   - `fetch()` passes the disabled flag to `collectAllSources`, skipping transcript walking and
     HTTP.
   - `getSnapshot()` passes empty arrays or empty cycles for that source (`ompEvents: []`,
-    `claudeEvents: []`, `cursor: EMPTY_CURSOR_CYCLE`), omitting its subtotal row from the
-    dashboard.
+    `claudeEvents: []`, `antigravityEvents: []`, `cursor: EMPTY_CURSOR_CYCLE`), omitting its
+    subtotal row from the dashboard.
   - Stored SQLite rows remain in the database; turning the toggle back on restores them immediately.
 - **Windowed Cursor fetching and caching:**
   - When querying a bounded period (e.g. `today`, `this_month`), `cursorForPeriod()` clamps the
@@ -201,11 +227,18 @@ flowchart TD
     `mixedPeriod: true` and sets `cursor.estimatedCents: null`. This keeps a 30-day billing cycle
     out of a single day's hero total, while still displaying Cursor's cycle row with a
     `cycleLabel: "Cycle to date"` footnote.
+  - While Cursor answers for the period's own window, the scopes match: the window's rows replace
+    the cycle's in the combined total (which then includes the Claude Code share alongside OMP's),
+    `mixedPeriod` stays `false`, and `cycleLabel` is absent — the cycle dates survive only to
+    label the window.
 - **Provider limit resolution and deduplication:**
   - Live Antigravity limit cards fetched over the network always supersede OMP's cached rows in
     `ompAgentDatabase(ompPath)`. If `antigravityLimits` is present, `readOmpLimits` rows for
     `provider === "google-antigravity"` are stripped to prevent showing duplicate cards for the
     same subscription.
+  - Limit accounts are named by the email recorded alongside the usage history
+    (`UsageLimits.account`), so two subscriptions to the same provider are told apart by mailbox
+    rather than a generic label; the account UUID never leaves the collector.
   - When OMP is disabled, both OMP limits and Ollama Cloud limits are omitted; Antigravity limits
     remain if an active session was fetched.
 - **Point-in-time pricing and retroactive rate updates:**
@@ -230,12 +263,16 @@ options and the database `settings` table:
 - **Factory options (`createUsageReader(db, options)`):**
   - `ompDirectory`: custom base directory for OMP sessions (used primarily in tests).
   - `claudeDirectory`: custom directory for Claude Code projects.
+  - `agyDirectory`: custom directory for the `agy` CLI's conversations. The summaries database the
+    reader passes to the collector is derived from it (`conversation_summaries.db` beside the
+    directory), so one override moves both.
   - `cursorStatePath`: path to Cursor's SQLite database containing auth tokens.
   - `fetchImpl`: custom `fetch` function for network calls (Cursor and Antigravity APIs).
   - `antigravitySecret`: closure returning raw secret token for Antigravity API authentication.
   - `now`: clock function returning a `Date` instance (used for deterministic testing).
 - **Persistent settings (`settings` table):**
-  - Keys: `omp_enabled`, `omp_path`, `cursor_enabled`, `claude_enabled`, `claude_path`.
+  - Keys: `omp_enabled`, `omp_path`, `cursor_enabled`, `claude_enabled`, `claude_path`,
+    `antigravity_enabled`, `agy_path`.
   - Stored as text (`1`/`0` for booleans, directory strings for paths). Unset keys fall back to
     collector defaults.
 - **Environment variables:** The reader package reads no environment variables directly.
@@ -252,6 +289,7 @@ options and the database `settings` table:
   - `@prompt-burn/collectors`: collector runners (`collectAllSources`, `readCursorAuth`,
     `fetchCursorWindowAggregate`, `readOmpLimits`, `ompAgentDatabase`, default directory resolvers).
   - `node:fs`: `existsSync` for directory and file health checks in `discover()`.
+  - `node:path`: `dirname`/`join` to derive the `agy` summaries database path in `fetch()`.
   - `node:sqlite`: type imports only (`DatabaseSync`).
 - **Downstream consumers:**
   - `apps/desktop`: `sidecar/index.ts` instantiates `createUsageReader(db)` in a Node child
@@ -269,7 +307,7 @@ Tests are executed with Vitest (`pnpm --filter @prompt-burn/reader test`). Vites
 
 ### What is covered
 
-- **Unit tests (`packages/reader/src/reader.test.ts` - 14 tests):**
+- **Unit tests (`packages/reader/src/reader.test.ts` - 18 tests):**
   - Multi-source aggregation across OMP, Claude Code, and Cursor into a unified snapshot.
   - Source disabling via `saveSettings`: verifying that toggling a source off hides its rows,
     subtotals, and limit cards without deleting stored database records, and that re-enabling it
@@ -279,7 +317,7 @@ Tests are executed with Vitest (`pnpm --filter @prompt-burn/reader test`). Vites
     `fetch()`, and bypass window fetching for `all_time`.
   - Cursor window failure fallback: verifying that HTTP 503 on a window query gracefully falls back
     to the cycle aggregate, marks `mixedPeriod: true`, and zeroes Cursor's contribution to the
-    combined estimate.
+    combined estimate. The period total then includes the Claude Code share alongside OMP's.
   - Idle Cursor day handling: verifying that an empty response (`200 {}`) counts as zero tokens and
     zero cents rather than substituting the full cycle.
   - Fetch failure resilience: verifying that a failing Cursor fetch preserves previously cached
@@ -287,17 +325,23 @@ Tests are executed with Vitest (`pnpm --filter @prompt-burn/reader test`). Vites
   - Benign degradation: verifying that absent Cursor state files degrade to `not_installed` with
     `ok: true`.
   - Credential protection: verifying that `discover()` reports paths rather than JWTs, and
-    `saveSettings()` never persists auth tokens.
+    `saveSettings()` persists only the schema-defined setting keys (never auth tokens).
   - Dynamic path configuration: verifying that custom directories saved to settings are recognized
     by `discover()` and used by `fetch()`.
   - Point-in-time and retroactive pricing: verifying that stored events price at bundled rates,
     unpriced models poison totals to `null`, and calling `addPrice()` retroactively updates
     estimates on subsequent snapshots without modifying `usage_events`.
+  - Antigravity (`agy`) read side: rows inserted straight into `usage_events` verify the snapshot
+    join (by-model rows, subtotal, project rollup), that an OMP-routed turn and an `agy` turn on
+    the same model stay two rows, that the toggle hides the source without losing rows, and that a
+    sync failure (`sync_failed`) fails the pass without blanking the sources that answered.
 - **Golden snapshot tests (`packages/reader/src/golden.test.ts` - 3 tests):**
   - Offline regression tests locking entire `DashboardSnapshot` object graphs against frozen
     fixture literals (`ALL_TIME`, `TODAY`, `TODAY_CYCLE_ONLY`) using spike fixtures
     (`omp-session-line.json`, `omp-gemini-session-line.json`, `cursor-usage-summary.json`,
-    `cursor-cycle-aggregates.json`, `cursor-window-aggregates.json`).
+    `cursor-cycle-aggregates.json`, `cursor-window-aggregates.json`). Claude Code and `agy` are
+    locked as real zeros (injected empty directories), so the golden stays the OMP + Cursor
+    pipeline; their own coverage lives in `reader.test.ts`.
 
 ### What is NOT covered
 
@@ -319,15 +363,14 @@ Tests are executed with Vitest (`pnpm --filter @prompt-burn/reader test`). Vites
 
 ## 9. Debt and traps
 
-- **TypeScript interface drift on `FetchResult`:** Commit `89ce384` wired the Antigravity quota
-  collector into `fetch()` and added `antigravity: { ok, reason, error }` to the runtime returned
-  object in `packages/reader/src/index.ts`. However, the author forgot to update the exported
-  `FetchResult` interface definition in the same file. Consumers relying on strict TypeScript checks
-  cannot access `result.antigravity` without type assertions or interface patching.
 - **Volatile in-memory state:** `cursorCycle`, `ollamaLimits`, `antigravityLimits`, and
   `cursorWindows` live solely in closure variables inside `createUsageReader`. When a host process
   restarts (or when VS Code reloads an extension host), all cached remote state is lost. The
   dashboard starts with an empty Cursor section until the user triggers a new `fetch()`.
+- **Derived `agy` summaries path:** `fetch()` derives the workspace-map database path as
+  `join(dirname(agyPath), "conversation_summaries.db")` rather than taking it as an option. A test
+  or embedding that relocates the conversations directory without its sibling summaries file gets a
+  fresh (empty) sync state, not an error — silent but intentional per the in-code comment.
 - **Uncached per-event pricing overhead:** In `getSnapshot()`, `priceCents` invokes
   `resolvePrice(db, model, timestamp)` and `estimateCents()` for every single stored row on every
   snapshot request. Marked with a `// ponytail: one prepared lookup per row` comment in the code,
@@ -346,7 +389,7 @@ Tests are executed with Vitest (`pnpm --filter @prompt-burn/reader test`). Vites
 
 ## 10. Change guide
 
-- **Adding a new usage source (e.g. a fourth AI assistant):**
+- **Adding a new usage source (e.g. a fifth AI assistant):**
   1. Add the new source identifier to `ReaderHealth.source` union and `FetchResult`.
   2. In `packages/reader/src/index.ts`, update `sources()` to read any new settings keys (e.g.
      `newSourceEnabled`, `newSourcePath`).

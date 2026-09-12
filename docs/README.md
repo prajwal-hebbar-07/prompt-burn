@@ -48,9 +48,9 @@ areas, and contradicted decisions appear here too.
 The pairs are read against a stored baseline; anything committed after it may not be documented
 yet. Advance it only after a docs sweep re-read every pair the diff touched.
 
-- Baseline: `9a88364` — 2026-09-11 (`chore: ignore docs/twitter-campaign.md`, v1.1.0),
-  swept 2026-09-11 (pairs 01–07 refreshed; 08–10 opened).
+- Baseline: `0201ec9` — 2026-09-12 (`test(db): remove undefined db.close call in settings reopen test`),
+  swept 2026-09-12 (pairs 04–10 refreshed; pair 03 untouched).
 
-<!-- docs-baseline: 9a88364ee3a5166b32139fd3c0abef3b508fd6c9 -->
+<!-- docs-baseline: 0201ec9b991678363240e118bc64423de2cdf3e2 -->
 <!-- parent-owned: area table, blurbs, baseline. Pair docs live in architecture/ and
 plain-english/. -->

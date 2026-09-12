@@ -19,8 +19,8 @@ The package holds no I/O: no filesystem access, no HTTP calls, no database handl
 process spawning. This boundary is enforced by an automated AST/regex boundary scan. The visual
 styling implements the Paper design tokens (`prompt-burn` / `v0-designs`): light and dark themes
 toggled via a single root `.theme-dark` class on `<html>`, distinct color identities per source
-(OMP teal, Cursor violet, Claude terracotta, brand amber), tabular typography, and accessible
-contrast pairings.
+(OMP teal, Cursor violet, Claude terracotta, Antigravity rose, brand amber), tabular typography,
+and accessible contrast pairings.
 
 ## 2. Inventory
 
@@ -32,11 +32,11 @@ contrast pairings.
 | `src/index.ts`               | Source    | Public barrel export for components and types    |
 | `src/index.css`              | Style     | Tailwind v4 tokens, CSS variables, dark theme    |
 | `src/AppShell.tsx`           | Component | App chrome: header, trust line, theme toggle     |
-| `src/Dashboard.tsx`          | Component | Spend hero, split meter, subtotals, model table  |
+| `src/Dashboard.tsx`          | Component | Hero card, quota panel, subtotals, model table |
 | `src/PeriodBar.tsx`          | Component | Period switcher: fixed buttons, calendar popover |
 | `src/ModelTable.tsx`         | Component | Model spend leaderboard, Olympic medals, tokens  |
 | `src/CursorCycle.tsx`        | Component | Cursor billing cycle context and mixed footnote  |
-| `src/UsageLimits.tsx`        | Component | Quota meters for Claude, Antigravity, Ollama     |
+| `src/UsageLimits.tsx`        | Component | Quota meters: Claude, Antigravity, Ollama, Cursor |
 | `src/Projects.tsx`           | Component | Spend by directory: SVG ring chart, Gantt lanes  |
 | `src/Settings.tsx`           | Component | Source toggles, path inputs, rate form, db path  |
 | `src/FetchBanner.tsx`        | Component | Error alert banner with synthesis & Retry button |
@@ -78,13 +78,16 @@ formatting utilities. The stylesheet `@prompt-burn/ui/index.css` is exported sep
 - `Settings`: Local settings and pricing management screen.
   - `SettingsProps`: Config props for source toggles, path overrides, health, unknown models,
     bundled prices, database path, `onSave`, and `onAddPrice`.
-  - `SourceSettings`: Persistent toggles and paths for OMP, Claude Code, and Cursor.
+  - `SourceSettings`: Persistent toggles and paths for OMP, Claude Code, Antigravity (`agy` CLI),
+    and Cursor.
   - `PriceRate`: Model pricing rate structure (input, output, cache read, cache write per 1M).
   - `NewPriceInput`: Hand-entered rate for an unknown model.
   - `SourceHealth`: Availability flag and detail message for a source.
 - `FetchErrorBanner`: Error banner for failed fetch attempts.
   - `FetchErrorBannerProps`: `{ snapshot: DashboardSnapshot; onRetry?: () => void }`.
-  - `FetchPass`: Per-source success flags (`omp`, `claudeCode`, `cursor`) and error detail string.
+  - `FetchPass`: Per-source success flags (`omp`, `claudeCode`, `antigravityUsage`, `cursor`) and
+    error detail string. `antigravityUsage` is the `agy` CLI's priced usage; the reader's separate
+    `antigravity` key (the quota clock behind the Usage-limits card) is not a usage failure.
 
 ### Theme Control
 
@@ -106,7 +109,8 @@ formatting utilities. The stylesheet `@prompt-burn/ui/index.css` is exported sep
   dash (`—`).
 - `heroSubtitle(snapshot)`: Constructs scoped subtitle, explicitly distinguishing mixed periods.
 - `pricedSubtotal(rows, source?)`: Sums priced rows and tallies unpriced models (`PricedSubtotal`).
-- `sourceShares(snapshot, omp, claudeCode, antigravity, cursor)`: Computes percentage widths for split meter.
+- `sourceShares(snapshot, omp, claudeCode, antigravity, cursor)`: Computes percentage widths for
+  the split meter, returning `SourceShares`.
 - `fetchErrorMessage(pass)`: Synthesizes user-facing error strings naming failed and OK sources.
 - `formatCents(cents)`: Formats fractional cents as USD (`"$12.35"`).
 - `formatCost(cents)`: Formats cents or returns `"—"` if null (`UNKNOWN_COST`).
@@ -120,7 +124,12 @@ formatting utilities. The stylesheet `@prompt-burn/ui/index.css` is exported sep
 - `periodLabel(period)`: Returns display name for a period kind.
 - `projectLabel(path, all?)`: Resolves path basenames and resolves directory collisions.
 - `UNATTRIBUTED`: Constant `"No project"`.
-- `CHART_PALETTE`: Palette colors for charts and progress lanes.
+- `SOURCE_PILLS`: Shared source-identity map (label, pill, bar colors per `Source`); exported so
+  the Projects route labels its model chips from the same colors and wording as `ModelTable`.
+- `SourceShares`: The four-way split (`omp`, `claudeCode`, `antigravity`, `cursor`) returned by
+  `sourceShares`, typed and exported from `Dashboard.tsx`.
+- `CHART_PALETTE`: Palette colors for the Projects ring and progress lanes (module-local export in
+  `Projects.tsx`, not re-exported by the barrel).
 
 ## 4. Flow
 
@@ -180,8 +189,8 @@ sequenceDiagram
 ## 5. Contracts and invariants
 
 - **Props-only, zero-I/O boundary:** The package imports no Node platform modules (`fs`, `net`,
-  `http`, `sqlite`, `child_process`) and no host packages (`db`, `collectors`, `desktop`,
-  `reader`, `tauri`). The host owns all I/O; the UI renders the data it is handed.
+  `http`, `https`, `sqlite`, `child_process`) and no host packages (`db`, `collectors`, `desktop`,
+  `tauri`). The host owns all I/O; the UI renders the data it is handed.
 - **Honest representation of missing rates:** An unknown rate or cost is strictly formatted as the
   em dash `—` (`UNKNOWN_COST`), never as `$0.00`. `$0.00` is reserved exclusively for calculations
   where rates or token volumes are verified zeros.
@@ -195,9 +204,15 @@ sequenceDiagram
 - **Source segregation (no cross-source merging):** If the same model identifier appears across
   multiple sources (e.g. `claude-opus-5` in OMP, Claude Code, and Cursor), it renders as separate
   rows in `ModelTable` and separate segments in `Projects`. Sources are never collapsed into one.
-- **Accessible color pairing:** Colors (OMP teal, Cursor violet, Claude terracotta, warning amber)
-  are never used in isolation to convey meaning. Source colors are accompanied by text labels, and
-  near-cap warnings (fraction ≥ 0.8) display the explicit text `"near cap"`.
+- **Accessible color pairing:** Colors (OMP teal, Cursor violet, Claude terracotta, Antigravity
+  rose, warning amber) are never used in isolation to convey meaning. Source colors are
+  accompanied by text labels, and near-cap warnings (fraction ≥ 0.8) display the explicit text
+  `"near cap"`.
+- **Two Antigravities, two identities:** The `agy` CLI's priced turns are a *source* and render
+  with the rose `source-antigravity` tokens (dashboard subtotal row, model pills, Projects chips);
+  Google's quota clock behind the Usage-limits card is a *provider* and renders with the blue
+  `provider-antigravity` tokens. The two are never mixed, and the Settings toggle for the CLI
+  does not touch the quota card.
 - **Local wall-clock date alignment:** `PeriodBar` and `format.ts` format calendar days using the
   local device timezone (`YYYY-MM-DD` wall-clock), preventing day-shifting errors when converting
   between UTC ISO instants and local midnights.
@@ -207,6 +222,10 @@ sequenceDiagram
 - **Data preservation during background fetch:** When `snapshot.fetch.status === "fetching"`, the
   existing numbers, tables, and charts remain rendered on screen. A fetch never wipes or zeroes
   active data.
+- **Per-source fetch verdicts:** `fetchErrorMessage` derives the failed-source list by substring
+  matching the reader's own `"<Source> failed: …"` lines in `FetchPass.error`; `OK` is claimed
+  only for sources that reported success. A degraded source (Cursor not installed or signed out)
+  is never named as failed.
 
 ## 6. Configuration
 
@@ -239,9 +258,11 @@ sequenceDiagram
   - `apps/desktop`: Tauri v2 webview embeds `AppShell` in `apps/desktop/web/App.tsx`.
   - `apps/vscode`: VS Code editor webview embeds `AppShell` in `apps/vscode/web/App.tsx`.
 - **Prohibited dependencies:**
-  - Verified by `boundary.test.ts`: `@prompt-burn/collectors`, `@prompt-burn/db`,
-    `@prompt-burn/desktop`, `@prompt-burn/reader`, `node:fs`, `node:net`, `node:http`,
-    `node:sqlite`, `node:child_process`, and `@tauri-apps/*`.
+  - Verified by `boundary.test.ts`'s `BANNED_IMPORT` regex: `@prompt-burn/collectors`,
+    `@prompt-burn/db`, `@prompt-burn/desktop`, `node:fs`, `node:net`, `node:http`, `node:https`,
+    `node:sqlite`, `node:child_process`, and `@tauri-apps/*`. (The `@prompt-burn/reader` and
+    sidecar packages are outside this package's reach by construction: `reader` is not a declared
+    dependency, so it cannot be imported at all.)
 - **Styling boundaries:**
   - Pure CSS / Tailwind v4. The package contains zero third-party chart libraries (SVG donut chart
     is custom-rendered) and zero third-party icon libraries.
@@ -256,12 +277,16 @@ The package includes 10 test files executed via Vitest:
 2. `AppShell.test.tsx`: Tests title, trust statement, fetch status label relative math, fetch
    button states and spinner, route switching between Dashboard and Settings, period change prop
    routing, and theme switching with `localStorage` persistence.
-3. `Dashboard.test.tsx`: Tests currency formatting, compact token counts, mixed-scope subtitles,
-   hero totals and floor approximations, subtotal rows, source toggling, and token line sums.
+3. `Dashboard.test.tsx`: Tests currency formatting, compact token counts, mixed-scope subtitles
+   (now naming OMP + Claude Code + Antigravity), hero totals and floor approximations, all four
+   subtotal rows, source toggling, token line sums, the four-segment split meter whose widths sum
+   to the whole bar, and that Google's quota card and the `agy` cost row remain two different
+   things (different tokens, different testids).
 4. `PeriodBar.test.tsx`: Tests fixed segment selection (Today, This month, All time), range label
    formatting, popover calendar opening, draft day picking, clear, apply, and inclusive end day.
 5. `ModelTable.test.tsx`: Tests row ranking (spend first, unpriced by token volume), keying by
-   `(source, model)`, Olympic medals (gold, silver, bronze), source pills, and empty headers.
+   `(source, model)`, Olympic medals (gold, silver, bronze), source pills — including that the
+   Antigravity pill uses its own rose token and never the quota tile's blue — and empty headers.
 6. `CursorCycle.test.tsx`: Tests `formatCycleWindow` date math and validation, footnote variations
    for mixed vs. windowed periods, and empty state messaging ("No usage data yet" vs. "No usage").
 7. `UsageLimits.test.tsx`: Tests `formatShortTime` precision, provider card rendering for Claude,
@@ -269,13 +294,17 @@ The package includes 10 test files executed via Vitest:
    suppression, stale data warnings, and card omissions.
 8. `Projects.test.tsx`: Tests directory basename resolution (`projectLabel`), path collision
    widening, SVG donut chart rendering, Gantt-style horizontal model lanes, model detail chips,
-   unattributed usage buckets, and empty state copy.
-9. `Settings.test.tsx`: Tests OMP, Claude Code, and Cursor source toggles, path overrides, health
-   status badges, Cursor Pro vs. Enterprise status, unknown models listing, Add Price form parsing
-   (`NewPriceInput`), bundled rates table, database path display, and `onSave` callback triggering.
+   unattributed usage buckets, Antigravity conversations attributed to their workspace with the
+   source pill, and empty state copy.
+9. `Settings.test.tsx`: Tests OMP, Claude Code, Antigravity (`agy`), and Cursor source toggles,
+   path overrides (including the Antigravity conversations directory default
+   `~/.gemini/antigravity-cli/conversations/`), health status badges, Cursor Pro vs. Enterprise
+   status, unknown models listing, Add Price form parsing (`NewPriceInput`), bundled rates table,
+   database path display, and `onSave` callback triggering.
 10. `FetchBanner.test.tsx`: Tests `fetchErrorMessage` synthesis for partial and complete failures
-    (`Cursor failed · OMP OK — ...`), degraded status handling, banner rendering in shell, Retry
-    callback invocation, and banner suppression during in-flight fetches.
+    (`Cursor failed · OMP OK — ...`, with Antigravity among the four labels it can name),
+    degraded status handling, banner rendering in shell, Retry callback invocation, and banner
+    suppression during in-flight fetches.
 
 ### What is Not Covered
 

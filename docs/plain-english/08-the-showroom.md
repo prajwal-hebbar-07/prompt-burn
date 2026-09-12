@@ -12,8 +12,8 @@ lets you look around, flip calendar pages, or adjust settings on the configurati
 
 When you step into the showroom, the first thing you see is the big overhead scoreboard. It shows
 your estimated total spend for the selected time window. Right below it sits a colorful segmented
-bar showing which tools burned the tokens—teal for one tool, terracotta for another, violet for
-the third—paired with clear text so you never have to guess what a color means.
+bar showing which tools burned the tokens—teal for one tool, terracotta for another, rose for the
+third, violet for the fourth—paired with clear text so you never have to guess what a color means.
 
 The display follows strict honesty rules:
 - An unpriced model never shows up as zero dollars. A missing price gets an em dash, because
@@ -36,6 +36,11 @@ window (like a 5-hour burst window or a weekly pool), the percentage used, and t
 resets. When usage crosses eighty percent, the meter turns amber and displays the words "near cap".
 If a window has already expired before new numbers arrive, the old percentage is removed and
 marked "window ended" so you are never misled by expired data.
+
+One name appears twice on purpose, and the two never mix: there is an Antigravity tile among these
+meters (the provider's own quota clock, shown in blue) and a separate Antigravity cost row under
+the main scoreboard (work done through the command-line tool, shown in rose). They are different
+things in different colors, and the on-screen wording keeps them apart.
 
 ## The three rooms
 

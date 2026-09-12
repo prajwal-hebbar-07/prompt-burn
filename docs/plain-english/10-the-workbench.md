@@ -2,10 +2,10 @@
 
 **Twin of:** [VS Code extension (apps/vscode)](../architecture/10-vscode-extension.md)
 
-When you are working at your craft bench — writing code, editing files, running commands — you do
-not want to stand up and walk over to the shop's front door just to check the electricity meter.
-You want a small side counter built right into the bench itself, right beside the blueprints you
-are actively working on.
+When you are working at your craft bench — writing code, editing files, running commands — you
+do not want to stand up and walk over to the shop's front door just to check the electricity
+meter. You want a small side counter built right into the bench itself, right beside the
+blueprints you are actively working on.
 
 This extension is that side counter.
 
@@ -66,6 +66,12 @@ across the top explaining which sources could not be reached.
 - **It does not know when the front door made a sale.** If you run a data fetch in the standalone
   desktop app, the side counter does not automatically notice or refresh its display. It only
   learns about new entries when you tap "Fetch data" or reopen the tab.
+- **The total-failure check listens to only three of the four providers.** When the counter
+  decides "everything failed", it only consults three of its four provider lines. If exactly the
+  fourth one — Antigravity — succeeded while the other three failed, its fresh numbers are filed
+  in the cabinet but never shown: the display keeps the old total while the warning flag even
+  credits Antigravity as working. The same blind spot exists in the standalone desktop window;
+  fixing it in one without the other would make the two disagree.
 - **The display controls are copied from the desktop shell.** The logic governing how numbers are
   held during a fetch and how error banners appear is duplicated between the desktop window and
   this editor tab. They share the same dials and styling, but their internal state machinery is

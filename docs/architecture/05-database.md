@@ -28,7 +28,7 @@ Two decisions define it:
 | `packages/db/src/prices.ts`       | Module   | `BUNDLED_PRICES` (24 rows), `SEED_EFFECTIVE_FROM` |
 | `packages/db/src/pricing.ts`      | Module   | `resolvePrice`, `estimateCents`, insert helper    |
 | `packages/db/src/settings.ts`     | Module   | `readSettings`, `writeSettings`, AppSettings      |
-| `packages/db/src/events.ts`       | Module   | `loadUsageEvents` — stored rows as `UsageEvent`s  |
+| `packages/db/src/events.ts`      | Module   | `loadUsageEvents` — rows as `UsageEvent`s        |
 | `packages/db/src/index.test.ts`   | Tests    | Paths, create/reopen, schema, migrations, seeds   |
 | `packages/db/src/pricing.test.ts` | Tests    | Windows, boundaries, retroactive pricing          |
 | `packages/db/src/settings.test.ts`| Tests    | Settings persistence, toggles, paths, patch       |
@@ -56,7 +56,7 @@ Exports of `@prompt-burn/db` (all from `src/index.ts`, which re-exports `prices.
 | `readSettings`        | `(db) => AppSettings`           | Toggles + paths; defaults unwritten  |
 | `writeSettings`       | `(db, patch) => void`           | Upserts only keys named in patch     |
 | `loadUsageEvents`     | `(db, source?) => UsageEvent[]` | Stored rows as domain events         |
-| settings types        | `AppSettings`, `DEFAULT_SETTINGS` | `omp`/`cursor`/`claude` + two paths |
+| settings types        | `AppSettings`, `DEFAULT_SETTINGS` | 4 sources + 3 path overrides     |
 
 ## 4. Flow
 
@@ -66,10 +66,10 @@ flowchart TD
     B --> C{file exists?}
     C -- no --> D[new DatabaseSync path]
     D --> E[db.exec SCHEMA_SQL]
-    E --> F[seedBundledPrices: 22 rows, effective_until NULL, effective_from 1970]
+    E --> F[seedBundledPrices: 24 rows, effective_until NULL, effective_from 1970]
     C -- yes --> D2[new DatabaseSync path]
     D2 --> M1[addProjectColumn: no-op once usage_events.project exists]
-    M1 --> M2[widenSourceCheck: no-op once the stored DDL names claude-code]
+    M1 --> M2[widenSourceCheck: no-op once the stored DDL names antigravity]
     M2 --> F
     F --> G[return db]
     H[resolvePrice db model ts] --> I{ts empty string?}
@@ -92,31 +92,33 @@ idempotent, and deleting the file remains the reset path for anything they do no
 **The schema** (`SCHEMA_SQL` in `schema.ts`) has exactly four tables, applied once at creation:
 
 - `usage_events` — one row per usage item. `id` TEXT PK; `source` CHECK
-  `'omp' | 'cursor' | 'claude-code'`; `period` CHECK `'event' | 'cycle'`; `timestamp` ISO 8601
+  `'omp' | 'cursor' | 'claude-code' | 'antigravity'` (Antigravity = the standalone `agy` CLI);
+  `period` CHECK `'event' | 'cycle'`; `timestamp` ISO 8601
   UTC for `'event'`, **empty string** for `'cycle'` — never a fake time
   (`CHECK ((period = 'cycle') = (timestamp = ''))`), verified by a test that asserts a faked
   cycle timestamp throws. Stores `model` (canonical id) + `raw_model`, token columns (`input`,
   `output`, `cache_read`, `cache_write`, default 0), nullable `session_id`, and nullable
-  `project` — the absolute cwd of the OMP or Claude Code session, NULL for Cursor rows and for
-  headerless OMP transcripts. Indexes: `usage_events_timestamp`, `usage_events_source_model`,
+  `project` — the absolute cwd of the OMP, Claude Code, or agy session, NULL for Cursor rows
+  and for headerless transcripts. Indexes: `usage_events_timestamp`, `usage_events_source_model`,
   `usage_events_project`.
 - `price_entries` — rates in USD per million tokens, versioned by validity window. `id`
   INTEGER AUTOINCREMENT; `model`, `provider`, `effective_from` NOT NULL, `effective_until`
   nullable; the four rate columns, with cache columns nullable where the vendor publishes no
   rate (unknown, not free). Index: `price_entries_model (model, effective_from)`.
-- `omp_sync_state` — incremental transcript sync: `path` PK, `mtime`, `offset`. **Both**
-  transcript collectors share it — OMP's and Claude Code's — keyed by absolute path, so the
-  two trees cannot collide in it. The table keeps its OMP-era name deliberately: renaming it
+- `omp_sync_state` — incremental transcript sync: `path` PK, `mtime`, `offset`. **All three**
+  transcript collectors share it — OMP's, Claude Code's, and agy's — keyed by absolute path, so
+  the trees cannot collide in it. The table keeps its OMP-era name deliberately: renaming it
   would cost a migration that buys nothing. A file whose mtime and size are unchanged is
   skipped.
-- `settings` — key/value TEXT. Today's keys are the source toggles and path overrides
-  (`omp_enabled`, `omp_path`, `cursor_enabled`, `claude_enabled`, `claude_path`), plus the
-  fetch bookkeeping (`last_success_at`, `last_error`, …). Booleans are stored as `1` / `0`; an
-  empty or unwritten value falls back to `DEFAULT_SETTINGS` (every source on, no path
-  override), and an empty path means "the collector default". Never Cursor tokens: those are
-  read from Cursor's own database at fetch time and never persisted. The model-alias map lives
-  in `@prompt-burn/core` code, not here (asserted by a test that requires `model_aliases` and
-  `fetch_metadata` tables _not_ to exist).
+- `settings` — key/value TEXT. Today's keys are the four source toggles and three path
+  overrides (`omp_enabled`, `omp_path`, `cursor_enabled`, `claude_enabled`, `claude_path`,
+  `antigravity_enabled`, `agy_path`), plus the fetch bookkeeping (`last_success_at`,
+  `last_error`, …). Booleans are stored as `1` / `0`; an empty or unwritten value falls back to
+  `DEFAULT_SETTINGS` (every source on, no path override), and an empty path means "the
+  collector default". Never Cursor tokens: those are read from Cursor's own database at fetch
+  time and never persisted. The model-alias map lives in `@prompt-burn/core` code, not here
+  (asserted by a test that requires `model_aliases` and `fetch_metadata` tables _not_ to
+  exist).
 
 **Point-in-time pricing.** The row that prices an event satisfies `effective_from <= timestamp
 AND (effective_until IS NULL OR effective_until > timestamp)` — `effective_from` inclusive,
@@ -186,16 +188,17 @@ on a brand-new file:
   transcript and the sync's upsert backfills the column from each session's `cwd`. Nothing is
   deleted from `usage_events`, so a project whose transcripts have since been pruned keeps its
   history — it just stays unattributed.
-- `widenSourceCheck` — lets a file created before Claude Code was a source hold
-  `source = 'claude-code'` at all. SQLite cannot alter a CHECK constraint, so this is the
-  documented **table rebuild**: create `usage_events_new` carrying the three-value CHECK,
-  `INSERT … SELECT` all twelve columns across, `DROP TABLE usage_events`, rename the new table
-  into place, and recreate all three indexes — one `BEGIN`/`COMMIT`, with
-  `PRAGMA foreign_keys = OFF` around it because the rebuild recipe asks for it (there are no
-  foreign keys here). The guard is a `sqlite_schema` DDL read: if the stored `sql` for
-  `usage_events` already contains `claude-code`, it returns, so after the first open the whole
-  migration costs one `SELECT sql FROM sqlite_schema`. Rows survive and `omp_sync_state` is
-  left alone, so unlike the column migration nothing is re-read afterwards.
+- `widenSourceCheck` — lets a file created before Claude Code or the Antigravity CLI were
+  sources store their rows. SQLite cannot alter a CHECK constraint, so this is the documented
+  **table rebuild**: create `usage_events_new` carrying the four-value CHECK, `INSERT … SELECT`
+  all twelve columns across, `DROP TABLE usage_events`, rename the new table into place, and
+  recreate all three indexes — one `BEGIN`/`COMMIT`, with `PRAGMA foreign_keys = OFF` around it
+  because the rebuild recipe asks for it (there are no foreign keys here). The guard is a
+  `sqlite_schema` DDL read: if the stored `sql` for `usage_events` already contains
+  `antigravity`, it returns, so after the first open the whole migration costs one
+  `SELECT sql FROM sqlite_schema`. The guard names the newest source, so a file that stopped at
+  either older CHECK (two-source or three-source) is still rebuilt. Rows survive and
+  `omp_sync_state` is left alone, so unlike the column migration nothing is re-read afterwards.
 
 ## 6. Configuration
 
@@ -230,8 +233,11 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
   cycle/event timestamp CHECK rejects faked timestamps in both directions. Both migrations have
   a test case rewinding a fresh file to an older shape: `addProjectColumn` adds the column,
   keeps every row with a NULL project, empties `omp_sync_state`, and is idempotent;
-  `widenSourceCheck` verifies that rewinding to a two-value CHECK refuses `claude-code`, and
-  reopening migrates cleanly while preserving rows, the `project` column, and all three indexes.
+  `widenSourceCheck` has two rewind cases — rewinding to a two-value CHECK refuses
+  `claude-code`, and rewinding to the three-source CHECK refuses `antigravity` — and each
+  reopening migrates cleanly while preserving rows, the `project` column, the sync state, and
+  all three indexes; the three-source case also verifies that a foreign source (`copilot`) is
+  still rejected after widening and that an already-widened file keeps a test-created index.
 - `pricing.test.ts`: window selection across boundaries (`effective_from` inclusive,
   `effective_until` exclusive), bundled seeds resolve — including Cursor-side ids at their
   vendors' public rates (Grok, Composer 2.5, GPT-5.6 Sol, Haiku 4.5 thinking) — `default` (Auto)
@@ -240,11 +246,16 @@ Vitest (`pnpm --filter @prompt-burn/db test`), four files, all against throwaway
   retroactive pricing inserts a rate without touching the event row, a rate change keeps old
   events on the old rate, `insertPriceEntry` covers stored history and cycle aggregates,
   `estimateCents` converts tokens at published rates (`null` never `$0` for unknown models or
-  unpriced cache kinds; zero cache tokens never poison the estimate), and Gemini turn pricing
-  distinguishes Antigravity from Ollama Cloud `gemma4`.
-- `settings.test.ts`: defaults when nothing is written (`DEFAULT_SETTINGS` has all sources on
-  and paths empty), written path and toggles surviving a reopen, repeated writes updating in
-  place rather than stacking rows, and partial patches leaving unmentioned keys alone.
+  unpriced cache kinds; zero cache tokens never poison the estimate), Gemini turn pricing
+  distinguishes Antigravity from Ollama Cloud `gemma4` (and `gemini-3.8-pro` stays unpriced),
+  and the `agy` CLI's third-party pool prices Sonnet 4.6 and thinking Opus 4.6 at Anthropic's
+  published rates while unobserved ids (`claude-opus-4-6`, `claude-sonnet-4-6-thinking`) stay
+  `null`.
+- `settings.test.ts`: defaults when nothing is written (`DEFAULT_SETTINGS` has all four sources
+  on and all three paths empty), written path and toggles surviving a reopen — including the
+  agy toggle and conversations path, whose write leaves the Claude Code toggle untouched —
+  repeated writes updating in place rather than stacking rows, and partial patches leaving
+  unmentioned keys alone.
 - `events.test.ts`: fresh database returns an empty list (with or without source filter),
   stored rows map onto domain `UsageEvent` shape, cycle rows keep their empty timestamp, and
   events sort oldest timestamp first.

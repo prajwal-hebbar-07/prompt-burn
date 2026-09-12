@@ -10,12 +10,13 @@ usage into a view model. It holds no I/O of its own — no filesystem, no networ
 Everything here takes data in and returns data out, which is what makes the timestamp math and
 the aggregation testable to the millisecond.
 
-The package covers three usage sources: OMP, Cursor, and Claude Code. It filters timestamped
-events by calendar periods using device-local midnight boundaries, normalizes raw model identifiers
-to canonical forms (stripping dated snapshot suffixes and collapsing effort tags), groups
-transcript events by project working directory, computes dynamic token costs via a host-supplied
-pricer callback, scopes combined estimates when Cursor aggregates are cycle-wide (`mixedPeriod`),
-and passes through provider usage limit meters and source enablement toggles.
+The package covers four usage sources: OMP, Cursor, Claude Code, and the standalone `agy` CLI
+(Antigravity). It filters timestamped events by calendar periods using device-local midnight
+boundaries, normalizes raw model identifiers to canonical forms (stripping dated snapshot suffixes
+and collapsing effort and tier-resolution tags), groups transcript events by project working
+directory, computes dynamic token costs via a host-supplied pricer callback, scopes combined
+estimates when Cursor aggregates are cycle-wide (`mixedPeriod`), and passes through provider usage
+limit meters and source enablement toggles.
 
 ## 2. Inventory
 
@@ -60,6 +61,7 @@ interface UsageEvent {
   tokens: TokenCounts;
   sessionId?: string;
   // absolute working directory off session header (cwd); absent for Cursor
+  // and for headerless transcripts
   project?: string;
 }
 
@@ -79,7 +81,8 @@ interface ProjectUsage {
   project: string | null;
   tokens: TokenCounts;
   estimatedCents: number | null;
-  // same row shape as DashboardSnapshot.models, always source: "omp" or "claude-code"
+  // same row shape as DashboardSnapshot.models, keyed by (source, model);
+  // transcript sources only (omp, claude-code, antigravity) — never Cursor
   models: Array<ModelAggregate & { source: Source; estimatedCents: number | null }>;
 }
 
@@ -110,6 +113,8 @@ interface UsageLimit {
 
 interface ProviderLimits {
   provider: string;
+  // who the subscription belongs to, as OMP recorded it — an email; absent
+  // when the provider has no per-account identity
   account?: string;
   observedAt: string;
   limits: UsageLimit[];
@@ -146,6 +151,7 @@ interface DashboardSnapshot {
   enabled: Record<Source, boolean>;
   omp: SourceTotals;
   claudeCode: SourceTotals;
+  antigravity: SourceTotals;
   cursor: SourceTotals & {
     mode: CursorSnapshot["mode"];
     /** e.g. "Cycle to date" — set only while rows are cycle-wide. */
@@ -177,6 +183,9 @@ interface SnapshotInput {
   period: PeriodFilter;
   ompEvents: readonly UsageEvent[];
   claudeEvents?: readonly UsageEvent[];
+  // the standalone `agy` CLI's own turns; same filtering as OMP, never
+  // deduped against an OMP-routed Gemini turn
+  antigravityEvents?: readonly UsageEvent[];
   cursor: CursorSnapshot;
   enabled?: Partial<Record<Source, boolean>>;
   limits?: readonly ProviderLimits[];
@@ -219,11 +228,12 @@ flowchart TD
     A[SnapshotInput] --> B[period filter]
     B --> C[ompEvents -> filtered OMP parts]
     B --> D[claudeEvents -> filtered Claude parts]
+    B --> N[antigravityEvents -> filtered agy parts]
     A --> E{cursor.mode?}
     E -- events --> F[filtered Cursor parts]
     E -- cycle_aggregate --> G[verbatim Cursor parts<br/>timestamp = '']
-    C & D --> H[rollupProjects<br/>group by project cwd<br/>sort spend desc]
-    C & D & F & G --> I[rollup per source<br/>group by source + model<br/>price with priceCents]
+    C & D & N --> H[rollupProjects<br/>group by project cwd<br/>sort spend desc]
+    C & D & N & F & G --> I[rollup per source<br/>group by source + model<br/>price with priceCents]
     A --> J[mixedPeriod check<br/>cycleWide AND period != all_time]
     I & J --> K[combine totals<br/>omit cycle Cursor if mixedPeriod<br/>null poisons total]
     H & I & K --> L[assemble DashboardSnapshot<br/>enabled toggles, limits, fetch]
@@ -236,8 +246,8 @@ Four processing steps inside the package:
    past its end (`d + 1`, `m + 1`) so the runtime resolves month length, leap years and DST.
    `all_time` returns `{ null, null }` and the filter returns a shallow copy untouched.
    `filterEventsByPeriod` keeps events with `start <= t < end`; events with unparsable
-   timestamps survive only `all_time`. Applied to `ompEvents`, `claudeEvents`, and Cursor events
-   (in `events` mode).
+   timestamps survive only `all_time`. Applied to `ompEvents`, `claudeEvents`,
+   `antigravityEvents`, and Cursor events (in `events` mode).
 2. **Model normalization** (`model.ts`). `canonicalModelId` runs two normalization stages:
    first, Anthropic dated snapshot suffixes matching `-\d{8}$` (e.g. `claude-sonnet-4-5-20250929`
    written by Claude Code) are stripped to match OMP and price catalog ids; second, named
@@ -251,12 +261,13 @@ Four processing steps inside the package:
    at their individual timestamps; Cursor cycle aggregates pass `""` as their timestamp. An
    unpriced row (`null`) poisons every enclosing total via `addCents`.
 4. **Project breakdown and snapshot assembly** (`aggregate.ts`). `rollupProjects` groups
-   timestamped parts (OMP and Claude Code) by `project ?? ""`, rolls up tokens and spend per
-   project, and sorts biggest spenders first (unpriced projects sink to the bottom, tie-broken by
-   token count). Cursor is excluded (no project directory). For `cycle_aggregate`, absence of
-   `window` flags `mixedPeriod = true` on all bounded periods, footnotes `cycleLabel: "Cycle to
-   date"`, and excludes Cursor from the headline `estimatedCents`. Sources missing from `enabled`
-   default to `true`, and `limits` pass through untouched.
+   timestamped parts (OMP, Claude Code, and the `agy` CLI — every source that records a working
+   directory) by `project ?? ""`, rolls up tokens and spend per project, and sorts biggest
+   spenders first (unpriced projects sink to the bottom, tie-broken by token count). Cursor is
+   excluded (no project directory). For `cycle_aggregate`, absence of `window` flags
+   `mixedPeriod = true` on all bounded periods, footnotes `cycleLabel: "Cycle to date"`, and
+   excludes Cursor from the headline `estimatedCents`. Sources missing from `enabled` default to
+   `true`, and `limits` pass through untouched.
 
 ## 5. Contracts and invariants
 
@@ -273,10 +284,13 @@ Four processing steps inside the package:
   `localMidnight(end, 1)`.
 - **`localMidnight` accepts only `YYYY-MM-DD`** (`^(\d{4})-(\d{2})-(\d{2})$`) and throws
   `RangeError` otherwise, or when the constructed date is invalid.
-- **Three usage sources are recognized:** `"omp"`, `"cursor"`, and `"claude-code"`.
+- **Four usage sources are recognized:** `"omp"`, `"cursor"`, `"claude-code"`, and `"antigravity"`
+  (the standalone `agy` CLI). Sources are never deduped against each other: an OMP-routed Gemini
+  turn and an `agy` turn on the same model are two rows.
 - **Rows are keyed `(source, model)` and never merged across sources.** The same model on OMP,
-  Claude Code, and Cursor is deliberately separate rows; rows keep first-seen order. Map keys use
-  `${part.source}\u0000${part.model}`. Unknown ids and `default` (Auto) remain visible as rows.
+  Claude Code, `agy`, and Cursor is deliberately separate rows; rows keep first-seen order. Map
+  keys use `${part.source}\u0000${part.model}`. Unknown ids and `default` (Auto) remain visible
+  as rows.
 - **Costs are derived dynamically per part, never stored.** `priceCents` is injected by the
   caller; without it, every `estimatedCents` is `null`. Events are priced at their own timestamp,
   allowing retroactive rate changes and tiered pricing over time.
@@ -284,16 +298,17 @@ Four processing steps inside the package:
   that subtotal and the combined `estimatedCents` become `null`. The UI renders `null` as `—`,
   never `$0`. An empty period with an active pricer reports `0` cents, not `null`.
 - **Projects breakdown is scoped to period and transcript sources.** Only sources recording a
-  working directory (`cwd`) enter `projects` (OMP and Claude Code). Headerless transcripts group
-  under `project: null`. Cursor never enters `projects`. Projects sort by spend descending;
-  unpriced projects sink to the bottom, tie-broken by token volume.
+  working directory (`cwd`) enter `projects` (OMP, Claude Code, and `agy`, whose conversations
+  name the workspace they ran in). Headerless transcripts group under `project: null`. Cursor
+  never enters `projects`. Projects sort by spend descending; unpriced projects sink to the
+  bottom, tie-broken by token volume.
 - **Cursor scope and mixed-period isolation.** `cycle_aggregate` rows are used as fetched:
   `window` present means server-side period narrowing, so `mixedPeriod` is false and Cursor cost
   enters `estimatedCents`. `window` absent means cycle-wide spend; for any period other than
   `all_time`, `mixedPeriod = true`, `cycleLabel` is set to `"Cycle to date"`, and Cursor cost is
   excluded from combined `estimatedCents`.
 - **Enabled toggles default to on.** `enabled` in `SnapshotInput` defaults unnamed sources to
-  `true`: `{ omp: true, "claude-code": true, cursor: true, ...input.enabled }`.
+  `true`: `{ omp: true, "claude-code": true, cursor: true, antigravity: true, ...input.enabled }`.
 - **Provider limits pass through uncalculated.** `limits` carry provider-reported fractions and
   clocks (`UsageLimit`); they are never filtered by `period` and never priced.
 - **`canonicalModelId` is total and idempotent.** Dated snapshot suffix (`-\d{8}$`) is stripped
@@ -320,22 +335,26 @@ configuration exist and both are about _tests_, not runtime:
 - **No I/O.** No `node:fs`, no network requests, no sqlite — callers supply arrays and objects.
 - **Consumed by:**
   - `packages/collectors` — imports `canonicalModelId`, `UsageEvent`, and `Source`; normalizes
-    models and emits events for OMP, Claude Code, and Cursor.
+    models and emits events for OMP, Claude Code, Cursor, and the `agy` CLI
+    (`antigravity-cli.ts`), plus Antigravity quota limits (`antigravity.ts`).
   - `packages/db` — stores prices matching canonical ids, transcripts, and limits; supplies the
     `priceCents` lookup function.
   - UI / apps — renders `DashboardSnapshot`, displaying the Projects route via `projects`,
     toggling sources via `enabled`, showing clocks via `limits`, and rendering `models`.
 - **Upstream contracts encoded:**
   - OMP: session `cwd` as `project`, UTC ISO timestamps, complete token counts, provider usage
-    clocks (`ProviderLimits`).
+    clocks (`ProviderLimits`, named per account by recorded email).
   - Claude Code: `~/.claude/projects` JSONL transcripts, dated model names
     (`claude-sonnet-4-5-20250929`), session `cwd`.
+  - `agy` CLI: per-conversation SQLite databases under
+    `~/.gemini/antigravity-cli/conversations`, the workspace a conversation ran in as `project`,
+    tier-resolved Gemini ids (`gemini-3.8-flash-tiered`).
   - Cursor: Pro cycle aggregates (with or without `window`), plan percentages (`autoPercentUsed`,
     `apiPercentUsed`), cycleStart/cycleEnd, optional zero-cache token keys.
 
 ## 8. Tests
 
-`vitest run` executes 3 test files (33 tests total), all pinned to `TZ=Asia/Kolkata`:
+`vitest run` executes 3 test files (37 tests total), all pinned to `TZ=Asia/Kolkata`:
 
 - **`period.test.ts`** (9 tests) — timezone setup guard asserts IST (+05:30) pin and midnight
   conversion. Tests `this_month` local midnight boundary on the 1st and across year boundary;
@@ -343,9 +362,10 @@ configuration exist and both are about _tests_, not runtime:
   as a single day, inclusive end day conversion, and non-`YYYY-MM-DD` rejection with `RangeError`;
   `all_time` passing all events through regardless of timestamp.
 - **`model.test.ts`** (6 tests) — collapsing named suffixes (`-thinking-high`, `-high-fast`,
-  `-tiered`); leaving untouched Cursor-hosted prefixes, `-medium`, and `default` (Auto); passing
-  through OMP ids and unknown strings; preserving bare suffixes verbatim; idempotence.
-- **`aggregate.test.ts`** (19 tests) — with fixed injected `now` (2 Sep 2026, 18:00 IST):
+  `-tiered` — the agy CLI's tier-resolved Gemini id); leaving untouched Cursor-hosted prefixes,
+  `-medium`, and `default` (Auto); passing through OMP ids and unknown strings; preserving bare
+  suffixes verbatim; idempotence.
+- **`aggregate.test.ts`** (22 tests) — with fixed injected `now` (2 Sep 2026, 18:00 IST):
   - Cycle aggregates: OMP period filtering while Cursor cycle remains identical; combining
     subtotals without deduplication; `mixedPeriod` flag across periods with `cycleLabel`;
     `(source, model)` row keying; null costs without a pricer; idle fetch default.
@@ -360,14 +380,15 @@ configuration exist and both are about _tests_, not runtime:
   - Per-project rollups: grouping models by project `cwd` and bucketing unattributed usage under
     `null`; Cursor excluded from project rows; period scoping of projects; unpriced projects
     sinking below priced projects.
+  - `agy` CLI events: own subtotal in the combined total and the table; an OMP Gemini turn and an
+    `agy` turn on one model as two rows; conversation workspace as a project row; `enabled`
+    defaulting to on; subtotal zeroed and rows dropped while the source toggle is off.
 
 **Not covered:**
 - `DATED_SNAPSHOT` regex (`/-\d{8}$/`) in `model.ts` has no dedicated test assertion in
   `model.test.ts` [INFERENCE].
 - Claude Code events (`claudeEvents`) and the `claudeCode` subtotal are not explicitly exercised in
   `aggregate.test.ts` test cases [INFERENCE].
-- `enabled` toggles defaulting and overrides in `SnapshotInput` are not directly asserted in
-  `aggregate.test.ts` [INFERENCE].
 - `limits` passthrough is not directly asserted in `aggregate.test.ts` [INFERENCE].
 - DST transitions (IST has no DST, so day rollover across DST shifts is code-reviewed only).
 - Bounded filtering behavior on unparsable timestamps (only tested under `all_time`).
@@ -378,14 +399,14 @@ configuration exist and both are about _tests_, not runtime:
   local timezone where DST may occur. Local-midnight math handles this via standard `Date` rollover,
   but DST transitions are not machine-tested.
 - **`canonicalModelId` assumptions:**
-  - Suffix rules stem from six observed Cursor strings from one account. Unmapped strings pass
-    through unchanged to avoid losing visibility.
+  - Suffix rules stem from six observed Cursor strings from one account, plus the `agy` CLI's
+    `-tiered` id. Unmapped strings pass through unchanged to avoid losing visibility.
   - `DATED_SNAPSHOT` (`/-\d{8}$/`) assumes an 8-digit date suffix at the end of the string. Other
     date or revision formats are not stripped.
   - Array order in `SUFFIX_RULES` matters if suffixes ever overlap.
 - **Cost null poisoning:** `addCents` propagates `null`. A single unpriced model in a period turns
-  the entire period's total to `null`. This is intentional (honest `—` rather than inaccurate sum),
-  but requires collectors and price catalogs to stay up to date.
+  the entire period's total to `null`. This is intentional (honest `—` rather than an inaccurate
+  sum), but requires collectors and price catalogs to stay up to date.
 - **Cursor `events` mode is an unimplemented union arm.** Kept for future Enterprise support,
   tested only with synthetic fixtures.
 - **Cursor cycle vs window scoping:** Narrowing relies on collector querying server-side
@@ -395,12 +416,17 @@ configuration exist and both are about _tests_, not runtime:
   Any future attempt to assign Cursor usage to projects would be fabrication.
 - **Provider limits are unpriced account-level meters.** They do not align with calendar periods
   or token counts; they must never be folded into period spend.
+- **Antigravity is on screen twice, by design.** `limits` carries Google's quota card
+  (`provider: "google-antigravity"` — a subscription clock, never cost), while
+  `DashboardSnapshot.antigravity` is the `agy` CLI's own turns priced as cost. One can be signed
+  out while the other reports usage; conflating them would double-count or hide either.
 
 ## 10. Change guide
-
-- **Adding a usage source:** extend `Source` (`"omp" | "cursor" | "claude-code" | "antigravity"`), update
-  `DashboardSnapshot` subtotals, update `SnapshotInput` to accept events/snapshots, update
-  `enabled` defaults, and incorporate the source into `rollup` and `models` concatenation.
+- **Adding a usage source:** extend `Source` (`"omp" | "cursor" | "claude-code" |
+  "antigravity"`), update `DashboardSnapshot` subtotals, update `SnapshotInput` to accept
+  events/snapshots, update `enabled` defaults, and incorporate the source into `rollup` and
+  `models` concatenation. The `usage_events` CHECK in `packages/db` names the same four sources
+  and must be widened in the same change.
 - **Adding a period kind:** extend `PeriodFilter`, add a branch to `periodBounds`'s switch, and
   add boundary test cases in `period.test.ts`. Keep bounds half-open `[start, end)`.
 - **Adding a normalization rule:** update `DATED_SNAPSHOT` or append to `SUFFIX_RULES` in

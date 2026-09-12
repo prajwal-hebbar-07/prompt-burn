@@ -10,12 +10,12 @@ arithmetic that turns a pile of records into the numbers you see on the dashboar
 
 ## The standard columns
 
-A record says: which source reported it (OMP, Cursor, or Claude Code), which project folder the
-session ran in (if the work belonged to a specific folder on your computer), exactly when it
-happened, which model answered, and four token counts — fresh input, generated output, and the
-two cache numbers. Two fields record the model's name: the name as the source spelled it, and the
-tidied canonical name. Nothing is thrown away by the tidying; the raw spelling stays on the
-record.
+A record says: which source reported it (OMP, Cursor, Claude Code, or the Antigravity command-line
+tool), which project folder the session ran in (if the work belonged to a specific folder on your
+computer), exactly when it happened, which model answered, and four token counts — fresh input,
+generated output, and the two cache numbers. Two fields record the model's name: the name as the
+source spelled it, and the tidied canonical name. Nothing is thrown away by the tidying; the raw
+spelling stays on the record.
 
 The columns are the contract. The collectors write to them, the dashboard reads from them, and
 neither side may quietly change them without the other knowing.
@@ -37,13 +37,13 @@ Friday's midnight.
 ## The name tidier
 
 Different tools write model names with their own habits. Cursor spells model names with effort
-tags attached (`-thinking-high`, `-high-fast`), while Claude Code writes them with full date
-stamps attached to the end. Left alone, the same underlying model would look like three different
-items in the ledger.
+tags attached (`-thinking-high`, `-high-fast`), Claude Code writes them with full date stamps
+attached to the end, and the Antigravity tool appends a marker for the way it picked the model.
+Left alone, the same underlying model would look like several different items in the ledger.
 
-The name tidier strips off the trailing date stamps and collapses the effort tags so that records
-from different assistants for the same model sit on the same line and can be priced from the same
-rate.
+The name tidier strips off the trailing date stamps and collapses the effort tags and the
+Antigravity marker so that records from different assistants for the same model sit on the same
+line and can be priced from the same rate.
 
 The discipline is in what it _doesn't_ tidy. A tag nobody has ever seen is left alone rather
 than guessed at; a prefix marking a Cursor-hosted variant is never stripped, because those
@@ -54,15 +54,15 @@ row.
 
 ## The summing
 
-The aggregation takes the raw inputs — timestamped records from OMP and Claude Code, running
-totals from Cursor, optional price rates, and the calendar page you are viewing — and produces
-the single summary the dashboard renders.
+The aggregation takes the raw inputs — timestamped records from OMP, Claude Code, and the
+Antigravity tool, running totals from Cursor, optional price rates, and the calendar page you
+are viewing — and produces the single summary the dashboard renders.
 
-The subtle part is that the sources keep time differently. OMP and Claude Code give each record
-a timestamp, so their entries obey the calendar page strictly. Cursor reports running totals per
-model with no timestamps at all. But Cursor will happily total up whichever stretch of days you
-ask it about, so for Today, This month, and a date range the collector asks for exactly those
-days, allowing all columns to describe the same time.
+The subtle part is that the sources keep time differently. OMP, Claude Code, and the Antigravity
+tool give each record a timestamp, so their entries obey the calendar page strictly. Cursor
+reports running totals per model with no timestamps at all. But Cursor will happily total up
+whichever stretch of days you ask it about, so for Today, This month, and a date range the
+collector asks for exactly those days, allowing all columns to describe the same time.
 
 "All time" is the one page it cannot narrow: the request must name specific start and end days,
 and a span reaching back to the beginning of time is something Cursor's storage refuses. There
@@ -76,6 +76,10 @@ mismatch so the dashboard can explain it in words, and it leaves the Cursor figu
 headline total entirely. Adding a month to a day would produce a number that is true of no period
 at all. The cycle figure stays visible on its own subtotal line, clearly footnoted — it just isn't
 mixed into the period's headline cost.
+
+Records from different tools are never merged, even when they name the same model: a Gemini
+answer routed through OMP and a Gemini answer from the Antigravity tool are two turns from two
+separate histories, and counting them once would invent a saving that never happened.
 
 Project breakdowns follow the same discipline. Records that carried a project folder are grouped
 into a project-by-project summary, ordered by spend, with unplaced records gathered into an
@@ -101,10 +105,16 @@ through to the limits display without being altered by calendar filters.
   hour, so any mistake about "local vs world clock" shows up immediately. But your real device
   will run in its own timezone, daylight-saving shifts and all, and that exact path has been
   reasoned about rather than machine-tested.
-- The second way Cursor can report — per-event records instead of cycle totals — is a reserved
-  page in the book: defined, tested with made-up entries, and not yet fed by anything real.
 - Projects only group tools that actually know which directory they operated in; no folders are
   invented for tools that report none.
+- Antigravity appears twice on screen on purpose: its allowance meters are a subscription clock,
+  while its command-line tool's own answers are cost. One can be signed out while the other
+  still works — they are counted and switched separately, never as one thing.
+- When a provider reports allowance meters for several accounts, each group is named by the email
+  the provider itself recorded; a provider with no account identity falls back to plain
+  placeholder names in list order.
+- The second way Cursor can report — per-event records instead of cycle totals — is a reserved
+  page in the book: defined, tested with made-up entries, and not yet fed by anything real.
 
 ## If you need to change it
 

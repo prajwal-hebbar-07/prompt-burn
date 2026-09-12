@@ -9,15 +9,16 @@ a React 19 webview with a persistent Node sidecar child process running `@prompt
 SQLite (`@prompt-burn/db`).
 
 Rust deliberately owns only the native window, OS process lifecycle management, and a single-line
-IPC relay. All data-handling logic — database access (`node:sqlite`), transcript collectors (OMP
-and Claude Code), provider APIs (Cursor, Ollama, Antigravity), pricing lookups, and token
-aggregation — lives in TypeScript in `@prompt-burn/reader` and `@prompt-burn/core`. This keeps
-data logic shared verbatim with the planned VS Code extension host.
+IPC relay. All data-handling logic — database access (`node:sqlite`), transcript collectors (OMP,
+Claude Code, and the Antigravity CLI), provider APIs (Cursor, Ollama, Antigravity), pricing
+lookups, and token aggregation — lives in TypeScript in `@prompt-burn/reader` and
+`@prompt-burn/core`. This keeps data logic shared verbatim with the planned VS Code extension
+host.
 
 The webview mounts `@prompt-burn/ui`'s `AppShell`, displaying the estimated burn total, period
 selectors (This month, Today, All time, and a custom Date range), source status indicators and
-error banners, and a Settings drawer for toggling sources, overriding paths, and defining custom
-model prices.
+error banners, and a Settings drawer for toggling sources (OMP, Claude Code, Cursor, Antigravity),
+overriding transcript paths, and defining custom model prices.
 
 Data loading operates on a fetch-on-open and fetch-on-demand model ("Fetch data" button). There are
 no polling timers or background sync intervals. In-flight and failed fetches never clear the screen:
@@ -56,8 +57,8 @@ Three surfaces, one per layer:
   - Period selector: "This month" (default), "Today", "All time", and custom "Date range" picker.
   - "Fetch data" button with in-flight spinner.
   - Fetch status indicator: idle, fetching, or error banner detailing per-source errors/successes.
-  - Settings drawer: source toggles (OMP, Claude Code, Cursor), transcript paths, DB path, and
-    custom pricing inputs.
+  - Settings drawer: source toggles (OMP, Claude Code, Cursor, Antigravity), transcript paths,
+    DB path, and custom pricing inputs.
 - **The sidecar IPC protocol**: Newline-delimited JSON over stdio between Rust and Node:
   - Startup announcement (stdout):
     ```
@@ -76,9 +77,12 @@ Three surfaces, one per layer:
     {"type":"response","id": 1,"ok": false,"error": "..."}
     ```
   - Supported methods:
-    - `discover`: calls `reader.discover()`, returns source availability array.
-    - `fetch`: calls `reader.fetch()`, syncs transcripts and provider clocks, returns
-      `FetchResult`.
+    - `discover`: calls `reader.discover()`, returns source availability array (`omp`,
+      `claude-code`, `cursor`, `antigravity` — the last appended after the others).
+    - `fetch`: calls `reader.fetch()`, syncs transcripts (OMP, Claude Code, `agy` conversations)
+      and provider clocks (Cursor models, Ollama, Antigravity quotas), returns `FetchResult` with
+      one verdict block per source: `omp`, `claudeCode`, `antigravityUsage`, `cursor`, `ollama`,
+      `antigravity`.
     - `getSnapshot`: calls `reader.getSnapshot(period)`, aggregates rows, returns
       `DashboardSnapshot`.
     - `getSettings`: calls `reader.getSettings()`, returns persisted `AppSettings`.
@@ -146,7 +150,18 @@ database cleanly itself. There is no kill logic — the pipe closure *is* the sh
   a blocking thread, guaranteeing requests and responses do not interleave on the stdio stream.
 - **Fetches never blank the screen.** The dashboard never drops to `$0` or blanks when a fetch
   begins or fails. The previous `DashboardSnapshot` stays mounted while `fetch.status` and
-  `fetch.error` drive spinner and banner states.
+  `fetch.error` drive spinner and banner states. Failure cases split three ways in `web/App.tsx`:
+  when OMP, Claude Code, and Cursor all report failure it keeps the old snapshot without
+  re-reading rows and raises the banner; partial success lands the working source's rows,
+  re-reads the snapshot, and still raises the banner; a thrown call (no source ever reported)
+  keeps the old snapshot and banners the thrown message.
+- **Error banners name every source's verdict.** `fetchErrorMessage` (`@prompt-burn/ui`) composes
+  the line the `FetchErrorBanner` renders: each genuinely failed source gets a `X failed` clause,
+  each source that reported success gets an `X OK` clause, and the reader's per-source reasons
+  follow after an em dash (e.g. `Cursor failed · OMP OK · Claude Code OK —
+  cursor.com said 503`).
+  A degraded source — not installed, signed out, or disabled — gets no clause at all: the reader
+  reports those passes clean, so only real failures are named.
 - **Period filtering and pricing are local snapshot queries.** Changing the period filter or saving
   a custom price re-reads `getSnapshot()` from local SQLite; no collectors or remote network APIs
   are invoked.
@@ -190,8 +205,9 @@ database cleanly itself. There is no kill logic — the pipe closure *is* the sh
 - **Webview:** React 19, `@prompt-burn/ui` (`AppShell`, `fetchErrorMessage`), `@prompt-burn/core`,
   `@tauri-apps/api/core` (`invoke`). Runs in webview sandbox, isolated from filesystem and sockets.
 - **Sidecar:** Node process executing `@prompt-burn/reader` and `@prompt-burn/db`. Accesses local
-  filesystem (`~/.prompt-burn/db.sqlite`, `~/.omp`, `~/.claude`) and remote networks (Cursor,
-  Ollama, Antigravity) through `@prompt-burn/reader`. The webview does none of this directly.
+  filesystem (`~/.prompt-burn/db.sqlite`, `~/.omp`, `~/.claude`,
+  `~/.gemini/antigravity-cli/conversations`) and remote networks (Cursor, Ollama, Antigravity)
+  through `@prompt-burn/reader`. The webview does none of this directly.
 - **Packaging:** Development runs TypeScript source files via Node loader `ts-resolve.mjs`;
   packaged release builds run inlined `sidecar.mjs` bundle via Node.
 
@@ -207,18 +223,22 @@ Three test suites in Vitest, run via `pnpm --filter @prompt-burn/desktop test`:
 2. `sidecar/reader.test.ts`: Sidecar protocol integration test suite against real spawned Node:
    - Tests `discover` for local transcript directories and Cursor state.
    - Tests `fetch` incremental sync with synthetic OMP transcripts, verifying file scanning,
-     skipping on re-sync, and per-source status.
+     skipping on re-sync, and per-source status — including a clean empty `antigravityUsage`
+     sync when the `agy` conversations directory is absent.
    - Tests `getSnapshot(all_time)` aggregation against seeded pricing.
    - Tests fault tolerance: a broken transcript directory returns zero rows rather than crashing.
    - Tests unknown method handling: returns `{ ok: false, error: ... }` while process stays up.
 3. `web/App.test.tsx`: React Testing Library suite in `jsdom` with mocked Tauri `invoke`:
    - Verifies fetch-on-open starts with `—` and spinner, then paints formatted total.
    - Verifies "Fetch data" triggers re-fetch while preserving numbers in flight.
-   - Verifies failed fetches keep the last good snapshot and raise error banners.
-   - Verifies partial-success reporting (e.g. Cursor fails while OMP succeeds).
+   - Verifies failed fetches keep the last good snapshot and raise error banners asserting the
+     full composed line (e.g. `OMP failed · Claude Code failed — …`).
+   - Verifies partial-success reporting: Cursor fails while OMP succeeds, the working source's
+     rows still land, and the banner names every source's verdict
+     (`Cursor failed · OMP OK · Claude Code OK — cursor.com said 503`).
    - Verifies period changes and date range selection re-aggregate without triggering a fetch.
-   - Verifies Settings navigation, source toggling, and custom price inputs (re-pricing snapshot
-     without re-fetching).
+   - Verifies Settings navigation, source toggling (including `antigravityEnabled` / `agyPath`),
+     and custom price inputs (re-pricing snapshot without re-fetching).
 
 Not covered in unit tests: the Rust side. Spawning, the log relay, and the pipe-closes-on-exit
 behaviour are verified by running `tauri dev` with a Rust toolchain.
@@ -245,6 +265,18 @@ behaviour are verified by running `tauri dev` with a Rust toolchain.
   compiled into the desktop bundle.
 - **The test's `HOME` override is mac/unix-only.** `@prompt-burn/db` honours `HOME`, which Windows
   does not set the same way; the sidecar tests pass on macOS and unix, not on Windows.
+- **`sidecar/reader.test.ts`'s `discover` assertion is stale and currently fails.** `discover()`
+  returns four entries since Antigravity became a source (`antigravity` appended last, keeping
+  index-based reads of the Cursor entry working), but the test's `toEqual` still asserts the
+  three-entry array from before — vitest's `toEqual` is length-exact, so the run ends
+  `1 failed | 4 passed (5)` in that file. Fix: add the fourth entry
+  `{ source: "antigravity", available: false, detail: join(home, ".gemini", "antigravity-cli",
+  "conversations") }` to the expectation.
+- **The all-failed check in `web/App.tsx` does not include `antigravityUsage`.** The
+  keep-the-old-snapshot branch tests `!result.omp.ok && !result.claudeCode.ok && !result.cursor.ok`
+  only. If exactly those three fail while the Antigravity sync succeeded, its freshly inserted
+  rows are left undisplayed until the next fetch or period change re-reads the snapshot. Fix:
+  add `&& !result.antigravityUsage.ok` to the condition.
 
 ## 10. Change guide
 

@@ -28,8 +28,9 @@ as a gracious host:
   out to re-examine your computer. It simply asks the worker to re-add the receipts already
   filed in the cabinet for the new dates.
 - If an assistant cannot be reached or a file is temporarily locked, the numbers stay on the
-  board, and a notice appears across the top explaining exactly which assistant ran into
-  trouble and why.
+  board, and a notice appears across the top naming every assistant on the roster: the ones that
+  ran into trouble and why, and — just as clearly — the ones that carried on fine. An assistant
+  that is simply not installed or switched off is not named as trouble; only a real failure is.
 
 ## Slips through the counter
 
@@ -49,7 +50,9 @@ counts the drawers to make sure everything is in working order. The worker then 
 through the doorway to confirm that the office is ready.
 
 When a request slip arrives to gather fresh data:
-1. The worker steps out to check each assistant's logbook across your computer.
+1. The worker steps out to check each assistant's logbook across your computer. There are now
+   several assistants on the roster, and one misbehaving logbook never stops the rounds: the
+   worker collects from the ones that cooperate and reports the holdout in the notice.
 2. Any new entries written since the last visit are copied into the central filing cabinet.
 3. The worker consults the price catalog, calculates the total cost for the requested period,
    and writes the summary onto a response slip.
@@ -93,7 +96,9 @@ required program, rather than crashing or vanishing without an explanation.
 - **The automated tests run without opening the real shop.** The automated checks verify the
   entire back-office operation by creating a temporary practice room with dummy files, proving
   that the worker can read logs, calculate totals, handle damaged folders, and close up cleanly
-  without ever touching your real records.
-- **The storefront never wipes your screen on a bad tally.** Even if every external assistant
-  fails simultaneously, the shop preserves your existing data on screen and explains what
+  without ever touching your real records. One practice check — the roll call of which
+  assistants are reachable at startup — has not been updated for the newest member of the
+  roster and currently reports a mismatch until it is.
+- **The storefront never wipes your screen on a bad tally.** Even if every assistant fails
+  simultaneously, the shop preserves your existing data on screen and explains what
   failed, ensuring you never lose sight of your history.
