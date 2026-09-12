@@ -342,6 +342,13 @@ The package includes 10 test files executed via Vitest:
 - **Silent failure on invalid rate entry:** In `Settings.tsx`, typing non-numeric characters into
   the price fields disables the "Save price" button without rendering any error explanation to the
   user.
+- **`Dashboard` renders `UsageLimits` without a clock, so its limit fixtures read the wall time.**
+  `UsageLimits` takes an injectable `now?: () => Date` and `UsageLimits.test.tsx` pins it, but
+  `Dashboard.tsx` renders `<UsageLimits snapshot={snapshot} />` with no clock. A `Dashboard`-level
+  test asserting a quota percentage therefore depends on the real date: `windowEnded` suppresses
+  the percentage once `resetsAt` is past, and a fixed fixture instant silently turns the assertion
+  into `window ended` after that instant. `Dashboard.test.tsx`'s `ANTIGRAVITY_LIMITS` keeps its
+  window ahead of `Date.now()` for exactly this reason; pinning a literal there expires the suite.
 
 ## 10. Change guide
 

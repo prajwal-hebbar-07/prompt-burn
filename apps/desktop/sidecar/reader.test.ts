@@ -159,6 +159,13 @@ it("reports transcript health and the missing local Cursor session via discover"
         available: false,
         detail: expect.stringContaining("No Cursor state at"),
       },
+      // `agy` has never run under this temp home, so its conversations
+      // directory is absent: the source is known, switched on, and unavailable.
+      {
+        source: "antigravity",
+        available: false,
+        detail: join(home, ".gemini", "antigravity-cli", "conversations"),
+      },
     ]);
   });
 });

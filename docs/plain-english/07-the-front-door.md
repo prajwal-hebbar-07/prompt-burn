@@ -96,9 +96,7 @@ required program, rather than crashing or vanishing without an explanation.
 - **The automated tests run without opening the real shop.** The automated checks verify the
   entire back-office operation by creating a temporary practice room with dummy files, proving
   that the worker can read logs, calculate totals, handle damaged folders, and close up cleanly
-  without ever touching your real records. One practice check — the roll call of which
-  assistants are reachable at startup — has not been updated for the newest member of the
-  roster and currently reports a mismatch until it is.
+  without ever touching your real records.
 - **The storefront never wipes your screen on a bad tally.** Even if every assistant fails
   simultaneously, the shop preserves your existing data on screen and explains what
   failed, ensuring you never lose sight of your history.

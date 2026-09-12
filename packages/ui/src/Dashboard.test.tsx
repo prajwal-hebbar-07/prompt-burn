@@ -82,7 +82,14 @@ function agyEvent(): UsageEvent {
   };
 }
 
-/** Google's quota clock behind the Usage-limits card — never a cost. */
+/**
+ * Google's quota clock behind the Usage-limits card — never a cost.
+ *
+ * Dashboard renders `UsageLimits` without injecting a clock, so the reset label
+ * is read against the wall clock. The window has to be live for the card to
+ * show a percentage at all, which makes a fixed `resetsAt` a test that expires:
+ * this one must stay ahead of whenever the suite runs.
+ */
 const ANTIGRAVITY_LIMITS: ProviderLimits[] = [
   {
     provider: "google-antigravity",
@@ -94,7 +101,7 @@ const ANTIGRAVITY_LIMITS: ProviderLimits[] = [
         label: "Usage (Gemini Models)",
         windowLabel: "5 Hour",
         usedFraction: 0.41,
-        resetsAt: "2026-09-02T16:00:00.000Z",
+        resetsAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       },
     ],
   },

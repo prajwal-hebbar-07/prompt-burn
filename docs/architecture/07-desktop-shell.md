@@ -265,13 +265,6 @@ behaviour are verified by running `tauri dev` with a Rust toolchain.
   compiled into the desktop bundle.
 - **The test's `HOME` override is mac/unix-only.** `@prompt-burn/db` honours `HOME`, which Windows
   does not set the same way; the sidecar tests pass on macOS and unix, not on Windows.
-- **`sidecar/reader.test.ts`'s `discover` assertion is stale and currently fails.** `discover()`
-  returns four entries since Antigravity became a source (`antigravity` appended last, keeping
-  index-based reads of the Cursor entry working), but the test's `toEqual` still asserts the
-  three-entry array from before — vitest's `toEqual` is length-exact, so the run ends
-  `1 failed | 4 passed (5)` in that file. Fix: add the fourth entry
-  `{ source: "antigravity", available: false, detail: join(home, ".gemini", "antigravity-cli",
-  "conversations") }` to the expectation.
 - **The all-failed check in `web/App.tsx` does not include `antigravityUsage`.** The
   keep-the-old-snapshot branch tests `!result.omp.ok && !result.claudeCode.ok && !result.cursor.ok`
   only. If exactly those three fail while the Antigravity sync succeeded, its freshly inserted
